@@ -43,22 +43,8 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else if (data.user) {
-      // Create default tenant
-      const slug = displayName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-      const { data: tenant, error: tenantError } = await supabase
-        .from("tenants")
-        .insert({ name: `Loja de ${displayName}`, slug: `${slug}-${Date.now()}` })
-        .select()
-        .single();
-
-      if (tenant && !tenantError) {
-        await supabase.from("tenant_members").insert({
-          tenant_id: tenant.id,
-          user_id: data.user.id,
-          role: "admin" as const,
-        });
-      }
-      toast.success("Conta criada! Verifique seu e-mail para confirmar.");
+      toast.success("Conta criada com sucesso!");
+      navigate("/dashboard");
     }
     setLoading(false);
   };

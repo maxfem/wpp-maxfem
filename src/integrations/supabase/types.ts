@@ -410,6 +410,72 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_messages: {
+        Row: {
+          content: string | null
+          created_at: string
+          customer_id: string | null
+          direction: string
+          id: string
+          media_url: string | null
+          message_type: string
+          metadata: Json | null
+          phone: string
+          status: string
+          template_name: string | null
+          tenant_id: string
+          updated_at: string
+          wamid: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          customer_id?: string | null
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+          phone: string
+          status?: string
+          template_name?: string | null
+          tenant_id: string
+          updated_at?: string
+          wamid?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          customer_id?: string | null
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+          phone?: string
+          status?: string
+          template_name?: string | null
+          tenant_id?: string
+          updated_at?: string
+          wamid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -419,6 +419,35 @@ export default function MessageTemplates() {
                     </div>
                   </div>
 
+                  {/* Sample values for variables */}
+                  {uniqueVarNums.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Valores de exemplo para variáveis</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Preencha exemplos para cada variável. A Meta exige exemplos para aprovar o template.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {uniqueVarNums.map((num) => (
+                          <div key={num} className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">{`{{${num}}}`}</span>
+                            <Input
+                              placeholder={`Exemplo para {{${num}}}`}
+                              value={sampleValues[num - 1] || ""}
+                              onChange={(e) => {
+                                setSampleValues((prev) => {
+                                  const next = [...prev];
+                                  next[num - 1] = e.target.value;
+                                  return next;
+                                });
+                              }}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>Rodapé (opcional)</Label>
                     <Input

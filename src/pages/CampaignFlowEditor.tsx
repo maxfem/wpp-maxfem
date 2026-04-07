@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { FlowSidebar } from "@/components/campaign-flow/FlowSidebar";
 import FlowNodeComponent from "@/components/campaign-flow/FlowNodeComponent";
 import StartNode from "@/components/campaign-flow/StartNode";
+import { NodeConfigPanel } from "@/components/campaign-flow/NodeConfigPanel";
 
 const initialNodes: Node[] = [
   {
@@ -48,6 +49,7 @@ function FlowEditorInner() {
   const [campaignName, setCampaignName] = useState("Sem nome");
   const [isActive, setIsActive] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
 
   const nodeTypes = useMemo(
     () => ({
@@ -93,9 +95,30 @@ function FlowEditorInner() {
     [reactFlowInstance, setNodes]
   );
 
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.type === "startNode") return;
+    setSelectedNode(node);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
+  const handleNodeDataUpdate = useCallback((nodeId: string, newData: Record<string, unknown>) => {
+    setNodes((nds) =>
+      nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n))
+    );
+    setSelectedNode((prev) => (prev && prev.id === nodeId ? { ...prev, data: newData } : prev));
+  }, [setNodes]);
+
   const handleSave = () => {
     toast.success("Campanha salva!");
   };
+
+  // Keep selectedNode in sync with nodes state
+  const currentSelectedNode = selectedNode
+    ? nodes.find((n) => n.id === selectedNode.id) || null
+    : null;
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -136,6 +159,8 @@ function FlowEditorInner() {
             onInit={setReactFlowInstance}
             onDragOver={onDragOver}
             onDrop={onDrop}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
             fitView
             className="bg-muted/30"
@@ -145,6 +170,14 @@ function FlowEditorInner() {
             <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--muted-foreground) / 0.15)" />
           </ReactFlow>
         </div>
+
+        {currentSelectedNode && (
+          <NodeConfigPanel
+            node={currentSelectedNode}
+            onClose={() => setSelectedNode(null)}
+            onUpdate={handleNodeDataUpdate}
+          />
+        )}
       </div>
     </div>
   );

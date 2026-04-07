@@ -22,7 +22,13 @@ export function WhatsAppPhonePreview({
   body,
   footer,
   buttons,
+  sampleValues = [],
 }: WhatsAppPhonePreviewProps) {
+  // Replace {{1}}, {{2}}, etc. with sample values
+  const renderedBody = body.replace(/\{\{(\d+)\}\}/g, (match, num) => {
+    const idx = parseInt(num, 10) - 1;
+    return sampleValues[idx] || match;
+  });
   return (
     <div className="mx-auto w-[280px] shrink-0">
       <div className="rounded-[2rem] border-[5px] border-gray-800 bg-gray-800 shadow-2xl overflow-hidden">

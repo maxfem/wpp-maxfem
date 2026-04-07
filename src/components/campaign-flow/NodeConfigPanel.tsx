@@ -212,8 +212,23 @@ function ConfigField({ field, value, onChange }: { field: FieldDef; value: unkno
 }
 
 export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProps) {
+  const [templateOptions, setTemplateOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      const { data } = await supabase
+        .from("message_templates")
+        .select("name")
+        .order("name");
+      if (data) {
+        setTemplateOptions(data.map((t) => t.name));
+      }
+    };
+    fetchTemplates();
+  }, []);
+
   const nodeType = (node.data as Record<string, unknown>).nodeType as string;
-  const config = nodeConfigs[nodeType];
+  const config = getNodeConfigs(templateOptions)[nodeType];
 
   if (!config) {
     return (

@@ -569,6 +569,19 @@ export default function MessageTemplates() {
                             <Button variant="ghost" size="icon" onClick={() => openPreview(t)} title="Pré-visualizar">
                               <Eye className="h-4 w-4" />
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => submitToMetaMutation.mutate(t.id)}
+                              disabled={submitToMetaMutation.isPending || t.status === "approved"}
+                              title="Enviar à Meta para aprovação"
+                            >
+                              {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4 text-primary" />
+                              )}
+                            </Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(t)} title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>

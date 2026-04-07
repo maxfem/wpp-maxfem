@@ -161,6 +161,17 @@ Deno.serve(async (req) => {
 
     if (!metaResponse.ok) {
       console.error("Meta API error:", metaResult);
+      const subcode = metaResult?.error?.error_subcode;
+      // Template already exists in this language
+      if (subcode === 2388024) {
+        return new Response(JSON.stringify({ 
+          error: "Template já existe na Meta com este nome e idioma. Renomeie o template ou altere o idioma.",
+          already_exists: true,
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: "Meta API error", details: metaResult }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

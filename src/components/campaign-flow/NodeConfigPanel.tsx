@@ -147,7 +147,7 @@ const getNodeConfigs = (templateOptions: string[]): Record<string, { title: stri
       { key: "content", label: "Conteúdo da nota", type: "textarea", placeholder: "Anotação sobre esta etapa do fluxo..." },
     ],
   },
-};
+});
 
 interface FieldDef {
   key: string;

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   LogOut,
   Layers,
+  Zap,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -40,6 +41,7 @@ const monitorItems = [
 
 const planItems = [
   { title: "Campanhas", url: "/campaigns", icon: Megaphone },
+  { title: "Automações", url: "/automations", icon: Zap },
   { title: "Templates", url: "/templates", icon: FileText },
 ];
 

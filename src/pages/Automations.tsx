@@ -42,7 +42,7 @@ const campaignTypes = [
 // Mock metrics for demonstration
 const mockMetrics: Record<string, { envios: number; clique: number; conversao?: number; alert?: string }> = {};
 
-export default function Campaigns() {
+export default function Automations() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -51,7 +51,7 @@ export default function Campaigns() {
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
 
   const { data: campaigns = [], isLoading } = useQuery({
-    queryKey: ["campaigns", currentTenant?.id],
+    queryKey: ["automations", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
       const { data, error } = await supabase
@@ -77,7 +77,7 @@ export default function Campaigns() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["automations"] });
       setDialogOpen(false);
       setNewCampaign({ name: "", type: "custom" });
       toast.success("Campanha criada!");
@@ -91,7 +91,7 @@ export default function Campaigns() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["automations"] });
       toast.success("Campanha excluída");
     },
     onError: (e) => toast.error(e.message),
@@ -110,8 +110,8 @@ export default function Campaigns() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Campanhas</h1>
-            <p className="text-sm text-muted-foreground mt-1">{campaigns.length} campanhas</p>
+            <h1 className="text-2xl font-bold text-foreground">Automações</h1>
+            <p className="text-sm text-muted-foreground mt-1">{campaigns.length} automações</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -125,7 +125,7 @@ export default function Campaigns() {
                 <Megaphone className="h-4 w-4 mr-2" />
                 Modo padrão
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/campaigns/flow/new")}>
+              <DropdownMenuItem onClick={() => navigate("/automations/flow/new")}>
                 <Zap className="h-4 w-4 mr-2" />
                 Modo avançado
               </DropdownMenuItem>
@@ -146,8 +146,8 @@ export default function Campaigns() {
           <Card className="border border-border">
             <CardContent className="p-12 text-center">
               <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-lg font-medium text-foreground mb-1">Nenhuma campanha</p>
-              <p className="text-sm text-muted-foreground">Crie sua primeira campanha para engajar seus clientes.</p>
+              <p className="text-lg font-medium text-foreground mb-1">Nenhuma automação</p>
+              <p className="text-sm text-muted-foreground">Crie sua primeira automação para engajar seus clientes.</p>
             </CardContent>
           </Card>
         ) : (
@@ -171,7 +171,7 @@ export default function Campaigns() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigate(`/automations/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
                           <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
                             <Trash2 className="h-4 w-4 mr-2" />Excluir
@@ -219,14 +219,14 @@ export default function Campaigns() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Criar Campanha</DialogTitle>
+            <DialogTitle>Criar Automação</DialogTitle>
           </DialogHeader>
           <form
             onSubmit={(e) => { e.preventDefault(); createCampaign.mutate(); }}
             className="space-y-4"
           >
             <div className="space-y-2">
-              <Label>Nome da Campanha *</Label>
+              <Label>Nome da Automação *</Label>
               <Input
                 value={newCampaign.name}
                 onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
@@ -246,7 +246,7 @@ export default function Campaigns() {
               </Select>
             </div>
             <Button type="submit" className="w-full" disabled={createCampaign.isPending}>
-              {createCampaign.isPending ? "Criando..." : "Criar Campanha"}
+              {createCampaign.isPending ? "Criando..." : "Criar Automação"}
             </Button>
           </form>
         </DialogContent>

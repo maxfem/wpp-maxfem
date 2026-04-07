@@ -221,6 +221,7 @@ export default function MessageTemplates() {
     setDialogOpen(false);
     setEditingId(null);
     setForm(emptyForm);
+    setSampleValues([]);
   };
 
   const openEdit = (template: (typeof templates)[0]) => {
@@ -235,6 +236,7 @@ export default function MessageTemplates() {
       footer: template.footer || "",
       buttons: (template.buttons as unknown as TemplateButton[]) || [],
     });
+    setSampleValues((template.sample_values as string[]) || []);
     setDialogOpen(true);
   };
 

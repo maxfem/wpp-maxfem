@@ -107,6 +107,7 @@ export default function MessageTemplates() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
+  const [sampleValues, setSampleValues] = useState<string[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<TemplateForm>(emptyForm);
 
   const tenantId = currentTenant?.id;
@@ -139,6 +140,7 @@ export default function MessageTemplates() {
         body: values.body,
         footer: values.footer || null,
         buttons: values.buttons as unknown as Json,
+        sample_values: sampleValues as unknown as Json,
       };
 
       if (editingId) {
@@ -219,6 +221,7 @@ export default function MessageTemplates() {
     setDialogOpen(false);
     setEditingId(null);
     setForm(emptyForm);
+    setSampleValues([]);
   };
 
   const openEdit = (template: (typeof templates)[0]) => {
@@ -233,6 +236,7 @@ export default function MessageTemplates() {
       footer: template.footer || "",
       buttons: (template.buttons as unknown as TemplateButton[]) || [],
     });
+    setSampleValues((template.sample_values as string[]) || []);
     setDialogOpen(true);
   };
 
@@ -283,7 +287,9 @@ export default function MessageTemplates() {
   };
 
   // Count variables in body like {{1}}, {{2}}
-  const variableCount = (form.body.match(/\{\{\d+\}\}/g) || []).length;
+  const detectedVars = form.body.match(/\{\{(\d+)\}\}/g) || [];
+  const variableCount = detectedVars.length;
+  const uniqueVarNums = [...new Set(detectedVars.map(v => parseInt(v.replace(/[{}]/g, ''), 10)))].sort((a, b) => a - b);
 
   return (
     <AppLayout>
@@ -413,6 +419,35 @@ export default function MessageTemplates() {
                     </div>
                   </div>
 
+                  {/* Sample values for variables */}
+                  {uniqueVarNums.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Valores de exemplo para variáveis</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Preencha exemplos para cada variável. A Meta exige exemplos para aprovar o template.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {uniqueVarNums.map((num) => (
+                          <div key={num} className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">{`{{${num}}}`}</span>
+                            <Input
+                              placeholder={`Exemplo para {{${num}}}`}
+                              value={sampleValues[num - 1] || ""}
+                              onChange={(e) => {
+                                setSampleValues((prev) => {
+                                  const next = [...prev];
+                                  next[num - 1] = e.target.value;
+                                  return next;
+                                });
+                              }}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label>Rodapé (opcional)</Label>
                     <Input
@@ -495,6 +530,7 @@ export default function MessageTemplates() {
                     body={form.body}
                     footer={form.footer}
                     buttons={form.buttons}
+                    sampleValues={sampleValues}
                   />
                 </div>
               </div>

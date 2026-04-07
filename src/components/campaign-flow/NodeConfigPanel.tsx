@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { Node } from "@xyflow/react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface NodeConfigPanelProps {
   node: Node;
@@ -15,12 +17,12 @@ interface NodeConfigPanelProps {
   onUpdate: (id: string, data: Record<string, unknown>) => void;
 }
 
-// Config fields per node type
-const nodeConfigs: Record<string, { title: string; fields: FieldDef[] }> = {
+// Will be populated dynamically for WhatsApp
+const getNodeConfigs = (templateOptions: string[]): Record<string, { title: string; fields: FieldDef[] }> => ({
   sendWhatsApp: {
     title: "Enviar WhatsApp",
     fields: [
-      { key: "template", label: "Template", type: "select", options: ["Carrinho abandonado", "Boas-vindas", "Promoção", "Rastreio"] },
+      { key: "template", label: "Template", type: "select", options: templateOptions.length > 0 ? templateOptions : ["Nenhum template encontrado"] },
       { key: "delay", label: "Atraso antes de enviar", type: "select", options: ["Sem atraso", "5 minutos", "15 minutos", "1 hora", "1 dia"] },
       { key: "trackClicks", label: "Rastrear cliques", type: "toggle" },
       { key: "fallbackMessage", label: "Mensagem alternativa", type: "textarea", placeholder: "Se o template falhar..." },

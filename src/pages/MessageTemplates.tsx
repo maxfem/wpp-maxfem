@@ -47,6 +47,8 @@ import {
   Eye,
   MessageSquare,
   Send,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -176,6 +178,40 @@ export default function MessageTemplates() {
     },
     onError: (err: Error) => {
       toast.error("Erro ao excluir: " + err.message);
+    },
+  });
+
+  const submitToMetaMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Não autenticado");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-template`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ template_id: id, tenant_id: tenantId }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        const detail = result.details?.error?.message || result.error || "Erro desconhecido";
+        throw new Error(detail);
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao enviar à Meta: " + err.message);
     },
   });
 
@@ -532,6 +568,19 @@ export default function MessageTemplates() {
                           <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="icon" onClick={() => openPreview(t)} title="Pré-visualizar">
                               <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => submitToMetaMutation.mutate(t.id)}
+                              disabled={submitToMetaMutation.isPending || t.status === "approved"}
+                              title="Enviar à Meta para aprovação"
+                            >
+                              {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4 text-primary" />
+                              )}
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(t)} title="Editar">
                               <Pencil className="h-4 w-4" />

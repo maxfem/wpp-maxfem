@@ -47,6 +47,8 @@ import {
   Eye,
   MessageSquare,
   Send,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
 

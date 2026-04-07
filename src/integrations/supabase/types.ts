@@ -84,6 +84,7 @@ export type Database = {
           audience_rules: Json | null
           created_at: string
           end_date: string | null
+          flow_data: Json | null
           has_bonus: boolean | null
           has_survey: boolean | null
           id: string
@@ -100,6 +101,7 @@ export type Database = {
           audience_rules?: Json | null
           created_at?: string
           end_date?: string | null
+          flow_data?: Json | null
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
@@ -116,6 +118,7 @@ export type Database = {
           audience_rules?: Json | null
           created_at?: string
           end_date?: string | null
+          flow_data?: Json | null
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string

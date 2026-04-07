@@ -24,10 +24,28 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
   const Icon = iconMap[data.icon] || Zap;
   const isExit = data.nodeType === "exit";
   const isWhatsApp = data.nodeType === "sendWhatsApp";
+  const isCondition = data.nodeType === "condition" || data.nodeType === "multiCondition";
+  const isWait = data.nodeType === "wait" || data.nodeType === "waitCondition" || data.nodeType === "waitDate";
+  const isNote = data.nodeType === "note";
+
+  // Build body text based on node type
+  let bodyText = "Configurar...";
+  if (isWhatsApp && data.templateName) {
+    bodyText = String(data.templateName);
+  } else if (isWhatsApp && data.template) {
+    bodyText = String(data.template);
+  } else if (isWait && data.waitTime) {
+    const units: Record<string, string> = { minutes: "minutos", hours: "horas", days: "dias" };
+    bodyText = `${data.waitTime} ${units[String(data.waitUnit)] || data.waitUnit}`;
+  } else if (isCondition && data.conditionField) {
+    bodyText = `${data.conditionField} ${data.conditionOp} ${data.conditionValue || ""}`;
+  } else if (isNote && data.noteText) {
+    bodyText = String(data.noteText);
+  }
 
   return (
     <div
-      className={`rounded-lg shadow-md border-2 bg-background min-w-[200px] transition-all ${
+      className={`rounded-lg shadow-md border-2 bg-background min-w-[200px] max-w-[260px] transition-all ${
         selected ? "border-primary ring-2 ring-primary/20" : "border-border"
       }`}
     >
@@ -44,8 +62,8 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
 
       {/* Body */}
       {!isExit && (
-        <div className="px-3 py-2 text-xs text-muted-foreground">
-          {isWhatsApp ? "Clique para configurar a mensagem" : "Configurar..."}
+        <div className="px-3 py-2 text-xs text-muted-foreground leading-relaxed">
+          {bodyText}
         </div>
       )}
 
@@ -64,6 +82,21 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
                   backgroundColor:
                     i === 0 ? "#eab308" : i === 1 ? "#22c55e" : i === 2 ? "#ef4444" : "#6b7280",
                 }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : isCondition ? (
+        <div className="border-t border-border">
+          {["Atende a condição", "Não atende a nenhuma condição"].map((label, i) => (
+            <div key={i} className="flex items-center justify-between px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border last:border-b-0">
+              <span>{label}</span>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={i === 0 ? "condition-true" : "condition-false"}
+                className="!relative !transform-none !w-2.5 !h-2.5 !border-background"
+                style={{ backgroundColor: i === 0 ? "#22c55e" : "#ef4444" }}
               />
             </div>
           ))}

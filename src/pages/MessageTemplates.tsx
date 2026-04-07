@@ -195,7 +195,7 @@ export default function MessageTemplates() {
       header_content: template.header_content || "",
       body: template.body,
       footer: template.footer || "",
-      buttons: (template.buttons as TemplateButton[]) || [],
+      buttons: (template.buttons as unknown as TemplateButton[]) || [],
     });
     setDialogOpen(true);
   };
@@ -209,7 +209,7 @@ export default function MessageTemplates() {
       header_content: template.header_content || "",
       body: template.body,
       footer: template.footer || "",
-      buttons: (template.buttons as TemplateButton[]) || [],
+      buttons: (template.buttons as unknown as TemplateButton[]) || [],
     });
     setPreviewOpen(true);
   };

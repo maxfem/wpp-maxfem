@@ -2,6 +2,7 @@ import {
   BarChart3,
   Users,
   Megaphone,
+  FileText,
   Activity,
   MessageSquare,
   Settings,

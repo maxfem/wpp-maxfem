@@ -181,6 +181,40 @@ export default function MessageTemplates() {
     },
   });
 
+  const submitToMetaMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Não autenticado");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-template`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ template_id: id, tenant_id: tenantId }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        const detail = result.details?.error?.message || result.error || "Erro desconhecido";
+        throw new Error(detail);
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao enviar à Meta: " + err.message);
+    },
+  });
+
   const closeDialog = () => {
     setDialogOpen(false);
     setEditingId(null);

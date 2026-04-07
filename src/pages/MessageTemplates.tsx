@@ -304,7 +304,7 @@ export default function MessageTemplates() {
                 Novo Template
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editingId ? "Editar Template" : "Criar Template"}
@@ -313,175 +313,191 @@ export default function MessageTemplates() {
                   Defina o conteúdo do seu modelo de mensagem. Use {"{{1}}"}, {"{{2}}"} etc. para variáveis no corpo.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nome do template</Label>
-                    <Input
-                      placeholder="ex: boas_vindas_cliente"
-                      value={form.name}
-                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Apenas letras minúsculas, números e _
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Categoria</Label>
-                    <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="marketing">Marketing</SelectItem>
-                        <SelectItem value="utility">Utilidade</SelectItem>
-                        <SelectItem value="authentication">Autenticação</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Idioma</Label>
-                    <Select value={form.language} onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pt_BR">Português (BR)</SelectItem>
-                        <SelectItem value="en_US">Inglês (US)</SelectItem>
-                        <SelectItem value="es">Espanhol</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Cabeçalho</Label>
-                    <Select value={form.header_type} onValueChange={(v) => setForm((f) => ({ ...f, header_type: v }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        <SelectItem value="text">Texto</SelectItem>
-                        <SelectItem value="image">Imagem</SelectItem>
-                        <SelectItem value="video">Vídeo</SelectItem>
-                        <SelectItem value="document">Documento</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {form.header_type === "text" && (
-                  <div className="space-y-2">
-                    <Label>Texto do cabeçalho</Label>
-                    <Input
-                      placeholder="Título da mensagem"
-                      value={form.header_content}
-                      onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
-                      maxLength={60}
-                    />
-                    <p className="text-xs text-muted-foreground">{form.header_content.length}/60 caracteres</p>
-                  </div>
-                )}
-
-                {(form.header_type === "image" || form.header_type === "video" || form.header_type === "document") && (
-                  <div className="space-y-2">
-                    <Label>URL da mídia (exemplo)</Label>
-                    <Input
-                      placeholder="https://..."
-                      value={form.header_content}
-                      onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
-                    />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Corpo da mensagem *</Label>
-                  <Textarea
-                    placeholder="Olá {{1}}, sua compra #{{2}} foi confirmada!"
-                    value={form.body}
-                    onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-                    rows={5}
-                    maxLength={1024}
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{variableCount} variável(is) detectada(s)</span>
-                    <span>{form.body.length}/1024</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Rodapé (opcional)</Label>
-                  <Input
-                    placeholder="Martz CRM"
-                    value={form.footer}
-                    onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))}
-                    maxLength={60}
-                  />
-                </div>
-
-                {/* Buttons */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Botões (máx. 3)</Label>
-                    {form.buttons.length < 3 && (
-                      <Button type="button" variant="outline" size="sm" onClick={addButton}>
-                        <Plus className="h-3 w-3 mr-1" /> Adicionar
-                      </Button>
-                    )}
-                  </div>
-                  {form.buttons.map((btn, i) => (
-                    <div key={i} className="flex items-center gap-2 p-3 border border-border rounded-md bg-secondary/30">
-                      <Select value={btn.type} onValueChange={(v) => updateButton(i, "type", v)}>
-                        <SelectTrigger className="w-40">
+              <div className="flex gap-6">
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="flex-1 space-y-4 min-w-0">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Nome do template</Label>
+                      <Input
+                        placeholder="ex: boas_vindas_cliente"
+                        value={form.name}
+                        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Apenas letras minúsculas, números e _
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Categoria</Label>
+                      <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                        <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="QUICK_REPLY">Resposta rápida</SelectItem>
-                          <SelectItem value="URL">Link</SelectItem>
-                          <SelectItem value="PHONE_NUMBER">Telefone</SelectItem>
+                          <SelectItem value="marketing">Marketing</SelectItem>
+                          <SelectItem value="utility">Utilidade</SelectItem>
+                          <SelectItem value="authentication">Autenticação</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Input
-                        placeholder="Texto do botão"
-                        value={btn.text}
-                        onChange={(e) => updateButton(i, "text", e.target.value)}
-                        maxLength={25}
-                        className="flex-1"
-                      />
-                      {btn.type === "URL" && (
-                        <Input
-                          placeholder="https://..."
-                          value={btn.url || ""}
-                          onChange={(e) => updateButton(i, "url", e.target.value)}
-                          className="flex-1"
-                        />
-                      )}
-                      {btn.type === "PHONE_NUMBER" && (
-                        <Input
-                          placeholder="+5511999..."
-                          value={btn.phone_number || ""}
-                          onChange={(e) => updateButton(i, "phone_number", e.target.value)}
-                          className="flex-1"
-                        />
-                      )}
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={closeDialog}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={saveMutation.isPending}>
-                    {saveMutation.isPending ? "Salvando..." : editingId ? "Atualizar" : "Criar Template"}
-                  </Button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Idioma</Label>
+                      <Select value={form.language} onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pt_BR">Português (BR)</SelectItem>
+                          <SelectItem value="en_US">Inglês (US)</SelectItem>
+                          <SelectItem value="es">Espanhol</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cabeçalho</Label>
+                      <Select value={form.header_type} onValueChange={(v) => setForm((f) => ({ ...f, header_type: v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum</SelectItem>
+                          <SelectItem value="text">Texto</SelectItem>
+                          <SelectItem value="image">Imagem</SelectItem>
+                          <SelectItem value="video">Vídeo</SelectItem>
+                          <SelectItem value="document">Documento</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {form.header_type === "text" && (
+                    <div className="space-y-2">
+                      <Label>Texto do cabeçalho</Label>
+                      <Input
+                        placeholder="Título da mensagem"
+                        value={form.header_content}
+                        onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
+                        maxLength={60}
+                      />
+                      <p className="text-xs text-muted-foreground">{form.header_content.length}/60 caracteres</p>
+                    </div>
+                  )}
+
+                  {(form.header_type === "image" || form.header_type === "video" || form.header_type === "document") && (
+                    <div className="space-y-2">
+                      <Label>URL da mídia (exemplo)</Label>
+                      <Input
+                        placeholder="https://..."
+                        value={form.header_content}
+                        onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label>Corpo da mensagem *</Label>
+                    <Textarea
+                      placeholder="Olá {{1}}, sua compra #{{2}} foi confirmada!"
+                      value={form.body}
+                      onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+                      rows={5}
+                      maxLength={1024}
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{variableCount} variável(is) detectada(s)</span>
+                      <span>{form.body.length}/1024</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Rodapé (opcional)</Label>
+                    <Input
+                      placeholder="Martz CRM"
+                      value={form.footer}
+                      onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))}
+                      maxLength={60}
+                    />
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Botões (máx. 3)</Label>
+                      {form.buttons.length < 3 && (
+                        <Button type="button" variant="outline" size="sm" onClick={addButton}>
+                          <Plus className="h-3 w-3 mr-1" /> Adicionar
+                        </Button>
+                      )}
+                    </div>
+                    {form.buttons.map((btn, i) => (
+                      <div key={i} className="flex items-center gap-2 p-3 border border-border rounded-md bg-secondary/30">
+                        <Select value={btn.type} onValueChange={(v) => updateButton(i, "type", v)}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="QUICK_REPLY">Resposta rápida</SelectItem>
+                            <SelectItem value="URL">Link</SelectItem>
+                            <SelectItem value="PHONE_NUMBER">Telefone</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="Texto do botão"
+                          value={btn.text}
+                          onChange={(e) => updateButton(i, "text", e.target.value)}
+                          maxLength={25}
+                          className="flex-1"
+                        />
+                        {btn.type === "URL" && (
+                          <Input
+                            placeholder="https://..."
+                            value={btn.url || ""}
+                            onChange={(e) => updateButton(i, "url", e.target.value)}
+                            className="flex-1"
+                          />
+                        )}
+                        {btn.type === "PHONE_NUMBER" && (
+                          <Input
+                            placeholder="+5511999..."
+                            value={btn.phone_number || ""}
+                            onChange={(e) => updateButton(i, "phone_number", e.target.value)}
+                            className="flex-1"
+                          />
+                        )}
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button type="button" variant="outline" onClick={closeDialog}>
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={saveMutation.isPending}>
+                      {saveMutation.isPending ? "Salvando..." : editingId ? "Atualizar" : "Criar Template"}
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Live Preview */}
+                <div className="hidden md:flex flex-col items-center pt-2">
+                  <p className="text-xs text-muted-foreground mb-3 font-medium">Pré-visualização</p>
+                  <WhatsAppPhonePreview
+                    companyName={currentTenant?.name || "Empresa"}
+                    headerType={form.header_type}
+                    headerContent={form.header_content}
+                    body={form.body}
+                    footer={form.footer}
+                    buttons={form.buttons}
+                  />
                 </div>
-              </form>
+              </div>
             </DialogContent>
           </Dialog>
         </div>

@@ -530,6 +530,7 @@ export default function MessageTemplates() {
                     body={form.body}
                     footer={form.footer}
                     buttons={form.buttons}
+                    sampleValues={sampleValues}
                   />
                 </div>
               </div>

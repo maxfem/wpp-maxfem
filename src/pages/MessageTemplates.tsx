@@ -107,6 +107,7 @@ export default function MessageTemplates() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
+  const [sampleValues, setSampleValues] = useState<string[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<TemplateForm>(emptyForm);
 
   const tenantId = currentTenant?.id;

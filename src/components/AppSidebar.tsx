@@ -39,6 +39,7 @@ const monitorItems = [
 
 const planItems = [
   { title: "Campanhas", url: "/campaigns", icon: Megaphone },
+  { title: "Templates", url: "/templates", icon: FileText },
 ];
 
 const executeItems = [

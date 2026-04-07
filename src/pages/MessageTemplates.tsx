@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { toast } from "sonner";
 import {
   Plus,
   FileText,
@@ -46,11 +47,11 @@ import {
   Trash2,
   Eye,
   MessageSquare,
-  Send,
   Upload,
   Loader2,
 } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
+import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
 
 interface TemplateButton {
   type: string;

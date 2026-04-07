@@ -287,7 +287,9 @@ export default function MessageTemplates() {
   };
 
   // Count variables in body like {{1}}, {{2}}
-  const variableCount = (form.body.match(/\{\{\d+\}\}/g) || []).length;
+  const detectedVars = form.body.match(/\{\{(\d+)\}\}/g) || [];
+  const variableCount = detectedVars.length;
+  const uniqueVarNums = [...new Set(detectedVars.map(v => parseInt(v.replace(/[{}]/g, ''), 10)))].sort((a, b) => a - b);
 
   return (
     <AppLayout>

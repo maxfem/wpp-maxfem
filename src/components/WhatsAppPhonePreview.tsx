@@ -82,7 +82,7 @@ export function WhatsAppPhonePreview({
               {/* Body */}
               <div className="px-2.5 py-1.5">
                 <p className="text-[12px] text-gray-900 whitespace-pre-wrap leading-relaxed">
-                  {body || "Corpo da mensagem..."}
+                  {renderedBody || "Corpo da mensagem..."}
                 </p>
               </div>
               {/* Footer */}

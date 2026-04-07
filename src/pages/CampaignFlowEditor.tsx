@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   ReactFlow,
   addEdge,
@@ -15,6 +15,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { X, Save } from "lucide-react";
@@ -25,7 +27,7 @@ import FlowNodeComponent from "@/components/campaign-flow/FlowNodeComponent";
 import StartNode from "@/components/campaign-flow/StartNode";
 import { NodeConfigPanel } from "@/components/campaign-flow/NodeConfigPanel";
 
-const initialNodes: Node[] = [
+const defaultNodes: Node[] = [
   {
     id: "start",
     type: "startNode",
@@ -35,21 +37,47 @@ const initialNodes: Node[] = [
   },
 ];
 
-const initialEdges: Edge[] = [];
-
-let nodeId = 0;
+let nodeId = 1000;
 const getNodeId = () => `node_${++nodeId}`;
 
 function FlowEditorInner() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
+  const { currentTenant } = useAuth();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(defaultNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [campaignName, setCampaignName] = useState("Sem nome");
   const [isActive, setIsActive] = useState(false);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const isAutomation = location.pathname.startsWith("/automations");
+  const backPath = isAutomation ? "/automations" : "/campaigns";
+
+  // Load campaign data from DB
+  useEffect(() => {
+    if (!id || id === "new" || loaded) return;
+    (async () => {
+      const { data } = await supabase
+        .from("campaigns")
+        .select("name, status, flow_data")
+        .eq("id", id)
+        .single();
+      if (data) {
+        setCampaignName(data.name);
+        setIsActive(data.status === "running");
+        if (data.flow_data && typeof data.flow_data === "object") {
+          const fd = data.flow_data as any;
+          if (fd.nodes?.length) setNodes(fd.nodes);
+          if (fd.edges?.length) setEdges(fd.edges);
+        }
+        setLoaded(true);
+      }
+    })();
+  }, [id, loaded, setNodes, setEdges]);
 
   const nodeTypes = useMemo(
     () => ({
@@ -111,21 +139,46 @@ function FlowEditorInner() {
     setSelectedNode((prev) => (prev && prev.id === nodeId ? { ...prev, data: newData } : prev));
   }, [setNodes]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const flowData = { nodes, edges };
+    if (id && id !== "new") {
+      const { error } = await supabase
+        .from("campaigns")
+        .update({
+          name: campaignName,
+          status: isActive ? "running" : "draft",
+          flow_data: flowData as any,
+        })
+        .eq("id", id);
+      if (error) {
+        toast.error("Erro ao salvar: " + error.message);
+        return;
+      }
+    } else if (currentTenant) {
+      const { error } = await supabase.from("campaigns").insert({
+        tenant_id: currentTenant.id,
+        name: campaignName,
+        type: "custom",
+        status: isActive ? "running" : "draft",
+        flow_data: flowData as any,
+      });
+      if (error) {
+        toast.error("Erro ao salvar: " + error.message);
+        return;
+      }
+    }
     toast.success("Campanha salva!");
   };
 
-  // Keep selectedNode in sync with nodes state
   const currentSelectedNode = selectedNode
     ? nodes.find((n) => n.id === selectedNode.id) || null
     : null;
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Topbar */}
       <div className="h-12 border-b border-border flex items-center justify-between px-4 bg-background z-10">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/campaigns")} className="h-8 w-8">
+          <Button variant="ghost" size="icon" onClick={() => navigate(backPath)} className="h-8 w-8">
             <X className="h-4 w-4" />
           </Button>
           <span className="text-sm font-semibold text-foreground">{campaignName}</span>
@@ -139,13 +192,12 @@ function FlowEditorInner() {
             <Save className="h-3.5 w-3.5 mr-1.5" />
             Salvar
           </Button>
-          <Button size="sm" onClick={() => { handleSave(); navigate("/campaigns"); }}>
+          <Button size="sm" onClick={async () => { await handleSave(); navigate(backPath); }}>
             Salvar e fechar
           </Button>
         </div>
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         <FlowSidebar campaignName={campaignName} onNameChange={setCampaignName} />
 

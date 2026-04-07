@@ -140,6 +140,7 @@ export default function MessageTemplates() {
         body: values.body,
         footer: values.footer || null,
         buttons: values.buttons as unknown as Json,
+        sample_values: sampleValues as unknown as Json,
       };
 
       if (editingId) {

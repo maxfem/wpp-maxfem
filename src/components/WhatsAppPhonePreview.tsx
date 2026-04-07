@@ -12,6 +12,7 @@ interface WhatsAppPhonePreviewProps {
   body: string;
   footer: string;
   buttons: PreviewButton[];
+  sampleValues?: string[];
 }
 
 export function WhatsAppPhonePreview({

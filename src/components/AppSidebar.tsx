@@ -2,6 +2,7 @@ import {
   BarChart3,
   Users,
   Megaphone,
+  FileText,
   Activity,
   MessageSquare,
   Settings,
@@ -39,6 +40,7 @@ const monitorItems = [
 
 const planItems = [
   { title: "Campanhas", url: "/campaigns", icon: Megaphone },
+  { title: "Templates", url: "/templates", icon: FileText },
 ];
 
 const executeItems = [

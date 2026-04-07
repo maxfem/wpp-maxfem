@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,28 +9,25 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Megaphone } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  draft: { label: "Rascunho", variant: "secondary" },
-  published: { label: "Publicada", variant: "outline" },
-  running: { label: "Em execução", variant: "default" },
-  finished: { label: "Encerrada", variant: "destructive" },
+const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
+  draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
+  sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
+  scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
+  running: { label: "Em execução", icon: Zap, className: "bg-blue-100 text-blue-700" },
+  finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
 
 const campaignTypes = [
@@ -41,9 +39,13 @@ const campaignTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
+// Mock metrics for demonstration
+const mockMetrics: Record<string, { envios: number; clique: number; conversao?: number; alert?: string }> = {};
+
 export default function Campaigns() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
@@ -83,6 +85,18 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const deleteCampaign = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("campaigns").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      toast.success("Campanha excluída");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const filtered = campaigns.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -93,76 +107,39 @@ export default function Campaigns() {
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Campanhas</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {campaigns.length} campanhas
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{campaigns.length} campanhas</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Nova Campanha
+                Criar
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Criar Campanha</DialogTitle>
-              </DialogHeader>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  createCampaign.mutate();
-                }}
-                className="space-y-4"
-              >
-                <div className="space-y-2">
-                  <Label>Nome da Campanha *</Label>
-                  <Input
-                    value={newCampaign.name}
-                    onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
-                    placeholder="Ex: Recuperação de Carrinho"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tipo</Label>
-                  <Select
-                    value={newCampaign.type}
-                    onValueChange={(v) => setNewCampaign({ ...newCampaign, type: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {campaignTypes.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="w-full" disabled={createCampaign.isPending}>
-                  {createCampaign.isPending ? "Criando..." : "Criar Campanha"}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setDialogOpen(true)}>
+                <Megaphone className="h-4 w-4 mr-2" />
+                Modo padrão
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/campaigns/flow/new")}>
+                <Zap className="h-4 w-4 mr-2" />
+                Modo avançado
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
+        {/* Search */}
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar campanhas..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+          <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
+        {/* Grid */}
         {isLoading ? (
           <p className="text-muted-foreground text-center py-8">Carregando...</p>
         ) : filtered.length === 0 ? (
@@ -170,45 +147,65 @@ export default function Campaigns() {
             <CardContent className="p-12 text-center">
               <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-lg font-medium text-foreground mb-1">Nenhuma campanha</p>
-              <p className="text-sm text-muted-foreground">
-                Crie sua primeira campanha de retenção para engajar seus clientes.
-              </p>
+              <p className="text-sm text-muted-foreground">Crie sua primeira campanha para engajar seus clientes.</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
-              const status = statusConfig[c.status] || statusConfig.draft;
+              const st = statusConfig[c.status] || statusConfig.draft;
+              const StIcon = st.icon;
               const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
+              const metrics = mockMetrics[c.id];
+
               return (
-                <Card
-                  key={c.id}
-                  className="border border-border hover:border-primary/30 transition-colors cursor-pointer"
-                >
+                <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
                   <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant={status.variant}>{status.label}</Badge>
-                      <span className="text-xs text-muted-foreground">{formatDate(c.created_at)}</span>
+                    <div className="flex items-start justify-between">
+                      <CardTitle className="text-sm font-semibold leading-tight pr-6">{c.name}</CardTitle>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                          <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
+                            <Trash2 className="h-4 w-4 mr-2" />Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <CardTitle className="text-base mt-2">{c.name}</CardTitle>
                     <CardDescription className="text-xs">{typeLabel}</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex gap-4 text-xs text-muted-foreground">
-                      {c.start_date && <span>Início: {formatDate(c.start_date)}</span>}
-                      {c.end_date && <span>Fim: {formatDate(c.end_date)}</span>}
-                    </div>
-                    <div className="flex gap-2 mt-3">
-                      {c.has_bonus && (
-                        <Badge variant="outline" className="text-xs">
-                          Bônus
-                        </Badge>
-                      )}
-                      {c.has_survey && (
-                        <Badge variant="outline" className="text-xs">
-                          Pesquisa
-                        </Badge>
-                      )}
+                  <CardContent className="space-y-3">
+                    {/* Metrics */}
+                    {metrics && (
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{metrics.envios.toLocaleString("pt-BR")} envios</span>
+                        <span className="text-border">|</span>
+                        <span>{metrics.clique}% clique</span>
+                        {metrics.conversao && (
+                          <>
+                            <span className="text-border">|</span>
+                            <span className="text-green-600 font-medium">
+                              R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(2)}k` : metrics.conversao.toFixed(2)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between pt-1 border-t border-border">
+                      <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                        <StIcon className="h-3 w-3" />
+                        {st.label}
+                      </Badge>
+                      <Switch className="scale-75" />
                     </div>
                   </CardContent>
                 </Card>
@@ -217,6 +214,43 @@ export default function Campaigns() {
           </div>
         )}
       </div>
+
+      {/* Modal modo padrão */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Criar Campanha</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => { e.preventDefault(); createCampaign.mutate(); }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label>Nome da Campanha *</Label>
+              <Input
+                value={newCampaign.name}
+                onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
+                placeholder="Ex: Recuperação de Carrinho"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={newCampaign.type} onValueChange={(v) => setNewCampaign({ ...newCampaign, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {campaignTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" className="w-full" disabled={createCampaign.isPending}>
+              {createCampaign.isPending ? "Criando..." : "Criar Campanha"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

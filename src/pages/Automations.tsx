@@ -64,6 +64,10 @@ export default function Automations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
+  const [datePreset, setDatePreset] = useState(-1);
+  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
+  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["automations", currentTenant?.id],

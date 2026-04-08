@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle } from "lucide-react";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList } from "lucide-react";
 import { toast } from "sonner";
+import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
@@ -48,6 +49,7 @@ export default function Automations() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
 
   const { data: campaigns = [], isLoading } = useQuery({
@@ -128,6 +130,10 @@ export default function Automations() {
               <DropdownMenuItem onClick={() => navigate("/automations/flow/new")}>
                 <Zap className="h-4 w-4 mr-2" />
                 Modo avançado
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTemplatesOpen(true)}>
+                <LayoutList className="h-4 w-4 mr-2" />
+                Réguas prontas
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -251,6 +257,8 @@ export default function Automations() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AutomationTemplatesList open={templatesOpen} onClose={() => setTemplatesOpen(false)} />
     </AppLayout>
   );
 }

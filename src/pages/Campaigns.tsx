@@ -59,7 +59,8 @@ const datePresets = [
   { label: "Todos", days: -1 },
 ];
 
-type CampaignMetrics = { envios: number; cliques: number; conversao: number };
+type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
+type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 export default function Campaigns() {
   const { currentTenant } = useAuth();
@@ -89,26 +90,44 @@ export default function Campaigns() {
     enabled: !!currentTenant,
   });
 
-  const { data: metricsMap = {} } = useQuery<Record<string, CampaignMetrics>>({
-    queryKey: ["campaign-metrics", currentTenant?.id],
+  const { data: rawActivities = [] } = useQuery<CampaignActivity[]>({
+    queryKey: ["campaign-activities-raw", currentTenant?.id],
     queryFn: async () => {
-      if (!currentTenant) return {};
+      if (!currentTenant) return [];
       const { data } = await supabase
         .from("campaign_activities")
-        .select("campaign_id, status, clicked_at, conversion_value")
+        .select("campaign_id, status, clicked_at, conversion_value, created_at")
         .eq("tenant_id", currentTenant.id);
-      if (!data) return {};
-      const map: Record<string, CampaignMetrics> = {};
-      data.forEach((a) => {
-        if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0 };
-        map[a.campaign_id].envios++;
-        if (a.clicked_at) map[a.campaign_id].cliques++;
-        map[a.campaign_id].conversao += Number(a.conversion_value || 0);
-      });
-      return map;
+      return (data as CampaignActivity[]) || [];
     },
     enabled: !!currentTenant,
   });
+
+  const metricsMap = useMemo(() => {
+    let acts = rawActivities;
+    if (datePreset >= 0) {
+      const from = startOfDay(subDays(new Date(), datePreset));
+      const to = endOfDay(new Date());
+      acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
+    } else if (customDateFrom || customDateTo) {
+      acts = acts.filter((a) => {
+        const d = new Date(a.created_at);
+        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
+        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        return true;
+      });
+    }
+    const map: Record<string, CampaignMetrics> = {};
+    acts.forEach((a) => {
+      if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
+      map[a.campaign_id].envios++;
+      if (a.clicked_at) map[a.campaign_id].cliques++;
+      const cv = Number(a.conversion_value || 0);
+      map[a.campaign_id].conversao += cv;
+      if (cv > 0) map[a.campaign_id].conversoes++;
+    });
+    return map;
+  }, [rawActivities, datePreset, customDateFrom, customDateTo]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {
@@ -346,21 +365,15 @@ export default function Campaigns() {
                     <CardDescription className="text-xs">{typeLabel} · {formatDate(c.created_at)}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {metrics && metrics.envios > 0 && (
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{metrics.envios.toLocaleString("pt-BR")} envios</span>
-                        <span className="text-border">|</span>
-                        <span>{((metrics.cliques / metrics.envios) * 100).toFixed(1)}% clique</span>
-                        {metrics.conversao > 0 && (
-                          <>
-                            <span className="text-border">|</span>
-                            <span className="text-green-600 font-medium">
-                              R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{(metrics?.envios || 0).toLocaleString("pt-BR")} envios</span>
+                      <span className="text-border">|</span>
+                      <span>{metrics && metrics.envios > 0 ? ((metrics.conversoes / metrics.envios) * 100).toFixed(1) : "0.0"}% conversão</span>
+                      <span className="text-border">|</span>
+                      <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>
+                        R$ {(metrics?.conversao || 0) >= 1000 ? `${((metrics?.conversao || 0) / 1000).toFixed(1)}k` : (metrics?.conversao || 0).toFixed(2)}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between pt-1 border-t border-border">
                       <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
                         <StIcon className="h-3 w-3" />
@@ -383,8 +396,8 @@ export default function Campaigns() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Envios</TableHead>
-                  <TableHead className="text-right">Cliques</TableHead>
-                  <TableHead className="text-right">Conversão</TableHead>
+                   <TableHead className="text-right">% Conversão</TableHead>
+                   <TableHead className="text-right">Faturado</TableHead>
                   <TableHead>Criado em</TableHead>
                   <TableHead className="text-right">Ativo</TableHead>
                   <TableHead className="w-10" />
@@ -410,12 +423,12 @@ export default function Campaigns() {
                       <TableCell className="text-right text-xs">{metrics?.envios?.toLocaleString("pt-BR") || "—"}</TableCell>
                       <TableCell className="text-right text-xs">
                         {metrics && metrics.envios > 0
-                          ? `${((metrics.cliques / metrics.envios) * 100).toFixed(1)}%`
+                          ? `${((metrics.conversoes / metrics.envios) * 100).toFixed(1)}%`
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right text-xs">
                         {metrics && metrics.conversao > 0
-                          ? <span className="text-green-600 font-medium">R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
+                          ? <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
                           : "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>

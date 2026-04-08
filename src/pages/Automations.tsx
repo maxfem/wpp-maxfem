@@ -204,10 +204,61 @@ export default function Automations() {
           </DropdownMenu>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar automações..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+
+          <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
+            {datePresets.map((p) => (
+              <Button
+                key={p.days}
+                variant={datePreset === p.days && !customDateFrom ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2"
+                onClick={() => {
+                  setDatePreset(p.days);
+                  setCustomDateFrom(undefined);
+                  setCustomDateTo(undefined);
+                }}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className={cn("h-8 text-xs gap-1", customDateFrom && "border-primary")}>
+                <CalendarIcon className="h-3.5 w-3.5" />
+                {customDateFrom ? dateLabel : "Personalizado"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <div className="flex gap-2 p-3">
+                <div>
+                  <p className="text-xs font-medium mb-1 text-muted-foreground">De</p>
+                  <Calendar
+                    mode="single"
+                    selected={customDateFrom}
+                    onSelect={(d) => { setCustomDateFrom(d); setDatePreset(-1); }}
+                    className={cn("p-2 pointer-events-auto")}
+                  />
+                </div>
+                <div>
+                  <p className="text-xs font-medium mb-1 text-muted-foreground">Até</p>
+                  <Calendar
+                    mode="single"
+                    selected={customDateTo}
+                    onSelect={(d) => { setCustomDateTo(d); setDatePreset(-1); setCalendarOpen(false); }}
+                    className={cn("p-2 pointer-events-auto")}
+                  />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Grid */}

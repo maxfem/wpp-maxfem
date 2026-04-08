@@ -423,12 +423,12 @@ export default function Campaigns() {
                       <TableCell className="text-right text-xs">{metrics?.envios?.toLocaleString("pt-BR") || "—"}</TableCell>
                       <TableCell className="text-right text-xs">
                         {metrics && metrics.envios > 0
-                          ? `${((metrics.cliques / metrics.envios) * 100).toFixed(1)}%`
+                          ? `${((metrics.conversoes / metrics.envios) * 100).toFixed(1)}%`
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right text-xs">
                         {metrics && metrics.conversao > 0
-                          ? <span className="text-green-600 font-medium">R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
+                          ? <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
                           : "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>

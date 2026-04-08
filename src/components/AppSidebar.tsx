@@ -11,6 +11,7 @@ import {
   LogOut,
   Layers,
   Zap,
+  List,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -52,6 +53,7 @@ const executeItems = [
 
 const manageItems = [
   { title: "Clientes", url: "/customers", icon: Users },
+  { title: "Listas", url: "/lists", icon: List },
 ];
 
 export function AppSidebar() {

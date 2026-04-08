@@ -59,7 +59,8 @@ const datePresets = [
   { label: "Todos", days: -1 },
 ];
 
-type CampaignMetrics = { envios: number; cliques: number; conversao: number };
+type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
+type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 export default function Campaigns() {
   const { currentTenant } = useAuth();

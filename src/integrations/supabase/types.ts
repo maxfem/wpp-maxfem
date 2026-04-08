@@ -18,6 +18,9 @@ export type Database = {
         Row: {
           campaign_id: string
           channel: string | null
+          clicked_at: string | null
+          conversion_value: number | null
+          converted_at: string | null
           created_at: string
           customer_id: string
           delivered_at: string | null
@@ -31,6 +34,9 @@ export type Database = {
         Insert: {
           campaign_id: string
           channel?: string | null
+          clicked_at?: string | null
+          conversion_value?: number | null
+          converted_at?: string | null
           created_at?: string
           customer_id: string
           delivered_at?: string | null
@@ -44,6 +50,9 @@ export type Database = {
         Update: {
           campaign_id?: string
           channel?: string | null
+          clicked_at?: string | null
+          conversion_value?: number | null
+          converted_at?: string | null
           created_at?: string
           customer_id?: string
           delivered_at?: string | null
@@ -324,6 +333,41 @@ export type Database = {
           },
         ]
       }
+      link_clicks: {
+        Row: {
+          clicked_at: string
+          id: string
+          ip: string | null
+          link_id: string
+          referer: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          clicked_at?: string
+          id?: string
+          ip?: string | null
+          link_id: string
+          referer?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          clicked_at?: string
+          id?: string
+          ip?: string | null
+          link_id?: string
+          referer?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_clicks_link_id_fkey"
+            columns: ["link_id"]
+            isOneToOne: false
+            referencedRelation: "tracked_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           body: string
@@ -528,6 +572,63 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      tracked_links: {
+        Row: {
+          campaign_id: string | null
+          code: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          original_url: string
+          tenant_id: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          code: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          original_url: string
+          tenant_id: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Update: {
+          campaign_id?: string | null
+          code?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          original_url?: string
+          tenant_id?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tracked_links_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tracked_links_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

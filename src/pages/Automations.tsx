@@ -54,7 +54,8 @@ const campaignTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-type CampaignMetrics = { envios: number; cliques: number; conversao: number };
+type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
+type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 export default function Automations() {
   const { currentTenant } = useAuth();

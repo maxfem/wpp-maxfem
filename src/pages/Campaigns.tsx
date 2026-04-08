@@ -90,26 +90,44 @@ export default function Campaigns() {
     enabled: !!currentTenant,
   });
 
-  const { data: metricsMap = {} } = useQuery<Record<string, CampaignMetrics>>({
-    queryKey: ["campaign-metrics", currentTenant?.id],
+  const { data: rawActivities = [] } = useQuery<CampaignActivity[]>({
+    queryKey: ["campaign-activities-raw", currentTenant?.id],
     queryFn: async () => {
-      if (!currentTenant) return {};
+      if (!currentTenant) return [];
       const { data } = await supabase
         .from("campaign_activities")
-        .select("campaign_id, status, clicked_at, conversion_value")
+        .select("campaign_id, status, clicked_at, conversion_value, created_at")
         .eq("tenant_id", currentTenant.id);
-      if (!data) return {};
-      const map: Record<string, CampaignMetrics> = {};
-      data.forEach((a) => {
-        if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0 };
-        map[a.campaign_id].envios++;
-        if (a.clicked_at) map[a.campaign_id].cliques++;
-        map[a.campaign_id].conversao += Number(a.conversion_value || 0);
-      });
-      return map;
+      return (data as CampaignActivity[]) || [];
     },
     enabled: !!currentTenant,
   });
+
+  const metricsMap = useMemo(() => {
+    let acts = rawActivities;
+    if (datePreset >= 0) {
+      const from = startOfDay(subDays(new Date(), datePreset));
+      const to = endOfDay(new Date());
+      acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
+    } else if (customDateFrom || customDateTo) {
+      acts = acts.filter((a) => {
+        const d = new Date(a.created_at);
+        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
+        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        return true;
+      });
+    }
+    const map: Record<string, CampaignMetrics> = {};
+    acts.forEach((a) => {
+      if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
+      map[a.campaign_id].envios++;
+      if (a.clicked_at) map[a.campaign_id].cliques++;
+      const cv = Number(a.conversion_value || 0);
+      map[a.campaign_id].conversao += cv;
+      if (cv > 0) map[a.campaign_id].conversoes++;
+    });
+    return map;
+  }, [rawActivities, datePreset, customDateFrom, customDateTo]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {

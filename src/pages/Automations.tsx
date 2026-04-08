@@ -49,6 +49,7 @@ export default function Automations() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
 
   const { data: campaigns = [], isLoading } = useQuery({

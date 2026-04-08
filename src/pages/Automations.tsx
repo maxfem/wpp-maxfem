@@ -131,6 +131,10 @@ export default function Automations() {
                 <Zap className="h-4 w-4 mr-2" />
                 Modo avançado
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTemplatesOpen(true)}>
+                <LayoutList className="h-4 w-4 mr-2" />
+                Réguas prontas
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

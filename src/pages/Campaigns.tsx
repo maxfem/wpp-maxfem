@@ -396,8 +396,8 @@ export default function Campaigns() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Envios</TableHead>
-                  <TableHead className="text-right">Cliques</TableHead>
-                  <TableHead className="text-right">Conversão</TableHead>
+                   <TableHead className="text-right">% Conversão</TableHead>
+                   <TableHead className="text-right">Faturado</TableHead>
                   <TableHead>Criado em</TableHead>
                   <TableHead className="text-right">Ativo</TableHead>
                   <TableHead className="w-10" />

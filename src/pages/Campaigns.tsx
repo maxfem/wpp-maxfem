@@ -182,6 +182,15 @@ export default function Campaigns() {
     return "Todos";
   }, [datePreset, customDateFrom, customDateTo]);
 
+  const periodSummary = useMemo(() => {
+    let envios = 0, cliques = 0, conversao = 0;
+    filtered.forEach((c) => {
+      const m = metricsMap[c.id];
+      if (m) { envios += m.envios; cliques += m.cliques; conversao += m.conversao; }
+    });
+    return { envios, cliques, conversao, taxaClique: envios > 0 ? (cliques / envios) * 100 : 0 };
+  }, [filtered, metricsMap]);
+
   const renderCampaignActions = (c: typeof campaigns[0]) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

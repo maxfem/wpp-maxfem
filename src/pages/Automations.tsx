@@ -40,8 +40,7 @@ const campaignTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-// Mock metrics for demonstration
-const mockMetrics: Record<string, { envios: number; clique: number; conversao?: number; alert?: string }> = {};
+type CampaignMetrics = { envios: number; cliques: number; conversao: number };
 
 export default function Automations() {
   const { currentTenant } = useAuth();
@@ -63,6 +62,27 @@ export default function Automations() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const { data: metricsMap = {} } = useQuery<Record<string, CampaignMetrics>>({
+    queryKey: ["automation-metrics", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return {};
+      const { data } = await supabase
+        .from("campaign_activities")
+        .select("campaign_id, status, clicked_at, conversion_value")
+        .eq("tenant_id", currentTenant.id);
+      if (!data) return {};
+      const map: Record<string, CampaignMetrics> = {};
+      data.forEach((a) => {
+        if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0 };
+        map[a.campaign_id].envios++;
+        if (a.clicked_at) map[a.campaign_id].cliques++;
+        map[a.campaign_id].conversao += Number(a.conversion_value || 0);
+      });
+      return map;
     },
     enabled: !!currentTenant,
   });
@@ -162,7 +182,7 @@ export default function Automations() {
               const st = statusConfig[c.status] || statusConfig.draft;
               const StIcon = st.icon;
               const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
-              const metrics = mockMetrics[c.id];
+              const metrics = metricsMap[c.id];
 
               return (
                 <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
@@ -189,12 +209,12 @@ export default function Automations() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {/* Metrics */}
-                    {metrics && (
+                    {metrics && metrics.envios > 0 && (
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{metrics.envios.toLocaleString("pt-BR")} envios</span>
                         <span className="text-border">|</span>
-                        <span>{metrics.clique}% clique</span>
-                        {metrics.conversao && (
+                        <span>{metrics.envios > 0 ? ((metrics.cliques / metrics.envios) * 100).toFixed(1) : 0}% clique</span>
+                        {metrics.conversao > 0 && (
                           <>
                             <span className="text-border">|</span>
                             <span className="text-green-600 font-medium">

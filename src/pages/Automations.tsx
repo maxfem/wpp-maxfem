@@ -257,6 +257,8 @@ export default function Automations() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AutomationTemplatesList open={templatesOpen} onClose={() => setTemplatesOpen(false)} />
     </AppLayout>
   );
 }

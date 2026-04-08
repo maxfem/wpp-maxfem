@@ -44,6 +44,7 @@ export default function Lists() {
   const [createOpen, setCreateOpen] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [csvListName, setCsvListName] = useState("");
   const [selectedList, setSelectedList] = useState<ContactList | null>(null);
   const [newList, setNewList] = useState({ name: "", description: "", type: "manual" });
   const [customerSearch, setCustomerSearch] = useState("");
@@ -188,10 +189,10 @@ export default function Lists() {
       return;
     }
 
-    const listName = file.name.replace(/\.csv$/i, "");
+    const listName = csvListName.trim() || file.name.replace(/\.csv$/i, "");
     const { data: newListData, error: listError } = await supabase
       .from("contact_lists")
-      .insert({ tenant_id: currentTenant.id, name: `Importação: ${listName}`, type: "csv_import" })
+      .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
       .select("id")
       .single();
     if (listError) { toast.error(listError.message); return; }
@@ -229,6 +230,7 @@ export default function Lists() {
     queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
     queryClient.invalidateQueries({ queryKey: ["customers"] });
     setCsvOpen(false);
+    setCsvListName("");
     toast.success(`${count} contatos importados!`);
   };
 
@@ -546,6 +548,14 @@ export default function Lists() {
               <DialogTitle>Importar CSV</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Nome da lista *</Label>
+                <Input
+                  value={csvListName}
+                  onChange={(e) => setCsvListName(e.target.value)}
+                  placeholder="Ex: Leads Black Friday"
+                />
+              </div>
               <p className="text-sm text-muted-foreground">
                 O arquivo deve conter as colunas: <strong>nome</strong> (obrigatório), email, telefone.
               </p>

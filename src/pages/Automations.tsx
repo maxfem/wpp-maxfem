@@ -36,6 +36,15 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; cla
   finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
 
+const datePresets = [
+  { label: "Hoje", days: 0 },
+  { label: "7 dias", days: 7 },
+  { label: "14 dias", days: 14 },
+  { label: "30 dias", days: 30 },
+  { label: "90 dias", days: 90 },
+  { label: "Todos", days: -1 },
+];
+
 const campaignTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
   { value: "birthday", label: "Aniversariante do Dia" },

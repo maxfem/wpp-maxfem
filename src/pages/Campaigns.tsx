@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,21 +17,10 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2,
-  Check, Clock, FileText, LayoutGrid, List, CalendarIcon,
-} from "lucide-react";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
@@ -50,15 +39,6 @@ const campaignTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-const datePresets = [
-  { label: "Hoje", days: 0 },
-  { label: "7 dias", days: 7 },
-  { label: "14 dias", days: 14 },
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
-  { label: "Todos", days: -1 },
-];
-
 type CampaignMetrics = { envios: number; cliques: number; conversao: number };
 
 export default function Campaigns() {
@@ -68,11 +48,6 @@ export default function Campaigns() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [datePreset, setDatePreset] = useState(-1);
-  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
-  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
-  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns", currentTenant?.id],
@@ -142,63 +117,12 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = useMemo(() => {
-    let list = campaigns.filter((c) =>
-      c.name.toLowerCase().includes(search.toLowerCase())
-    );
-
-    // Date filter
-    if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
-      list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        return isWithinInterval(d, { start: from, end: to });
-      });
-    } else if (customDateFrom || customDateTo) {
-      list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
-        return true;
-      });
-    }
-
-    return list;
-  }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
+  const filtered = campaigns.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   const formatDate = (d: string | null) =>
     d ? new Date(d).toLocaleDateString("pt-BR") : "—";
-
-  const dateLabel = useMemo(() => {
-    if (datePreset >= 0) {
-      return datePresets.find((p) => p.days === datePreset)?.label || "";
-    }
-    if (customDateFrom && customDateTo) {
-      return `${format(customDateFrom, "dd/MM", { locale: ptBR })} - ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
-    }
-    if (customDateFrom) return `A partir de ${format(customDateFrom, "dd/MM", { locale: ptBR })}`;
-    if (customDateTo) return `Até ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
-    return "Todos";
-  }, [datePreset, customDateFrom, customDateTo]);
-
-  const renderCampaignActions = (c: typeof campaigns[0]) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-          <MoreVertical className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-        <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
-        <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
-          <Trash2 className="h-4 w-4 mr-2" />Excluir
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 
   return (
     <AppLayout>
@@ -207,7 +131,7 @@ export default function Campaigns() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Campanhas</h1>
-            <p className="text-sm text-muted-foreground mt-1">{filtered.length} de {campaigns.length} campanhas</p>
+            <p className="text-sm text-muted-foreground mt-1">{campaigns.length} campanhas</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -229,93 +153,13 @@ export default function Campaigns() {
           </DropdownMenu>
         </div>
 
-        {/* Filters bar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-
-          {/* Date presets */}
-          <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
-            {datePresets.map((p) => (
-              <Button
-                key={p.days}
-                variant={datePreset === p.days && !customDateFrom && !customDateTo ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs px-2.5"
-                onClick={() => {
-                  setDatePreset(p.days);
-                  setCustomDateFrom(undefined);
-                  setCustomDateTo(undefined);
-                }}
-              >
-                {p.label}
-              </Button>
-            ))}
-
-            {/* Custom date picker */}
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={(customDateFrom || customDateTo) ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 text-xs px-2.5"
-                >
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {customDateFrom || customDateTo ? dateLabel : "Período"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="p-3 space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground">De</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateFrom}
-                    onSelect={(d) => {
-                      setCustomDateFrom(d);
-                      setDatePreset(-1);
-                    }}
-                    className={cn("p-0 pointer-events-auto")}
-                  />
-                  <p className="text-xs font-medium text-muted-foreground">Até</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateTo}
-                    onSelect={(d) => {
-                      setCustomDateTo(d);
-                      setDatePreset(-1);
-                      if (customDateFrom) setCalendarOpen(false);
-                    }}
-                    className={cn("p-0 pointer-events-auto")}
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* View toggle */}
-          <div className="flex items-center border border-border rounded-md p-0.5">
-            <Button
-              variant={viewMode === "grid" ? "default" : "ghost"}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode("grid")}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode("list")}
-            >
-              <List className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+        {/* Search */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
-        {/* Content */}
+        {/* Grid */}
         {isLoading ? (
           <p className="text-muted-foreground text-center py-8">Carregando...</p>
         ) : filtered.length === 0 ? (
@@ -326,7 +170,7 @@ export default function Campaigns() {
               <p className="text-sm text-muted-foreground">Crie sua primeira campanha para engajar seus clientes.</p>
             </CardContent>
           </Card>
-        ) : viewMode === "grid" ? (
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
               const st = statusConfig[c.status] || statusConfig.draft;
@@ -339,28 +183,43 @@ export default function Campaigns() {
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <CardTitle className="text-sm font-semibold leading-tight pr-6">{c.name}</CardTitle>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        {renderCampaignActions(c)}
-                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                          <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
+                            <Trash2 className="h-4 w-4 mr-2" />Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <CardDescription className="text-xs">{typeLabel} · {formatDate(c.created_at)}</CardDescription>
+                    <CardDescription className="text-xs">{typeLabel}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {/* Metrics */}
                     {metrics && metrics.envios > 0 && (
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span>{metrics.envios.toLocaleString("pt-BR")} envios</span>
                         <span className="text-border">|</span>
-                        <span>{((metrics.cliques / metrics.envios) * 100).toFixed(1)}% clique</span>
+                        <span>{metrics.envios > 0 ? ((metrics.cliques / metrics.envios) * 100).toFixed(1) : 0}% clique</span>
                         {metrics.conversao > 0 && (
                           <>
                             <span className="text-border">|</span>
                             <span className="text-green-600 font-medium">
-                              R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}
+                              R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(2)}k` : metrics.conversao.toFixed(2)}
                             </span>
                           </>
                         )}
                       </div>
                     )}
+
+                    {/* Footer */}
                     <div className="flex items-center justify-between pt-1 border-t border-border">
                       <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
                         <StIcon className="h-3 w-3" />
@@ -373,60 +232,6 @@ export default function Campaigns() {
               );
             })}
           </div>
-        ) : (
-          /* List view */
-          <Card className="border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Envios</TableHead>
-                  <TableHead className="text-right">Cliques</TableHead>
-                  <TableHead className="text-right">Conversão</TableHead>
-                  <TableHead>Criado em</TableHead>
-                  <TableHead className="text-right">Ativo</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((c) => {
-                  const st = statusConfig[c.status] || statusConfig.draft;
-                  const StIcon = st.icon;
-                  const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
-                  const metrics = metricsMap[c.id];
-
-                  return (
-                    <TableRow key={c.id} className="group">
-                      <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{typeLabel}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
-                          <StIcon className="h-3 w-3" />
-                          {st.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-xs">{metrics?.envios?.toLocaleString("pt-BR") || "—"}</TableCell>
-                      <TableCell className="text-right text-xs">
-                        {metrics && metrics.envios > 0
-                          ? `${((metrics.cliques / metrics.envios) * 100).toFixed(1)}%`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right text-xs">
-                        {metrics && metrics.conversao > 0
-                          ? <span className="text-green-600 font-medium">R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>
-                      <TableCell className="text-right"><Switch className="scale-75" /></TableCell>
-                      <TableCell>{renderCampaignActions(c)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
         )}
       </div>
 
@@ -445,7 +250,7 @@ export default function Campaigns() {
               <Input
                 value={newCampaign.name}
                 onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
-                placeholder="Ex: Promoção Black Friday"
+                placeholder="Ex: Recuperação de Carrinho"
                 required
               />
             </div>

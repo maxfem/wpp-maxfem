@@ -365,21 +365,15 @@ export default function Campaigns() {
                     <CardDescription className="text-xs">{typeLabel} · {formatDate(c.created_at)}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {metrics && metrics.envios > 0 && (
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{metrics.envios.toLocaleString("pt-BR")} envios</span>
-                        <span className="text-border">|</span>
-                        <span>{((metrics.cliques / metrics.envios) * 100).toFixed(1)}% clique</span>
-                        {metrics.conversao > 0 && (
-                          <>
-                            <span className="text-border">|</span>
-                            <span className="text-green-600 font-medium">
-                              R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{(metrics?.envios || 0).toLocaleString("pt-BR")} envios</span>
+                      <span className="text-border">|</span>
+                      <span>{metrics && metrics.envios > 0 ? ((metrics.conversoes / metrics.envios) * 100).toFixed(1) : "0.0"}% conversão</span>
+                      <span className="text-border">|</span>
+                      <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>
+                        R$ {(metrics?.conversao || 0) >= 1000 ? `${((metrics?.conversao || 0) / 1000).toFixed(1)}k` : (metrics?.conversao || 0).toFixed(2)}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between pt-1 border-t border-border">
                       <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
                         <StIcon className="h-3 w-3" />

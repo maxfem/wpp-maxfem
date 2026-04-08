@@ -270,6 +270,34 @@ export default function Automations() {
           </Popover>
         </div>
 
+        {/* KPI Summary */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="border border-border">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">{periodSummary.envios.toLocaleString("pt-BR")}</p>
+              <p className="text-xs text-muted-foreground mt-1">Envios</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">{periodSummary.taxaClique.toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground mt-1">Taxa de Clique</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-foreground">{periodSummary.envios > 0 ? ((periodSummary.conversao > 0 ? (filtered.filter(c => (metricsMap[c.id]?.conversao || 0) > 0).length / filtered.length * 100) : 0)).toFixed(1) : "0.0"}%</p>
+              <p className="text-xs text-muted-foreground mt-1">Conversão</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border">
+            <CardContent className="p-4 text-center">
+              <p className="text-2xl font-bold text-green-600">R$ {periodSummary.conversao >= 1000 ? `${(periodSummary.conversao / 1000).toFixed(2)}k` : periodSummary.conversao.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-1">Faturado</p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Grid */}
         {isLoading ? (
           <p className="text-muted-foreground text-center py-8">Carregando...</p>

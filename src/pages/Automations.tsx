@@ -137,12 +137,39 @@ export default function Automations() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = campaigns.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    let list = campaigns.filter((c) =>
+      c.name.toLowerCase().includes(search.toLowerCase())
+    );
+    if (datePreset >= 0) {
+      const from = startOfDay(subDays(new Date(), datePreset));
+      const to = endOfDay(new Date());
+      list = list.filter((c) => {
+        const d = new Date(c.created_at);
+        return isWithinInterval(d, { start: from, end: to });
+      });
+    } else if (customDateFrom || customDateTo) {
+      list = list.filter((c) => {
+        const d = new Date(c.created_at);
+        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
+        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        return true;
+      });
+    }
+    return list;
+  }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
 
-  const formatDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+  const dateLabel = useMemo(() => {
+    if (datePreset >= 0) {
+      return datePresets.find((p) => p.days === datePreset)?.label || "";
+    }
+    if (customDateFrom && customDateTo) {
+      return `${format(customDateFrom, "dd/MM", { locale: ptBR })} - ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    }
+    if (customDateFrom) return `A partir de ${format(customDateFrom, "dd/MM", { locale: ptBR })}`;
+    if (customDateTo) return `Até ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    return "Todos";
+  }, [datePreset, customDateFrom, customDateTo]);
 
   return (
     <AppLayout>

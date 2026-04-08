@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,8 +19,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
+import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
@@ -30,6 +35,15 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; cla
   running: { label: "Em execução", icon: Zap, className: "bg-blue-100 text-blue-700" },
   finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
+
+const datePresets = [
+  { label: "Hoje", days: 0 },
+  { label: "7 dias", days: 7 },
+  { label: "14 dias", days: 14 },
+  { label: "30 dias", days: 30 },
+  { label: "90 dias", days: 90 },
+  { label: "Todos", days: -1 },
+];
 
 const campaignTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
@@ -50,6 +64,10 @@ export default function Automations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
+  const [datePreset, setDatePreset] = useState(-1);
+  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
+  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["automations", currentTenant?.id],
@@ -119,12 +137,39 @@ export default function Automations() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filtered = campaigns.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    let list = campaigns.filter((c) =>
+      c.name.toLowerCase().includes(search.toLowerCase())
+    );
+    if (datePreset >= 0) {
+      const from = startOfDay(subDays(new Date(), datePreset));
+      const to = endOfDay(new Date());
+      list = list.filter((c) => {
+        const d = new Date(c.created_at);
+        return isWithinInterval(d, { start: from, end: to });
+      });
+    } else if (customDateFrom || customDateTo) {
+      list = list.filter((c) => {
+        const d = new Date(c.created_at);
+        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
+        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        return true;
+      });
+    }
+    return list;
+  }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
 
-  const formatDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+  const dateLabel = useMemo(() => {
+    if (datePreset >= 0) {
+      return datePresets.find((p) => p.days === datePreset)?.label || "";
+    }
+    if (customDateFrom && customDateTo) {
+      return `${format(customDateFrom, "dd/MM", { locale: ptBR })} - ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    }
+    if (customDateFrom) return `A partir de ${format(customDateFrom, "dd/MM", { locale: ptBR })}`;
+    if (customDateTo) return `Até ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    return "Todos";
+  }, [datePreset, customDateFrom, customDateTo]);
 
   return (
     <AppLayout>
@@ -133,7 +178,7 @@ export default function Automations() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Automações</h1>
-            <p className="text-sm text-muted-foreground mt-1">{campaigns.length} automações</p>
+          <p className="text-sm text-muted-foreground mt-1">{filtered.length} de {campaigns.length} automações</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -159,10 +204,61 @@ export default function Automations() {
           </DropdownMenu>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar automações..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+
+          <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
+            {datePresets.map((p) => (
+              <Button
+                key={p.days}
+                variant={datePreset === p.days && !customDateFrom ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2"
+                onClick={() => {
+                  setDatePreset(p.days);
+                  setCustomDateFrom(undefined);
+                  setCustomDateTo(undefined);
+                }}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className={cn("h-8 text-xs gap-1", customDateFrom && "border-primary")}>
+                <CalendarIcon className="h-3.5 w-3.5" />
+                {customDateFrom ? dateLabel : "Personalizado"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <div className="flex gap-2 p-3">
+                <div>
+                  <p className="text-xs font-medium mb-1 text-muted-foreground">De</p>
+                  <Calendar
+                    mode="single"
+                    selected={customDateFrom}
+                    onSelect={(d) => { setCustomDateFrom(d); setDatePreset(-1); }}
+                    className={cn("p-2 pointer-events-auto")}
+                  />
+                </div>
+                <div>
+                  <p className="text-xs font-medium mb-1 text-muted-foreground">Até</p>
+                  <Calendar
+                    mode="single"
+                    selected={customDateTo}
+                    onSelect={(d) => { setCustomDateTo(d); setDatePreset(-1); setCalendarOpen(false); }}
+                    className={cn("p-2 pointer-events-auto")}
+                  />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Grid */}

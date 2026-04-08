@@ -171,15 +171,6 @@ export default function Automations() {
     return "Todos";
   }, [datePreset, customDateFrom, customDateTo]);
 
-  const periodSummary = useMemo(() => {
-    let envios = 0, cliques = 0, conversao = 0;
-    filtered.forEach((c) => {
-      const m = metricsMap[c.id];
-      if (m) { envios += m.envios; cliques += m.cliques; conversao += m.conversao; }
-    });
-    return { envios, cliques, conversao, taxaClique: envios > 0 ? (cliques / envios) * 100 : 0 };
-  }, [filtered, metricsMap]);
-
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
@@ -268,34 +259,6 @@ export default function Automations() {
               </div>
             </PopoverContent>
           </Popover>
-        </div>
-
-        {/* KPI Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border border-border">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{periodSummary.envios.toLocaleString("pt-BR")}</p>
-              <p className="text-xs text-muted-foreground mt-1">Envios</p>
-            </CardContent>
-          </Card>
-          <Card className="border border-border">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{periodSummary.taxaClique.toFixed(1)}%</p>
-              <p className="text-xs text-muted-foreground mt-1">Taxa de Clique</p>
-            </CardContent>
-          </Card>
-          <Card className="border border-border">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{periodSummary.envios > 0 ? ((periodSummary.conversao > 0 ? (filtered.filter(c => (metricsMap[c.id]?.conversao || 0) > 0).length / filtered.length * 100) : 0)).toFixed(1) : "0.0"}%</p>
-              <p className="text-xs text-muted-foreground mt-1">Conversão</p>
-            </CardContent>
-          </Card>
-          <Card className="border border-border">
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-green-600">R$ {periodSummary.conversao >= 1000 ? `${(periodSummary.conversao / 1000).toFixed(2)}k` : periodSummary.conversao.toFixed(2)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Faturado</p>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Grid */}

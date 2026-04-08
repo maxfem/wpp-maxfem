@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const iconMap: Record<string, React.ElementType> = {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
@@ -28,9 +31,28 @@ const groupLabels: Record<string, string> = {
 interface FlowSidebarProps {
   campaignName: string;
   onNameChange: (name: string) => void;
+  selectedListId?: string;
+  onListChange?: (listId: string) => void;
 }
 
-export function FlowSidebar({ campaignName, onNameChange }: FlowSidebarProps) {
+export function FlowSidebar({ campaignName, onNameChange, selectedListId, onListChange }: FlowSidebarProps) {
+  const { currentTenant } = useAuth();
+
+  const { data: lists = [] } = useQuery({
+    queryKey: ["contact_lists", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("contact_lists")
+        .select("id, name, customer_count")
+        .eq("tenant_id", currentTenant.id)
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
   const onDragStart = (event: React.DragEvent, nodeData: { type: string; label: string; icon: string; color: string }) => {
     event.dataTransfer.setData("application/reactflow", JSON.stringify(nodeData));
     event.dataTransfer.effectAllowed = "move";
@@ -51,12 +73,17 @@ export function FlowSidebar({ campaignName, onNameChange }: FlowSidebarProps) {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Lista</Label>
-          <Select>
+          <Select value={selectedListId || "all"} onValueChange={(v) => onListChange?.(v)}>
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Selecionar lista" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os contatos</SelectItem>
+              {lists.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name} ({l.customer_count || 0})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

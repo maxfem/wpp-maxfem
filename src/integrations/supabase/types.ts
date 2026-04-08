@@ -140,6 +140,78 @@ export type Database = {
           },
         ]
       }
+      contact_list_members: {
+        Row: {
+          added_at: string
+          customer_id: string
+          id: string
+          list_id: string
+        }
+        Insert: {
+          added_at?: string
+          customer_id: string
+          id?: string
+          list_id: string
+        }
+        Update: {
+          added_at?: string
+          customer_id?: string
+          id?: string
+          list_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_list_members_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_list_members_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "contact_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contact_lists: {
+        Row: {
+          created_at: string
+          customer_count: number | null
+          description: string | null
+          filter_rules: Json | null
+          id: string
+          name: string
+          tenant_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_count?: number | null
+          description?: string | null
+          filter_rules?: Json | null
+          id?: string
+          name: string
+          tenant_id: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_count?: number | null
+          description?: string | null
+          filter_rules?: Json | null
+          id?: string
+          name?: string
+          tenant_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customer_groups: {
         Row: {
           created_at: string

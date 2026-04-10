@@ -579,6 +579,7 @@ export default function MessageTemplates() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Preview Dialog */}

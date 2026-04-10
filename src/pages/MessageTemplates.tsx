@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,6 +52,7 @@ import {
   Send,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
 
@@ -115,6 +116,8 @@ export default function MessageTemplates() {
   const [bulkSendTemplate, setBulkSendTemplate] = useState<{
     id: string; name: string; status: string; body: string; language: string;
   } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const tenantId = currentTenant?.id;
 
@@ -255,6 +258,81 @@ export default function MessageTemplates() {
       toast.error("Erro ao enviar à Meta: " + err.message);
     },
   });
+
+  // Bulk submit to Meta
+  const handleBulkSubmitToMeta = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSubmitting(true);
+    const ids = Array.from(selectedIds);
+    let success = 0;
+    let failed = 0;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast.error("Não autenticado");
+      setBulkSubmitting(false);
+      return;
+    }
+
+    for (const id of ids) {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-template`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ template_id: id, tenant_id: tenantId }),
+          }
+        );
+        const result = await response.json();
+        if (response.ok) {
+          success++;
+        } else {
+          failed++;
+          const tpl = templates.find((t) => t.id === id);
+          console.error(`Failed ${tpl?.name}:`, result);
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+    setSelectedIds(new Set());
+    setBulkSubmitting(false);
+
+    if (failed === 0) {
+      toast.success(`${success} template(s) enviado(s) à Meta com sucesso!`);
+    } else {
+      toast.warning(`${success} enviado(s), ${failed} falha(s)`);
+    }
+  };
+
+  // Eligible templates for bulk Meta submission (not yet approved)
+  const eligibleForMeta = useMemo(
+    () => templates.filter((t) => t.status !== "approved"),
+    [templates]
+  );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === eligibleForMeta.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(eligibleForMeta.map((t) => t.id)));
+    }
+  };
 
   const closeDialog = () => {
     setDialogOpen(false);
@@ -623,10 +701,55 @@ export default function MessageTemplates() {
           </Card>
         ) : (
           <Card>
+            {/* Bulk action bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5 border-b border-border">
+                <span className="text-sm text-foreground">
+                  <span className="font-medium">{selectedIds.size}</span> template(s) selecionado(s)
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs"
+                  >
+                    Limpar seleção
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkSubmitToMeta}
+                    disabled={bulkSubmitting}
+                    className="text-xs"
+                  >
+                    {bulkSubmitting ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 mr-1.5" />
+                        Enviar {selectedIds.size} à Meta
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={
+                          eligibleForMeta.length > 0 &&
+                          selectedIds.size === eligibleForMeta.length
+                        }
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Categoria</TableHead>
                     <TableHead>Idioma</TableHead>
@@ -639,6 +762,13 @@ export default function MessageTemplates() {
                     const st = statusConfig[t.status] || statusConfig.draft;
                     return (
                       <TableRow key={t.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(t.id)}
+                            onCheckedChange={() => toggleSelect(t.id)}
+                            disabled={t.status === "approved"}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />

@@ -53,6 +53,9 @@ function FlowEditorInner() {
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [selectedListId, setSelectedListId] = useState<string>("all");
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [scheduledTime, setScheduledTime] = useState("");
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";
@@ -63,7 +66,7 @@ function FlowEditorInner() {
     (async () => {
       const { data } = await supabase
         .from("campaigns")
-        .select("name, status, flow_data")
+        .select("name, status, flow_data, scheduled_at, list_id")
         .eq("id", id)
         .single();
       if (data) {
@@ -73,6 +76,14 @@ function FlowEditorInner() {
           const fd = data.flow_data as any;
           if (fd.nodes?.length) setNodes(fd.nodes);
           if (fd.edges?.length) setEdges(fd.edges);
+        }
+        if (data.scheduled_at) {
+          const dt = new Date(data.scheduled_at);
+          setScheduledDate(dt.toISOString().slice(0, 10));
+          setScheduledTime(dt.toTimeString().slice(0, 5));
+        }
+        if (data.list_id) {
+          setSelectedListId(data.list_id);
         }
         setLoaded(true);
       }

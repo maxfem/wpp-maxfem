@@ -658,6 +658,17 @@ export default function MessageTemplates() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={() => setBulkSendTemplate({
+                                id: t.id, name: t.name, status: t.status, body: t.body, language: t.language,
+                              })}
+                              disabled={t.status !== "approved"}
+                              title="Envio em massa"
+                            >
+                              <Send className="h-4 w-4 text-primary" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => submitToMetaMutation.mutate(t.id)}
                               disabled={submitToMetaMutation.isPending || t.status === "approved"}
                               title="Enviar à Meta para aprovação"

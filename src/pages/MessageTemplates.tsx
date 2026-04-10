@@ -112,6 +112,9 @@ export default function MessageTemplates() {
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [sampleValues, setSampleValues] = useState<string[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<TemplateForm>(emptyForm);
+  const [bulkSendTemplate, setBulkSendTemplate] = useState<{
+    id: string; name: string; status: string; body: string; language: string;
+  } | null>(null);
 
   const tenantId = currentTenant?.id;
 

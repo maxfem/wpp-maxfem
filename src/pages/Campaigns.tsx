@@ -395,7 +395,11 @@ export default function Campaigns() {
                         <StIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
-                      <Switch className="scale-75" />
+                      <Switch
+                        className="scale-75"
+                        checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                        onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                      />
                     </div>
                   </CardContent>
                 </Card>

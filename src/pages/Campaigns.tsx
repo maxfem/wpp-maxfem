@@ -161,6 +161,24 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const duplicateCampaign = useMutation({
+    mutationFn: async (campaign: typeof campaigns[0]) => {
+      const { id, created_at, updated_at, ...rest } = campaign;
+      const { error } = await supabase.from("campaigns").insert({
+        ...rest,
+        name: `${campaign.name} (cópia)`,
+        status: "draft",
+        scheduled_at: null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      toast.success("Campanha duplicada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const toggleCampaign = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
       const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
@@ -227,7 +245,7 @@ export default function Campaigns() {
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => navigate(`/campaigns/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-        <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => duplicateCampaign.mutate(c)}><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
         <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
           <Trash2 className="h-4 w-4 mr-2" />Excluir
         </DropdownMenuItem>

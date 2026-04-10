@@ -48,6 +48,7 @@ import {
   MessageSquare,
   Upload,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";

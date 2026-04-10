@@ -184,6 +184,39 @@ export default function MessageTemplates() {
     },
   });
 
+  const syncTemplatesMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Não autenticado");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-sync-templates`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tenant_id: tenantId }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.details?.error?.message || result.error || "Erro desconhecido");
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      toast.success(`Sincronização concluída! ${result.updated} template(s) atualizado(s) de ${result.matched} encontrado(s) na Meta.`);
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao sincronizar: " + err.message);
+    },
+  });
+
   const submitToMetaMutation = useMutation({
     mutationFn: async (id: string) => {
       if (!tenantId) throw new Error("Tenant não encontrado");

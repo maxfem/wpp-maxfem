@@ -161,6 +161,22 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const toggleCampaign = useMutation({
+    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
+      const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
+      const newStatus = isActive ? "draft" : "scheduled";
+      const { error } = await supabase
+        .from("campaigns")
+        .update({ status: newStatus })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const filtered = useMemo(() => {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())

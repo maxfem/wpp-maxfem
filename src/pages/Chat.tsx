@@ -9,6 +9,7 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { ContactInfoPanel } from "@/components/chat/ContactInfoPanel";
 import { Message, Conversation, DateFilter, StatusFilter } from "@/components/chat/types";
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
@@ -20,6 +21,8 @@ export default function Chat() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [showContactPanel, setShowContactPanel] = useState(false);
+  const [searchInChat, setSearchInChat] = useState(false);
 
   const tenantId = currentTenant?.id;
 
@@ -47,7 +50,7 @@ export default function Chat() {
       if (!tenantId) return [];
       const { data } = await supabase
         .from("customers")
-        .select("id, name, phone")
+        .select("id, name, phone, email, tags, total_orders, total_spent, last_order_at, created_at")
         .eq("tenant_id", tenantId);
       return data || [];
     },
@@ -76,6 +79,7 @@ export default function Chat() {
           lastMessage: msg.content || `[${msg.message_type}]`,
           lastMessageAt: msg.created_at,
           unread: msg.direction === "inbound" && msg.status === "received" ? 1 : 0,
+          lastDirection: msg.direction,
         });
         continue;
       }
@@ -88,6 +92,7 @@ export default function Chat() {
         existing.phone = msg.phone;
         existing.lastMessage = msg.content || `[${msg.message_type}]`;
         existing.lastMessageAt = msg.created_at;
+        existing.lastDirection = msg.direction;
       }
       if (msg.direction === "inbound" && msg.status === "received") {
         existing.unread++;
@@ -98,7 +103,6 @@ export default function Chat() {
       (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
     );
 
-    // Apply date filter
     if (dateFilter !== "all") {
       const now = new Date();
       const cutoff = new Date();
@@ -108,12 +112,10 @@ export default function Chat() {
       convs = convs.filter((c) => new Date(c.lastMessageAt) >= cutoff);
     }
 
-    // Apply status filter
     if (statusFilter === "unread") {
       convs = convs.filter((c) => c.unread > 0);
     }
 
-    // Apply search
     if (searchTerm) {
       const term = normalizePhone(searchTerm) || searchTerm.toLowerCase();
       convs = convs.filter((c) =>
@@ -134,6 +136,12 @@ export default function Chat() {
   );
 
   const selectedConv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
+
+  // Get selected customer details for the contact panel
+  const selectedCustomer = useMemo(() => {
+    if (!selectedConv?.customerId) return null;
+    return customers.find((c) => c.id === selectedConv.customerId) || null;
+  }, [selectedConv, customers]);
 
   // Realtime
   useEffect(() => {
@@ -181,7 +189,10 @@ export default function Chat() {
         <ChatSidebar
           conversations={conversations}
           selectedPhoneKey={selectedPhoneKey}
-          onSelectConversation={setSelectedPhoneKey}
+          onSelectConversation={(key) => {
+            setSelectedPhoneKey(key);
+            setSearchInChat(false);
+          }}
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           dateFilter={dateFilter}
@@ -190,21 +201,35 @@ export default function Chat() {
           onStatusFilterChange={setStatusFilter}
         />
 
-        <div className="flex-1 flex flex-col bg-background">
+        <div className="flex-1 flex flex-col bg-background min-w-0">
           {!selectedPhoneKey ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <MessageSquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h2 className="text-lg font-medium text-foreground mb-1">WhatsApp Inbox</h2>
+                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                  <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h2 className="text-lg font-semibold text-foreground mb-1">WhatsApp Inbox</h2>
                 <p className="text-sm text-muted-foreground">
                   Selecione uma conversa para começar
+                </p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  {conversations.length} conversas ativas
                 </p>
               </div>
             </div>
           ) : (
             <>
-              <ChatHeader conversation={selectedConv} />
-              <ChatMessageArea messages={selectedMessages} />
+              <ChatHeader
+                conversation={selectedConv}
+                showContactPanel={showContactPanel}
+                onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
+                onSearchInChat={() => setSearchInChat(!searchInChat)}
+              />
+              <ChatMessageArea
+                messages={selectedMessages}
+                searchInChat={searchInChat}
+                onCloseSearch={() => setSearchInChat(false)}
+              />
               <ChatInput
                 onSend={(msg) => sendMutation.mutate(msg)}
                 disabled={sendMutation.isPending}
@@ -212,6 +237,15 @@ export default function Chat() {
             </>
           )}
         </div>
+
+        {/* Contact Info Panel */}
+        {showContactPanel && selectedPhoneKey && (
+          <ContactInfoPanel
+            conversation={selectedConv}
+            messages={selectedMessages}
+            customer={selectedCustomer}
+          />
+        )}
       </div>
     </AppLayout>
   );

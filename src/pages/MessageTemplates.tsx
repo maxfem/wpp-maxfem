@@ -48,6 +48,7 @@ import {
   MessageSquare,
   Upload,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
@@ -183,6 +184,39 @@ export default function MessageTemplates() {
     },
   });
 
+  const syncTemplatesMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Não autenticado");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-sync-templates`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tenant_id: tenantId }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.details?.error?.message || result.error || "Erro desconhecido");
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      toast.success(`Sincronização concluída! ${result.updated} template(s) atualizado(s) de ${result.matched} encontrado(s) na Meta.`);
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao sincronizar: " + err.message);
+    },
+  });
+
   const submitToMetaMutation = useMutation({
     mutationFn: async (id: string) => {
       if (!tenantId) throw new Error("Tenant não encontrado");
@@ -303,7 +337,16 @@ export default function MessageTemplates() {
               Crie e gerencie modelos de mensagem (HSM) para envio via WhatsApp
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => syncTemplatesMutation.mutate()}
+              disabled={syncTemplatesMutation.isPending}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
+              {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
             <DialogTrigger asChild>
               <Button onClick={() => { setForm(emptyForm); setEditingId(null); }}>
                 <Plus className="h-4 w-4 mr-2" />
@@ -536,6 +579,7 @@ export default function MessageTemplates() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Preview Dialog */}

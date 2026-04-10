@@ -74,12 +74,18 @@ export default function Chat() {
     enabled: !!tenantId,
   });
 
+  // Normalize phone for matching (remove non-digits)
+  const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+
   // Build conversations list
   const conversations: Conversation[] = (() => {
     const map = new Map<string, Conversation>();
+    // Build customer map with normalized phone keys
     const customerMap = new Map<string, string>();
     customers.forEach((c) => {
-      if (c.phone) customerMap.set(c.phone, c.name);
+      if (c.phone) {
+        customerMap.set(normalizePhone(c.phone), c.name);
+      }
     });
 
     // Messages are already sorted desc

@@ -704,6 +704,12 @@ export default function MessageTemplates() {
             </CardContent>
           </Card>
         )}
+
+        <BulkSendDialog
+          open={!!bulkSendTemplate}
+          onOpenChange={(open) => { if (!open) setBulkSendTemplate(null); }}
+          template={bulkSendTemplate}
+        />
       </div>
     </AppLayout>
   );

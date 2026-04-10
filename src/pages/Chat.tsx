@@ -93,7 +93,7 @@ export default function Chat() {
       if (!map.has(msg.phone)) {
         map.set(msg.phone, {
           phone: msg.phone,
-          customerName: customerMap.get(msg.phone) || msg.phone,
+          customerName: customerMap.get(normalizePhone(msg.phone)) || msg.phone,
           customerId: msg.customer_id,
           lastMessage: msg.content || `[${msg.message_type}]`,
           lastMessageAt: msg.created_at,

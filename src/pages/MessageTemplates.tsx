@@ -104,6 +104,14 @@ const languageLabels: Record<string, string> = {
   es: "Espanhol",
 };
 
+const sanitizeHeaderForMeta = (input: string) =>
+  input
+    .replace(/[\n\r\f\v]/g, " ")
+    .replace(/[*_~]/g, "")
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\u200D\uFE0E\uFE0F\u20E3]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export default function MessageTemplates() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
@@ -235,6 +243,22 @@ export default function MessageTemplates() {
     return null;
   };
 
+  const getTemplateHeaderValidationError = (headerType: string | null, headerContent: string | null) => {
+    if (headerType !== "text" || !headerContent?.trim()) return null;
+
+    const sanitizedHeader = sanitizeHeaderForMeta(headerContent);
+
+    if (!sanitizedHeader) {
+      return "A Meta rejeita cabeçalhos vazios após remover emojis, asteriscos e formatação. Use apenas texto simples no título.";
+    }
+
+    if (sanitizedHeader !== headerContent.trim()) {
+      return "A Meta rejeita emojis, asteriscos, quebras de linha e formatação no cabeçalho. Ajuste o título para texto simples.";
+    }
+
+    return null;
+  };
+
   const getTemplateMetaErrorMessage = (result: unknown) => {
     if (!result || typeof result !== "object") return "Erro desconhecido";
 
@@ -257,6 +281,9 @@ export default function MessageTemplates() {
 
       const template = templates.find((item) => item.id === id);
       if (!template) throw new Error("Template não encontrado");
+
+      const headerValidationError = getTemplateHeaderValidationError(template.header_type, template.header_content);
+      if (headerValidationError) throw new Error(headerValidationError);
 
       const validationError = getTemplateBodyValidationError(template.body);
       if (validationError) throw new Error(validationError);
@@ -314,6 +341,13 @@ export default function MessageTemplates() {
         continue;
       }
 
+      const headerValidationError = getTemplateHeaderValidationError(tpl.header_type, tpl.header_content);
+      if (headerValidationError) {
+        failed++;
+        failedTemplates.push(`${tpl.name}: ${headerValidationError}`);
+        continue;
+      }
+
       const validationError = getTemplateBodyValidationError(tpl.body);
       if (validationError) {
         failed++;
@@ -361,7 +395,7 @@ export default function MessageTemplates() {
 
   // Eligible templates for bulk Meta submission (not yet approved and valid)
   const eligibleForMeta = useMemo(
-    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body)),
+    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
     [templates]
   );
 
@@ -448,6 +482,19 @@ export default function MessageTemplates() {
       toast.error("Nome e corpo são obrigatórios");
       return;
     }
+
+    const headerValidationError = getTemplateHeaderValidationError(form.header_type, form.header_content);
+    if (headerValidationError) {
+      toast.error(headerValidationError);
+      return;
+    }
+
+    const bodyValidationError = getTemplateBodyValidationError(form.body);
+    if (bodyValidationError) {
+      toast.error(bodyValidationError);
+      return;
+    }
+
     saveMutation.mutate(form);
   };
 
@@ -564,6 +611,11 @@ export default function MessageTemplates() {
                         maxLength={60}
                       />
                       <p className="text-xs text-muted-foreground">{form.header_content.length}/60 caracteres</p>
+                      {getTemplateHeaderValidationError(form.header_type, form.header_content) && (
+                        <p className="text-xs text-destructive">
+                          {getTemplateHeaderValidationError(form.header_type, form.header_content)}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -814,7 +866,11 @@ export default function MessageTemplates() {
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
-                            disabled={t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
+                            disabled={
+                              t.status === "approved" ||
+                              !!getTemplateBodyValidationError(t.body) ||
+                              !!getTemplateHeaderValidationError(t.header_type, t.header_content)
+                            }
                           />
                         </TableCell>
                         <TableCell className="font-medium">
@@ -828,6 +884,9 @@ export default function MessageTemplates() {
                         <TableCell>
                           <div className="flex items-center justify-start gap-2">
                             <Badge variant={st.variant}>{st.label}</Badge>
+                            {getTemplateHeaderValidationError(t.header_type, t.header_content) && (
+                              <Badge variant="outline">Cabeçalho inválido</Badge>
+                            )}
                             {getTemplateBodyValidationError(t.body) && (
                               <Badge variant="outline">Body inválido</Badge>
                             )}
@@ -853,8 +912,17 @@ export default function MessageTemplates() {
                               variant="ghost"
                               size="icon"
                               onClick={() => submitToMetaMutation.mutate(t.id)}
-                              disabled={submitToMetaMutation.isPending || t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
-                              title={getTemplateBodyValidationError(t.body) || "Enviar à Meta para aprovação"}
+                              disabled={
+                                submitToMetaMutation.isPending ||
+                                t.status === "approved" ||
+                                !!getTemplateBodyValidationError(t.body) ||
+                                !!getTemplateHeaderValidationError(t.header_type, t.header_content)
+                              }
+                              title={
+                                getTemplateHeaderValidationError(t.header_type, t.header_content) ||
+                                getTemplateBodyValidationError(t.body) ||
+                                "Enviar à Meta para aprovação"
+                              }
                             >
                               {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

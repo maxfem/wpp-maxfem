@@ -152,13 +152,29 @@ function FlowEditorInner() {
 
   const handleSave = async () => {
     const flowData = { nodes, edges };
+
+    // Build scheduled_at from date + time
+    let scheduledAt: string | null = null;
+    let status = isActive ? "running" : "draft";
+
+    if (scheduledDate && scheduledTime) {
+      scheduledAt = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
+      if (new Date(scheduledAt) > new Date()) {
+        status = "scheduled";
+      }
+    }
+
+    const listId = selectedListId === "all" ? null : selectedListId;
+
     if (id && id !== "new") {
       const { error } = await supabase
         .from("campaigns")
         .update({
           name: campaignName,
-          status: isActive ? "running" : "draft",
+          status,
           flow_data: flowData as any,
+          scheduled_at: scheduledAt,
+          list_id: listId,
         })
         .eq("id", id);
       if (error) {
@@ -170,15 +186,17 @@ function FlowEditorInner() {
         tenant_id: currentTenant.id,
         name: campaignName,
         type: "custom",
-        status: isActive ? "running" : "draft",
+        status,
         flow_data: flowData as any,
+        scheduled_at: scheduledAt,
+        list_id: listId,
       });
       if (error) {
         toast.error("Erro ao salvar: " + error.message);
         return;
       }
     }
-    toast.success("Campanha salva!");
+    toast.success(scheduledAt ? "Campanha agendada!" : "Campanha salva!");
   };
 
   const currentSelectedNode = selectedNode
@@ -210,7 +228,16 @@ function FlowEditorInner() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <FlowSidebar campaignName={campaignName} onNameChange={setCampaignName} />
+        <FlowSidebar
+          campaignName={campaignName}
+          onNameChange={setCampaignName}
+          selectedListId={selectedListId}
+          onListChange={setSelectedListId}
+          scheduledDate={scheduledDate}
+          onScheduledDateChange={setScheduledDate}
+          scheduledTime={scheduledTime}
+          onScheduledTimeChange={setScheduledTime}
+        />
 
         <div className="flex-1" ref={reactFlowWrapper}>
           <ReactFlow

@@ -359,9 +359,9 @@ export default function MessageTemplates() {
     }
   };
 
-  // Eligible templates for bulk Meta submission (not yet approved)
+  // Eligible templates for bulk Meta submission (not yet approved and valid)
   const eligibleForMeta = useMemo(
-    () => templates.filter((t) => t.status !== "approved"),
+    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body)),
     [templates]
   );
 

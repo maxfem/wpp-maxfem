@@ -814,7 +814,7 @@ export default function MessageTemplates() {
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
-                            disabled={t.status === "approved"}
+                            disabled={t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
                           />
                         </TableCell>
                         <TableCell className="font-medium">
@@ -826,7 +826,12 @@ export default function MessageTemplates() {
                         <TableCell>{categoryLabels[t.category] || t.category}</TableCell>
                         <TableCell>{languageLabels[t.language] || t.language}</TableCell>
                         <TableCell>
-                          <Badge variant={st.variant}>{st.label}</Badge>
+                          <div className="flex items-center justify-start gap-2">
+                            <Badge variant={st.variant}>{st.label}</Badge>
+                            {getTemplateBodyValidationError(t.body) && (
+                              <Badge variant="outline">Body inválido</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -848,8 +853,8 @@ export default function MessageTemplates() {
                               variant="ghost"
                               size="icon"
                               onClick={() => submitToMetaMutation.mutate(t.id)}
-                              disabled={submitToMetaMutation.isPending || t.status === "approved"}
-                              title="Enviar à Meta para aprovação"
+                              disabled={submitToMetaMutation.isPending || t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
+                              title={getTemplateBodyValidationError(t.body) || "Enviar à Meta para aprovação"}
                             >
                               {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

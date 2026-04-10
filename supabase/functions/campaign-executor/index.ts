@@ -80,10 +80,11 @@ Deno.serve(async (req) => {
 
         if (flowData?.nodes) {
           const sendNode = flowData.nodes.find(
-            (n: any) => n.data?.nodeType === "sendWhatsApp" && n.data?.templateName
+            (n: any) => n.data?.nodeType === "sendWhatsApp" && (n.data?.template || n.data?.templateName)
           );
           if (sendNode) {
-            templateName = sendNode.data.templateName;
+            // "template" is the API name (e.g. "boas_vindas_01"), "templateName" is the display name
+            templateName = sendNode.data.template || sendNode.data.templateName;
             templateLanguage = sendNode.data.templateLanguage || "pt_BR";
           }
         }

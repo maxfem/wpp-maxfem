@@ -97,7 +97,9 @@ export type Database = {
           has_bonus: boolean | null
           has_survey: boolean | null
           id: string
+          list_id: string | null
           name: string
+          scheduled_at: string | null
           start_date: string | null
           status: string
           tenant_id: string
@@ -114,7 +116,9 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          list_id?: string | null
           name: string
+          scheduled_at?: string | null
           start_date?: string | null
           status?: string
           tenant_id: string
@@ -131,7 +135,9 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          list_id?: string | null
           name?: string
+          scheduled_at?: string | null
           start_date?: string | null
           status?: string
           tenant_id?: string
@@ -140,6 +146,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "contact_lists"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaigns_tenant_id_fkey"
             columns: ["tenant_id"]

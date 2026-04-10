@@ -334,6 +334,7 @@ export default function MessageTemplates() {
     }
   };
 
+  const closeDialog = () => {
     setDialogOpen(false);
     setEditingId(null);
     setForm(emptyForm);

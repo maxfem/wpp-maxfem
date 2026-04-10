@@ -648,6 +648,50 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_accounts: {
+        Row: {
+          created_at: string
+          display_phone: string | null
+          id: string
+          is_active: boolean | null
+          phone_number_id: string
+          quality_rating: string | null
+          tenant_id: string
+          updated_at: string
+          verified_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          display_phone?: string | null
+          id?: string
+          is_active?: boolean | null
+          phone_number_id: string
+          quality_rating?: string | null
+          tenant_id: string
+          updated_at?: string
+          verified_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          display_phone?: string | null
+          id?: string
+          is_active?: boolean | null
+          phone_number_id?: string
+          quality_rating?: string | null
+          tenant_id?: string
+          updated_at?: string
+          verified_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_messages: {
         Row: {
           content: string | null

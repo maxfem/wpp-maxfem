@@ -337,7 +337,16 @@ export default function MessageTemplates() {
               Crie e gerencie modelos de mensagem (HSM) para envio via WhatsApp
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => syncTemplatesMutation.mutate()}
+              disabled={syncTemplatesMutation.isPending}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
+              {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
             <DialogTrigger asChild>
               <Button onClick={() => { setForm(emptyForm); setEditingId(null); }}>
                 <Plus className="h-4 w-4 mr-2" />

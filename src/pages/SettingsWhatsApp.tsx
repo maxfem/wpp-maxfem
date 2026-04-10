@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle2, Loader2, Phone, Shield, TriangleAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Phone, Shield, TriangleAlert, Smartphone } from "lucide-react";
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Step = "status" | "request_code" | "verify_code" | "register" | "done";
 
@@ -36,11 +37,28 @@ async function invokeWhatsAppRegister<T>(body: Record<string, unknown>) {
 }
 
 export default function SettingsWhatsApp() {
+  const { currentTenant } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("status");
   const [codeMethod, setCodeMethod] = useState("SMS");
   const [verificationCode, setVerificationCode] = useState("");
   const [pin, setPin] = useState("123456");
+
+  // Fetch linked WhatsApp accounts
+  const { data: waAccounts = [] } = useQuery({
+    queryKey: ["whatsapp-accounts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant?.id) return [];
+      const { data } = await supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!currentTenant?.id,
+  });
 
   const {
     data: phoneStatus,
@@ -365,6 +383,47 @@ export default function SettingsWhatsApp() {
             </CardContent>
           </Card>
         )}
+
+        {/* Connected accounts */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Smartphone className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Números conectados</CardTitle>
+                <CardDescription>Números de WhatsApp vinculados a esta conta</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {waAccounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum número vinculado ainda.</p>
+            ) : (
+              <div className="space-y-3">
+                {waAccounts.map((account) => (
+                  <div key={account.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {account.display_phone || account.phone_number_id}
+                        </p>
+                        {account.verified_name && (
+                          <p className="text-xs text-muted-foreground">{account.verified_name}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant={account.is_active ? "secondary" : "outline"}>
+                      {account.is_active ? "Ativo" : "Inativo"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

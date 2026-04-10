@@ -49,7 +49,9 @@ import {
   Upload,
   Loader2,
   RefreshCw,
+  Send,
 } from "lucide-react";
+import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
 
@@ -110,6 +112,9 @@ export default function MessageTemplates() {
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [sampleValues, setSampleValues] = useState<string[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<TemplateForm>(emptyForm);
+  const [bulkSendTemplate, setBulkSendTemplate] = useState<{
+    id: string; name: string; status: string; body: string; language: string;
+  } | null>(null);
 
   const tenantId = currentTenant?.id;
 
@@ -653,6 +658,17 @@ export default function MessageTemplates() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              onClick={() => setBulkSendTemplate({
+                                id: t.id, name: t.name, status: t.status, body: t.body, language: t.language,
+                              })}
+                              disabled={t.status !== "approved"}
+                              title="Envio em massa"
+                            >
+                              <Send className="h-4 w-4 text-primary" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => submitToMetaMutation.mutate(t.id)}
                               disabled={submitToMetaMutation.isPending || t.status === "approved"}
                               title="Enviar à Meta para aprovação"
@@ -688,6 +704,12 @@ export default function MessageTemplates() {
             </CardContent>
           </Card>
         )}
+
+        <BulkSendDialog
+          open={!!bulkSendTemplate}
+          onOpenChange={(open) => { if (!open) setBulkSendTemplate(null); }}
+          template={bulkSendTemplate}
+        />
       </div>
     </AppLayout>
   );

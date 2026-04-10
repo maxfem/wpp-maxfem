@@ -27,6 +27,7 @@ const sections = [
 ];
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
@@ -41,6 +42,7 @@ export default function SettingsPage() {
             <Card
               key={s.title}
               className="border border-border hover:border-primary/30 transition-colors cursor-pointer"
+              onClick={() => s.path && navigate(s.path)}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">

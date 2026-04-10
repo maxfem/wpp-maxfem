@@ -27,6 +27,7 @@ interface Message {
 
 interface Conversation {
   phone: string;
+  phoneKey: string;
   customerName: string;
   customerId: string | null;
   lastMessage: string;
@@ -37,7 +38,7 @@ interface Conversation {
 export default function Chat() {
   const { currentTenant, session } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [selectedPhoneKey, setSelectedPhoneKey] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -77,50 +78,63 @@ export default function Chat() {
   // Normalize phone for matching (remove non-digits)
   const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 
-  // Build conversations list
+  // Build conversations list grouped by normalized phone
   const conversations: Conversation[] = (() => {
     const map = new Map<string, Conversation>();
-    // Build customer map with normalized phone keys
     const customerMap = new Map<string, string>();
+
     customers.forEach((c) => {
-      if (c.phone) {
-        customerMap.set(normalizePhone(c.phone), c.name);
-      }
+      if (c.phone) customerMap.set(normalizePhone(c.phone), c.name);
     });
 
-    // Messages are already sorted desc
     for (const msg of allMessages) {
-      if (!map.has(msg.phone)) {
-        map.set(msg.phone, {
+      const phoneKey = normalizePhone(msg.phone);
+      const existing = map.get(phoneKey);
+
+      if (!existing) {
+        map.set(phoneKey, {
           phone: msg.phone,
-          customerName: customerMap.get(normalizePhone(msg.phone)) || msg.phone,
+          phoneKey,
+          customerName: customerMap.get(phoneKey) || msg.phone,
           customerId: msg.customer_id,
           lastMessage: msg.content || `[${msg.message_type}]`,
           lastMessageAt: msg.created_at,
-          unread: 0,
+          unread: msg.direction === "inbound" && msg.status === "received" ? 1 : 0,
         });
+        continue;
+      }
+
+      if (!existing.customerId && msg.customer_id) existing.customerId = msg.customer_id;
+      if (existing.customerName === existing.phone && customerMap.get(phoneKey)) {
+        existing.customerName = customerMap.get(phoneKey)!;
+      }
+      if (new Date(msg.created_at).getTime() > new Date(existing.lastMessageAt).getTime()) {
+        existing.phone = msg.phone;
+        existing.lastMessage = msg.content || `[${msg.message_type}]`;
+        existing.lastMessageAt = msg.created_at;
       }
       if (msg.direction === "inbound" && msg.status === "received") {
-        const conv = map.get(msg.phone)!;
-        conv.unread++;
+        existing.unread++;
       }
     }
 
-    let convs = Array.from(map.values());
+    let convs = Array.from(map.values()).sort(
+      (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+    );
+
     if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      convs = convs.filter(
-        (c) =>
-          c.customerName.toLowerCase().includes(term) ||
-          c.phone.includes(term)
+      const term = normalizePhone(searchTerm) || searchTerm.toLowerCase();
+      convs = convs.filter((c) =>
+        c.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        normalizePhone(c.phone).includes(term)
       );
     }
+
     return convs;
   })();
 
-  // Messages for selected conversation
   const selectedMessages = allMessages
-    .filter((m) => m.phone === selectedPhone)
+    .filter((m) => normalizePhone(m.phone) === selectedPhoneKey)
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   // Realtime subscription
@@ -148,12 +162,12 @@ export default function Chat() {
   // Send message mutation
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      if (!selectedPhone || !tenantId) throw new Error("No conversation selected");
-      const selectedConv = conversations.find((c) => c.phone === selectedPhone);
+      if (!selectedPhoneKey || !tenantId) throw new Error("No conversation selected");
+      const selectedConv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
 
       const { data, error } = await supabase.functions.invoke("whatsapp-send", {
         body: {
-          phone: selectedPhone,
+          phone: selectedConv?.phone || "",
           message,
           tenant_id: tenantId,
           customer_id: selectedConv?.customerId || null,
@@ -176,7 +190,7 @@ export default function Chat() {
     sendMutation.mutate(newMessage.trim());
   };
 
-  const selectedConv = conversations.find((c) => c.phone === selectedPhone);
+  const selectedConv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
 
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -212,10 +226,10 @@ export default function Chat() {
               conversations.map((conv) => (
                 <button
                   key={conv.phone}
-                  onClick={() => setSelectedPhone(conv.phone)}
-                  className={cn(
-                    "w-full flex items-center gap-3 p-3 hover:bg-accent/50 transition-colors text-left border-b border-border/50",
-                    selectedPhone === conv.phone && "bg-accent"
+                    onClick={() => setSelectedPhoneKey(conv.phoneKey)}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 hover:bg-accent/50 transition-colors text-left border-b border-border/50",
+                      selectedPhoneKey === conv.phoneKey && "bg-accent"
                   )}
                 >
                   <Avatar className="h-10 w-10 shrink-0">
@@ -251,7 +265,7 @@ export default function Chat() {
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col bg-background">
-          {!selectedPhone ? (
+          {!selectedPhoneKey ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <MessageSquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
@@ -272,11 +286,11 @@ export default function Chat() {
                 </Avatar>
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    {selectedConv?.customerName || selectedPhone}
-                  </p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Phone className="h-3 w-3" />
-                    {selectedPhone}
+                      {selectedConv?.customerName || selectedConv?.phone}
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {selectedConv?.phone}
                   </p>
                 </div>
               </div>

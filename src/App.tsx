@@ -10,6 +10,7 @@ import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
 import Automations from "./pages/Automations";
 import CampaignFlowEditor from "./pages/CampaignFlowEditor";
+import CampaignDetails from "./pages/CampaignDetails";
 import Activities from "./pages/Activities";
 import Chat from "./pages/Chat";
 import SettingsPage from "./pages/SettingsPage";
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
             <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
             <Route path="/campaigns/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
+            <Route path="/campaigns/:id" element={<ProtectedRoute><CampaignDetails /></ProtectedRoute>} />
             <Route path="/automations" element={<ProtectedRoute><Automations /></ProtectedRoute>} />
             <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
             <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />

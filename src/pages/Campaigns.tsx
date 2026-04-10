@@ -225,7 +225,7 @@ export default function Campaigns() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate(`/campaigns/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate(`/campaigns/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
         <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
         <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
@@ -373,7 +373,7 @@ export default function Campaigns() {
                 <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
-                      <CardTitle className="text-sm font-semibold leading-tight pr-6">{c.name}</CardTitle>
+                      <CardTitle className="text-sm font-semibold leading-tight pr-6 cursor-pointer hover:text-primary transition-colors" onClick={() => navigate(`/campaigns/${c.id}`)}>{c.name}</CardTitle>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                         {renderCampaignActions(c)}
                       </div>

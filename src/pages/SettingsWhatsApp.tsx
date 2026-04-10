@@ -1,17 +1,39 @@
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Phone, CheckCircle2, AlertCircle, Loader2, Shield } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Phone, Shield, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 type Step = "status" | "request_code" | "verify_code" | "register" | "done";
+
+type PhoneStatus = {
+  code_verification_status?: string;
+  display_phone_number?: string;
+  name_status?: string;
+  quality_rating?: string;
+  status?: string;
+  verified_name?: string;
+};
+
+async function invokeWhatsAppRegister<T>(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke("whatsapp-register", { body });
+
+  if (error) {
+    const response = (error as { context?: Response }).context;
+    const payload = response ? await response.json().catch(() => null) : null;
+    const message = payload?.user_message || payload?.error || error.message || "Erro ao comunicar com o backend";
+    throw new Error(message);
+  }
+
+  return data as T;
+}
 
 export default function SettingsWhatsApp() {
   const navigate = useNavigate();
@@ -20,94 +42,95 @@ export default function SettingsWhatsApp() {
   const [verificationCode, setVerificationCode] = useState("");
   const [pin, setPin] = useState("123456");
 
-  // Fetch phone status
-  const { data: phoneStatus, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
+  const {
+    data: phoneStatus,
+    error: statusError,
+    isLoading: statusLoading,
+    isFetching: statusFetching,
+    refetch: refetchStatus,
+  } = useQuery<PhoneStatus>({
     queryKey: ["whatsapp-phone-status"],
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("whatsapp-register", {
-        body: { action: "status" },
-      });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => invokeWhatsAppRegister<PhoneStatus>({ action: "status" }),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
-  // Request code
+  const statusErrorMessage = statusError instanceof Error ? statusError.message : null;
+  const hasBlockingStatusError = Boolean(statusErrorMessage);
+  const isRegistered =
+    phoneStatus?.code_verification_status === "VERIFIED" || phoneStatus?.status === "CONNECTED";
+
   const requestCodeMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("whatsapp-register", {
-        body: { action: "request_code", code_method: codeMethod },
-      });
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: async () => invokeWhatsAppRegister({ action: "request_code", code_method: codeMethod }),
     onSuccess: () => {
       toast.success(`Código enviado via ${codeMethod}`);
       setStep("verify_code");
     },
-    onError: (err: any) => {
-      toast.error("Erro ao solicitar código: " + (err?.message || "Erro desconhecido"));
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Erro ao solicitar código");
     },
   });
 
-  // Verify code
   const verifyCodeMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("whatsapp-register", {
-        body: { action: "verify_code", code: verificationCode },
-      });
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: async () => invokeWhatsAppRegister({ action: "verify_code", code: verificationCode }),
     onSuccess: () => {
       toast.success("Código verificado com sucesso!");
       setStep("register");
     },
-    onError: (err: any) => {
-      toast.error("Código inválido ou expirado");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Erro ao verificar código");
     },
   });
 
-  // Register
   const registerMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("whatsapp-register", {
-        body: { action: "register", pin },
-      });
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: async () => invokeWhatsAppRegister({ action: "register", pin }),
     onSuccess: () => {
       toast.success("Número registrado com sucesso!");
       setStep("done");
-      refetchStatus();
+      void refetchStatus();
     },
-    onError: (err: any) => {
-      toast.error("Erro ao registrar: " + (err?.message || "Erro desconhecido"));
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Erro ao registrar número");
     },
   });
 
-  const isRegistered = phoneStatus?.code_verification_status === "VERIFIED" || phoneStatus?.status === "CONNECTED";
-
   const getStatusBadge = () => {
-    if (statusLoading) return <Badge variant="secondary">Carregando...</Badge>;
-    if (isRegistered) return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Conectado</Badge>;
-    return <Badge variant="outline" className="text-yellow-600 border-yellow-500/30 bg-yellow-500/10">Pendente</Badge>;
+    if (statusLoading || statusFetching) {
+      return <Badge variant="secondary">Carregando...</Badge>;
+    }
+
+    if (hasBlockingStatusError) {
+      return <Badge variant="outline">Atenção</Badge>;
+    }
+
+    if (isRegistered) {
+      return <Badge variant="secondary">Conectado</Badge>;
+    }
+
+    return <Badge variant="outline">Pendente</Badge>;
   };
 
   const getQualityBadge = (rating: string | undefined) => {
     if (!rating) return null;
-    const colors: Record<string, string> = {
-      GREEN: "bg-green-500/10 text-green-600 border-green-500/20",
-      YELLOW: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-      RED: "bg-red-500/10 text-red-600 border-red-500/20",
-    };
-    return <Badge className={colors[rating] || ""}>{rating === "GREEN" ? "Alta" : rating === "YELLOW" ? "Média" : "Baixa"}</Badge>;
+
+    const label = rating === "GREEN" ? "Alta" : rating === "YELLOW" ? "Média" : "Baixa";
+    const className =
+      rating === "RED"
+        ? "border-destructive/20 bg-destructive/10 text-destructive"
+        : rating === "GREEN"
+          ? "border-primary/20 bg-primary/10 text-primary"
+          : "border-border bg-muted text-foreground";
+
+    return (
+      <Badge variant="outline" className={className}>
+        {label}
+      </Badge>
+    );
   };
 
   return (
     <AppLayout>
-      <div className="p-6 space-y-6 animate-fade-in max-w-3xl">
+      <div className="max-w-3xl space-y-6 p-6 animate-fade-in">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/settings")}>
             <ArrowLeft className="h-4 w-4" />
@@ -118,16 +141,15 @@ export default function SettingsWhatsApp() {
           </div>
         </div>
 
-        {/* Phone Status Card */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                  <Phone className="h-5 w-5 text-green-600" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Phone className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Número de Telefone</CardTitle>
+                  <CardTitle className="text-base">Número de telefone</CardTitle>
                   <CardDescription>+55 21 92367-3174</CardDescription>
                 </div>
               </div>
@@ -135,18 +157,33 @@ export default function SettingsWhatsApp() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {phoneStatus && !statusLoading && (
-              <div className="grid grid-cols-2 gap-4 text-sm">
+            {hasBlockingStatusError ? (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                <div className="flex items-start gap-3">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 text-destructive" />
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Não foi possível consultar o status do número</p>
+                      <p className="text-sm text-muted-foreground">{statusErrorMessage}</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => void refetchStatus()}>
+                      Tentar novamente
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : phoneStatus && !statusLoading ? (
+              <div className="grid gap-4 text-sm md:grid-cols-2">
                 {phoneStatus.verified_name && (
                   <div>
                     <p className="text-muted-foreground">Nome verificado</p>
-                    <p className="font-medium">{phoneStatus.verified_name}</p>
+                    <p className="font-medium text-foreground">{phoneStatus.verified_name}</p>
                   </div>
                 )}
                 {phoneStatus.display_phone_number && (
                   <div>
                     <p className="text-muted-foreground">Número exibido</p>
-                    <p className="font-medium">{phoneStatus.display_phone_number}</p>
+                    <p className="font-medium text-foreground">{phoneStatus.display_phone_number}</p>
                   </div>
                 )}
                 {phoneStatus.quality_rating && (
@@ -158,64 +195,66 @@ export default function SettingsWhatsApp() {
                 {phoneStatus.name_status && (
                   <div>
                     <p className="text-muted-foreground">Status do nome</p>
-                    <p className="font-medium">{phoneStatus.name_status}</p>
+                    <p className="font-medium text-foreground">{phoneStatus.name_status}</p>
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
           </CardContent>
         </Card>
 
-        {/* Registration Flow */}
-        {!isRegistered && (
+        {!hasBlockingStatusError && !isRegistered && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                  <Shield className="h-5 w-5 text-primary" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Shield className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Registro do Número</CardTitle>
+                  <CardTitle className="text-base">Registro do número</CardTitle>
                   <CardDescription>
-                    Inscreva o número na Cloud API para habilitar envio e recebimento de mensagens
+                    Inscreva o número na Cloud API para habilitar envio e recebimento de mensagens.
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Step indicators */}
               <div className="flex items-center gap-2 text-xs">
                 {[
                   { key: "request_code", label: "1. Solicitar código" },
                   { key: "verify_code", label: "2. Verificar código" },
                   { key: "register", label: "3. Registrar" },
-                ].map((s, i) => {
-                  const isActive = step === s.key;
+                ].map((item, index) => {
+                  const isActive = step === item.key;
                   const isDone =
-                    (s.key === "request_code" && ["verify_code", "register", "done"].includes(step)) ||
-                    (s.key === "verify_code" && ["register", "done"].includes(step)) ||
-                    (s.key === "register" && step === "done");
+                    (item.key === "request_code" && ["verify_code", "register", "done"].includes(step)) ||
+                    (item.key === "verify_code" && ["register", "done"].includes(step)) ||
+                    (item.key === "register" && step === "done");
+
                   return (
-                    <div key={s.key} className="flex items-center gap-2">
-                      {i > 0 && <div className="w-8 h-px bg-border" />}
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${
-                        isDone ? "bg-green-500/10 border-green-500/30 text-green-600" :
-                        isActive ? "bg-primary/10 border-primary/30 text-primary" :
-                        "bg-muted border-border text-muted-foreground"
-                      }`}>
+                    <div key={item.key} className="flex items-center gap-2">
+                      {index > 0 && <div className="h-px w-8 bg-border" />}
+                      <div
+                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 ${
+                          isDone
+                            ? "border-primary/20 bg-primary/10 text-primary"
+                            : isActive
+                              ? "border-primary/20 bg-primary/10 text-primary"
+                              : "border-border bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {isDone ? <CheckCircle2 className="h-3 w-3" /> : null}
-                        <span>{s.label}</span>
+                        <span>{item.label}</span>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Step 1: Request Code */}
               {(step === "status" || step === "request_code") && (
-                <div className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
                   <div>
-                    <h3 className="text-sm font-medium mb-1">Solicitar código de verificação</h3>
+                    <h3 className="mb-1 text-sm font-medium text-foreground">Solicitar código de verificação</h3>
                     <p className="text-xs text-muted-foreground">
                       Enviaremos um código para o número +55 21 92367-3174 via SMS ou ligação.
                     </p>
@@ -230,22 +269,18 @@ export default function SettingsWhatsApp() {
                         <SelectItem value="VOICE">Ligação</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button
-                      onClick={() => requestCodeMutation.mutate()}
-                      disabled={requestCodeMutation.isPending}
-                    >
-                      {requestCodeMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <Button onClick={() => requestCodeMutation.mutate()} disabled={requestCodeMutation.isPending}>
+                      {requestCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Solicitar código
                     </Button>
                   </div>
                 </div>
               )}
 
-              {/* Step 2: Verify Code */}
               {step === "verify_code" && (
-                <div className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
                   <div>
-                    <h3 className="text-sm font-medium mb-1">Inserir código de verificação</h3>
+                    <h3 className="mb-1 text-sm font-medium text-foreground">Inserir código de verificação</h3>
                     <p className="text-xs text-muted-foreground">
                       Digite o código de 6 dígitos recebido via {codeMethod === "SMS" ? "SMS" : "ligação"}.
                     </p>
@@ -254,62 +289,60 @@ export default function SettingsWhatsApp() {
                     <Input
                       placeholder="000000"
                       value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      className="w-36 text-center tracking-widest font-mono text-lg"
+                      onChange={(event) =>
+                        setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      className="w-36 text-center font-mono text-lg tracking-widest"
                       maxLength={6}
                     />
                     <Button
                       onClick={() => verifyCodeMutation.mutate()}
                       disabled={verifyCodeMutation.isPending || verificationCode.length !== 6}
                     >
-                      {verifyCodeMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      {verifyCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Verificar
                     </Button>
                   </div>
-                  <button
-                    className="text-xs text-primary hover:underline"
-                    onClick={() => setStep("request_code")}
-                  >
+                  <Button variant="link" className="h-auto p-0 text-xs" onClick={() => setStep("request_code")}>
                     Reenviar código
-                  </button>
+                  </Button>
                 </div>
               )}
 
-              {/* Step 3: Register */}
               {step === "register" && (
-                <div className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
                   <div>
-                    <h3 className="text-sm font-medium mb-1">Registrar número</h3>
+                    <h3 className="mb-1 text-sm font-medium text-foreground">Registrar número</h3>
                     <p className="text-xs text-muted-foreground">
-                      Defina um PIN de 6 dígitos para a conta (será usado para verificação em duas etapas).
+                      Defina um PIN de 6 dígitos para a conta; ele será usado na verificação em duas etapas.
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <Input
                       placeholder="PIN de 6 dígitos"
                       value={pin}
-                      onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      className="w-36 text-center tracking-widest font-mono text-lg"
+                      onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-36 text-center font-mono text-lg tracking-widest"
                       maxLength={6}
                     />
-                    <Button
-                      onClick={() => registerMutation.mutate()}
-                      disabled={registerMutation.isPending || pin.length !== 6}
-                    >
-                      {registerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <Button onClick={() => registerMutation.mutate()} disabled={registerMutation.isPending || pin.length !== 6}>
+                      {registerMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Registrar
                     </Button>
                   </div>
                 </div>
               )}
 
-              {/* Done */}
               {step === "done" && (
-                <div className="flex items-center gap-3 p-4 rounded-lg border border-green-500/30 bg-green-500/5">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  <div>
-                    <p className="text-sm font-medium text-green-700">Número registrado com sucesso!</p>
-                    <p className="text-xs text-muted-foreground">O número está pronto para enviar e receber mensagens.</p>
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Número registrado com sucesso</p>
+                      <p className="text-xs text-muted-foreground">
+                        O número está pronto para enviar e receber mensagens.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -317,15 +350,16 @@ export default function SettingsWhatsApp() {
           </Card>
         )}
 
-        {/* Already registered */}
-        {isRegistered && (
+        {!hasBlockingStatusError && isRegistered && (
           <Card>
             <CardContent className="py-6">
               <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                <CheckCircle2 className="h-5 w-5 text-primary" />
                 <div>
-                  <p className="text-sm font-medium">Número registrado e ativo</p>
-                  <p className="text-xs text-muted-foreground">O número está conectado à Cloud API e pronto para uso.</p>
+                  <p className="text-sm font-medium text-foreground">Número registrado e ativo</p>
+                  <p className="text-xs text-muted-foreground">
+                    O número está conectado à Cloud API e pronto para uso.
+                  </p>
                 </div>
               </div>
             </CardContent>

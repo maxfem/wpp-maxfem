@@ -225,9 +225,42 @@ export default function MessageTemplates() {
     },
   });
 
+  const getTemplateBodyValidationError = (body: string) => {
+    const trimmedBody = body.trim();
+
+    if (/^\{\{\d+\}\}/.test(trimmedBody) || /\{\{\d+\}\}$/.test(trimmedBody)) {
+      return "A Meta não permite variáveis no início ou no fim do corpo do template. Adicione texto antes e depois das variáveis.";
+    }
+
+    return null;
+  };
+
+  const getTemplateMetaErrorMessage = (result: unknown) => {
+    if (!result || typeof result !== "object") return "Erro desconhecido";
+
+    const payload = result as {
+      error?: string;
+      details?: {
+        error?: {
+          message?: string;
+          error_user_msg?: string;
+        };
+      };
+    };
+
+    return payload.error || payload.details?.error?.error_user_msg || payload.details?.error?.message || "Erro desconhecido";
+  };
+
   const submitToMetaMutation = useMutation({
     mutationFn: async (id: string) => {
       if (!tenantId) throw new Error("Tenant não encontrado");
+
+      const template = templates.find((item) => item.id === id);
+      if (!template) throw new Error("Template não encontrado");
+
+      const validationError = getTemplateBodyValidationError(template.body);
+      if (validationError) throw new Error(validationError);
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Não autenticado");
 
@@ -245,8 +278,7 @@ export default function MessageTemplates() {
 
       const result = await response.json();
       if (!response.ok) {
-        const detail = result.details?.error?.message || result.error || "Erro desconhecido";
-        throw new Error(detail);
+        throw new Error(getTemplateMetaErrorMessage(result));
       }
       return result;
     },
@@ -259,13 +291,13 @@ export default function MessageTemplates() {
     },
   });
 
-  // Bulk submit to Meta
   const handleBulkSubmitToMeta = async () => {
     if (selectedIds.size === 0) return;
     setBulkSubmitting(true);
     const ids = Array.from(selectedIds);
     let success = 0;
     let failed = 0;
+    const failedTemplates: string[] = [];
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -275,6 +307,20 @@ export default function MessageTemplates() {
     }
 
     for (const id of ids) {
+      const tpl = templates.find((t) => t.id === id);
+
+      if (!tpl) {
+        failed++;
+        continue;
+      }
+
+      const validationError = getTemplateBodyValidationError(tpl.body);
+      if (validationError) {
+        failed++;
+        failedTemplates.push(`${tpl.name}: ${validationError}`);
+        continue;
+      }
+
       try {
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-template`,
@@ -292,11 +338,12 @@ export default function MessageTemplates() {
           success++;
         } else {
           failed++;
-          const tpl = templates.find((t) => t.id === id);
-          console.error(`Failed ${tpl?.name}:`, result);
+          failedTemplates.push(`${tpl.name}: ${getTemplateMetaErrorMessage(result)}`);
+          console.error(`Failed ${tpl.name}:`, result);
         }
       } catch {
         failed++;
+        failedTemplates.push(`${tpl.name}: erro inesperado ao enviar`);
       }
     }
 
@@ -307,13 +354,14 @@ export default function MessageTemplates() {
     if (failed === 0) {
       toast.success(`${success} template(s) enviado(s) à Meta com sucesso!`);
     } else {
-      toast.warning(`${success} enviado(s), ${failed} falha(s)`);
+      const details = failedTemplates.slice(0, 2).join(" • ");
+      toast.warning(`${success} enviado(s), ${failed} falha(s)${details ? `. ${details}` : ""}`);
     }
   };
 
-  // Eligible templates for bulk Meta submission (not yet approved)
+  // Eligible templates for bulk Meta submission (not yet approved and valid)
   const eligibleForMeta = useMemo(
-    () => templates.filter((t) => t.status !== "approved"),
+    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body)),
     [templates]
   );
 
@@ -766,7 +814,7 @@ export default function MessageTemplates() {
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
-                            disabled={t.status === "approved"}
+                            disabled={t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
                           />
                         </TableCell>
                         <TableCell className="font-medium">
@@ -778,7 +826,12 @@ export default function MessageTemplates() {
                         <TableCell>{categoryLabels[t.category] || t.category}</TableCell>
                         <TableCell>{languageLabels[t.language] || t.language}</TableCell>
                         <TableCell>
-                          <Badge variant={st.variant}>{st.label}</Badge>
+                          <div className="flex items-center justify-start gap-2">
+                            <Badge variant={st.variant}>{st.label}</Badge>
+                            {getTemplateBodyValidationError(t.body) && (
+                              <Badge variant="outline">Body inválido</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -800,8 +853,8 @@ export default function MessageTemplates() {
                               variant="ghost"
                               size="icon"
                               onClick={() => submitToMetaMutation.mutate(t.id)}
-                              disabled={submitToMetaMutation.isPending || t.status === "approved"}
-                              title="Enviar à Meta para aprovação"
+                              disabled={submitToMetaMutation.isPending || t.status === "approved" || !!getTemplateBodyValidationError(t.body)}
+                              title={getTemplateBodyValidationError(t.body) || "Enviar à Meta para aprovação"}
                             >
                               {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -37,11 +37,28 @@ async function invokeWhatsAppRegister<T>(body: Record<string, unknown>) {
 }
 
 export default function SettingsWhatsApp() {
+  const { currentTenant } = useAuth();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("status");
   const [codeMethod, setCodeMethod] = useState("SMS");
   const [verificationCode, setVerificationCode] = useState("");
   const [pin, setPin] = useState("123456");
+
+  // Fetch linked WhatsApp accounts
+  const { data: waAccounts = [] } = useQuery({
+    queryKey: ["whatsapp-accounts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant?.id) return [];
+      const { data } = await supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!currentTenant?.id,
+  });
 
   const {
     data: phoneStatus,

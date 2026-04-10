@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
         format: template.header_type.toUpperCase(),
       };
       if (template.header_type === "text" && template.header_content) {
-        headerComponent.text = template.header_content;
+        headerComponent.text = sanitizeForMeta(template.header_content);
       }
       if (["image", "video", "document"].includes(template.header_type) && template.header_content) {
         headerComponent.example = {

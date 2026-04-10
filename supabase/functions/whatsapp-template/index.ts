@@ -9,16 +9,29 @@ const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = Deno.env.get("WHATSAPP_BUSINESS_ACCOUNT_ID")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 const GRAPH_API = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
 
-// Sanitize text for Meta API: remove emojis, newlines, formatting chars, asterisks
+function jsonResponse(payload: unknown, status: number) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 function sanitizeForMeta(input: string): string {
   return input
-    .replace(/[\n\r\f\v]/g, ' ')
-    .replace(/[*_~]/g, '')
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '')
+    .replace(/[\n\r\f\v]/g, " ")
+    .replace(/[*_~]/g, "")
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, "")
+    .replace(/\s+/g, " ")
     .trim();
+}
+
+function hasVariableAtBodyEdges(input: string): boolean {
+  const trimmed = input.trim();
+  return /^\{\{\d+\}\}/.test(trimmed) || /\{\{\d+\}\}$/.test(trimmed);
 }
 
 Deno.serve(async (req) => {
@@ -27,38 +40,28 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    const supabaseAuth = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
 
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    const body = await req.json();
-    const { template_id, tenant_id } = body;
+    const requestBody = await req.json().catch(() => null);
+    const template_id = requestBody?.template_id;
+    const tenant_id = requestBody?.tenant_id;
 
     if (!template_id || !tenant_id) {
-      return new Response(JSON.stringify({ error: "template_id and tenant_id are required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "template_id and tenant_id are required" }, 400);
     }
 
-    // Verify tenant membership
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: isMember } = await supabase.rpc("is_tenant_member", {
       _user_id: user.id,
@@ -66,13 +69,9 @@ Deno.serve(async (req) => {
     });
 
     if (!isMember) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Forbidden" }, 403);
     }
 
-    // Fetch template from DB
     const { data: template, error: fetchError } = await supabase
       .from("message_templates")
       .select("*")
@@ -81,48 +80,71 @@ Deno.serve(async (req) => {
       .single();
 
     if (fetchError || !template) {
-      return new Response(JSON.stringify({ error: "Template not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Template not found" }, 404);
     }
 
-    // Build Meta API payload
+    const sanitizedHeader =
+      template.header_type === "text" && template.header_content
+        ? sanitizeForMeta(template.header_content)
+        : null;
+
+    if (template.header_type === "text" && template.header_content && !sanitizedHeader) {
+      return jsonResponse({
+        error: "O cabeçalho do template ficou vazio após remover emojis e formatação. Use apenas texto simples no título.",
+        field: "header_content",
+      }, 400);
+    }
+
+    if (typeof template.body !== "string" || !template.body.trim()) {
+      return jsonResponse({
+        error: "O corpo do template é obrigatório.",
+        field: "body",
+      }, 400);
+    }
+
+    if (hasVariableAtBodyEdges(template.body)) {
+      return jsonResponse({
+        error: "A Meta não permite variáveis no início ou no fim do corpo do template. Adicione texto antes e depois das variáveis.",
+        field: "body",
+        code: "META_TEMPLATE_EDGE_VARIABLE",
+      }, 400);
+    }
+
     const components: Record<string, unknown>[] = [];
 
-    // Header component
     if (template.header_type && template.header_type !== "none") {
       const headerComponent: Record<string, unknown> = {
         type: "HEADER",
         format: template.header_type.toUpperCase(),
       };
-      if (template.header_type === "text" && template.header_content) {
-        headerComponent.text = sanitizeForMeta(template.header_content);
+
+      if (template.header_type === "text" && sanitizedHeader) {
+        headerComponent.text = sanitizedHeader;
       }
+
       if (["image", "video", "document"].includes(template.header_type) && template.header_content) {
         headerComponent.example = {
           header_handle: [template.header_content],
         };
       }
+
       components.push(headerComponent);
     }
 
-    // Body component
     const bodyComponent: Record<string, unknown> = {
       type: "BODY",
-      text: template.body,
+      text: template.body.trim(),
     };
 
-    // Add example values for variables
     const varMatches = template.body.match(/\{\{\d+\}\}/g);
     if (varMatches && varMatches.length > 0) {
       const sampleValues = (template.sample_values as string[]) || [];
       const examples = varMatches.map((_: string, i: number) => sampleValues[i] || `exemplo_${i + 1}`);
       bodyComponent.example = { body_text: [examples] };
     }
+
     components.push(bodyComponent);
 
-    // Footer component
     if (template.footer) {
       components.push({
         type: "FOOTER",
@@ -130,7 +152,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buttons component
     const buttons = (template.buttons as { type: string; text: string; url?: string; phone_number?: string }[]) || [];
     if (buttons.length > 0) {
       components.push({
@@ -156,7 +177,6 @@ Deno.serve(async (req) => {
 
     console.log("Submitting template to Meta:", JSON.stringify(metaPayload, null, 2));
 
-    // Submit to Meta API
     const metaResponse = await fetch(GRAPH_API, {
       method: "POST",
       headers: {
@@ -171,25 +191,36 @@ Deno.serve(async (req) => {
     if (!metaResponse.ok) {
       console.error("Meta API error:", metaResult);
       const subcode = metaResult?.error?.error_subcode;
-      // Template already exists in this language
+
       if (subcode === 2388024) {
-        return new Response(JSON.stringify({ 
+        return jsonResponse({
           error: "Template já existe na Meta com este nome e idioma. Renomeie o template ou altere o idioma.",
           already_exists: true,
-        }), {
-          status: 409,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        }, 409);
       }
-      return new Response(JSON.stringify({ error: "Meta API error", details: metaResult }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+      if (subcode === 2388072) {
+        return jsonResponse({
+          error: "A Meta rejeitou o cabeçalho do template. Remova emojis, asteriscos, quebras de linha e formatação do título.",
+          field: "header_content",
+          details: metaResult,
+        }, 400);
+      }
+
+      if (subcode === 2388299) {
+        return jsonResponse({
+          error: "A Meta não permite variáveis no início ou no fim do corpo do template. Ajuste o texto para ter conteúdo fixo antes e depois das variáveis.",
+          field: "body",
+          code: "META_TEMPLATE_EDGE_VARIABLE",
+          details: metaResult,
+        }, 400);
+      }
+
+      return jsonResponse({ error: "Meta API error", details: metaResult }, 502);
     }
 
     console.log("Meta API success:", metaResult);
 
-    // Update template with Meta ID and status
     await supabase
       .from("message_templates")
       .update({
@@ -198,19 +229,13 @@ Deno.serve(async (req) => {
       })
       .eq("id", template_id);
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return jsonResponse({
+      success: true,
       meta_template_id: metaResult.id,
       status: metaResult.status,
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    }, 200);
   } catch (error) {
     console.error("Template submission error:", error);
-    return new Response(JSON.stringify({ error: "Internal error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Internal error" }, 500);
   }
 });

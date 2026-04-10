@@ -373,7 +373,7 @@ export default function Campaigns() {
                 <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
-                      <CardTitle className="text-sm font-semibold leading-tight pr-6">{c.name}</CardTitle>
+                      <CardTitle className="text-sm font-semibold leading-tight pr-6 cursor-pointer hover:text-primary transition-colors" onClick={() => navigate(`/campaigns/${c.id}`)}>{c.name}</CardTitle>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                         {renderCampaignActions(c)}
                       </div>

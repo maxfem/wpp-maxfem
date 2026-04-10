@@ -116,6 +116,8 @@ export default function MessageTemplates() {
   const [bulkSendTemplate, setBulkSendTemplate] = useState<{
     id: string; name: string; status: string; body: string; language: string;
   } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const tenantId = currentTenant?.id;
 

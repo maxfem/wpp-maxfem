@@ -12,6 +12,15 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const GRAPH_API = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
 
+// Sanitize text for Meta API: remove emojis, newlines, formatting chars, asterisks
+function sanitizeForMeta(input: string): string {
+  return input
+    .replace(/[\n\r\f\v]/g, ' ')
+    .replace(/[*_~]/g, '')
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '')
+    .trim();
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -88,7 +97,7 @@ Deno.serve(async (req) => {
         format: template.header_type.toUpperCase(),
       };
       if (template.header_type === "text" && template.header_content) {
-        headerComponent.text = template.header_content;
+        headerComponent.text = sanitizeForMeta(template.header_content);
       }
       if (["image", "video", "document"].includes(template.header_type) && template.header_content) {
         headerComponent.example = {

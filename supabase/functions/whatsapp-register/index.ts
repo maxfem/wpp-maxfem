@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
@@ -41,7 +42,9 @@ function isExpiredTokenError(result: GraphErrorPayload) {
 
 async function verifyAuth(req: Request) {
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (
+    !authHeader?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY
+  ) {
     return null;
   }
 
@@ -68,7 +71,8 @@ function ensureServerConfig() {
       {
         error: "Configuração incompleta do WhatsApp",
         code: "whatsapp_config_missing",
-        user_message: "As credenciais do WhatsApp não estão configuradas corretamente no backend.",
+        user_message:
+          "As credenciais do WhatsApp não estão configuradas corretamente no backend.",
       },
       500,
     );
@@ -86,7 +90,9 @@ async function callGraph(path: string, init?: RequestInit) {
     },
   });
 
-  const result = (await response.json().catch(() => ({}))) as GraphErrorPayload & Record<string, unknown>;
+  const result = (await response.json().catch(() => ({}))) as
+    & GraphErrorPayload
+    & Record<string, unknown>;
 
   if (response.ok) {
     return { ok: true as const, result };
@@ -102,7 +108,10 @@ async function callGraph(path: string, init?: RequestInit) {
         code: tokenExpired ? "whatsapp_token_expired" : "whatsapp_api_error",
         user_message: tokenExpired
           ? "O token da Cloud API expirou. Atualize o segredo WHATSAPP_ACCESS_TOKEN para continuar."
-          : getGraphErrorMessage(result, "Falha ao comunicar com a Cloud API do WhatsApp."),
+          : getGraphErrorMessage(
+            result,
+            "Falha ao comunicar com a Cloud API do WhatsApp.",
+          ),
         details: result,
       },
       502,
@@ -149,7 +158,10 @@ Deno.serve(async (req) => {
     if (action === "verify_code") {
       const code = typeof body.code === "string" ? body.code.trim() : "";
       if (!/^\d{6}$/.test(code)) {
-        return jsonResponse({ error: "Código de 6 dígitos é obrigatório" }, 400);
+        return jsonResponse(
+          { error: "Código de 6 dígitos é obrigatório" },
+          400,
+        );
       }
 
       const result = await callGraph("/verify_code", {

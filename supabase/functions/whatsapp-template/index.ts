@@ -24,7 +24,7 @@ function sanitizeForMeta(input: string): string {
   return input
     .replace(/[\n\r\f\v]/g, " ")
     .replace(/[*_~]/g, "")
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, "")
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{200D}\u{FE0E}\u{FE0F}\u{20E3}]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 }

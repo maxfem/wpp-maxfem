@@ -45,7 +45,7 @@ export default function Chat() {
 
   const tenantId = currentTenant?.id;
 
-  // Fetch all messages for conversations list
+  // Fetch all messages for conversations list (with polling fallback)
   const { data: allMessages = [] } = useQuery({
     queryKey: ["whatsapp-messages", tenantId],
     queryFn: async () => {
@@ -59,6 +59,7 @@ export default function Chat() {
       return data as Message[];
     },
     enabled: !!tenantId,
+    refetchInterval: 5000,
   });
 
   // Fetch customers for name resolution

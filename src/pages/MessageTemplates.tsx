@@ -701,10 +701,55 @@ export default function MessageTemplates() {
           </Card>
         ) : (
           <Card>
+            {/* Bulk action bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5 border-b border-border">
+                <span className="text-sm text-foreground">
+                  <span className="font-medium">{selectedIds.size}</span> template(s) selecionado(s)
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs"
+                  >
+                    Limpar seleção
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkSubmitToMeta}
+                    disabled={bulkSubmitting}
+                    className="text-xs"
+                  >
+                    {bulkSubmitting ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 mr-1.5" />
+                        Enviar {selectedIds.size} à Meta
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={
+                          eligibleForMeta.length > 0 &&
+                          selectedIds.size === eligibleForMeta.length
+                        }
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Categoria</TableHead>
                     <TableHead>Idioma</TableHead>

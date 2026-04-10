@@ -137,7 +137,7 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
     const parts = text.split(regex);
     return parts.map((part, i) =>
       regex.test(part) ? (
-        <mark key={i} className="bg-warning/30 text-inherit rounded-sm px-0.5">
+        <mark key={i} className="bg-accent text-accent-foreground rounded-sm px-0.5">
           {part}
         </mark>
       ) : (

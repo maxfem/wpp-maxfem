@@ -33,9 +33,13 @@ interface FlowSidebarProps {
   onNameChange: (name: string) => void;
   selectedListId?: string;
   onListChange?: (listId: string) => void;
+  scheduledDate?: string;
+  onScheduledDateChange?: (date: string) => void;
+  scheduledTime?: string;
+  onScheduledTimeChange?: (time: string) => void;
 }
 
-export function FlowSidebar({ campaignName, onNameChange, selectedListId, onListChange }: FlowSidebarProps) {
+export function FlowSidebar({ campaignName, onNameChange, selectedListId, onListChange, scheduledDate, onScheduledDateChange, scheduledTime, onScheduledTimeChange }: FlowSidebarProps) {
   const { currentTenant } = useAuth();
 
   const { data: lists = [] } = useQuery({
@@ -97,6 +101,24 @@ export function FlowSidebar({ campaignName, onNameChange, selectedListId, onList
               <SelectItem value="default">Perfil padrão</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Data de envio</Label>
+          <Input
+            type="date"
+            value={scheduledDate || ""}
+            onChange={(e) => onScheduledDateChange?.(e.target.value)}
+            className="h-8 text-sm"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Horário de envio</Label>
+          <Input
+            type="time"
+            value={scheduledTime || ""}
+            onChange={(e) => onScheduledTimeChange?.(e.target.value)}
+            className="h-8 text-sm"
+          />
         </div>
       </div>
 

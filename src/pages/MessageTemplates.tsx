@@ -49,7 +49,9 @@ import {
   Upload,
   Loader2,
   RefreshCw,
+  Send,
 } from "lucide-react";
+import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
 

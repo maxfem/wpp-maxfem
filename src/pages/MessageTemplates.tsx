@@ -259,7 +259,81 @@ export default function MessageTemplates() {
     },
   });
 
-  const closeDialog = () => {
+  // Bulk submit to Meta
+  const handleBulkSubmitToMeta = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSubmitting(true);
+    const ids = Array.from(selectedIds);
+    let success = 0;
+    let failed = 0;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast.error("Não autenticado");
+      setBulkSubmitting(false);
+      return;
+    }
+
+    for (const id of ids) {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-template`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ template_id: id, tenant_id: tenantId }),
+          }
+        );
+        const result = await response.json();
+        if (response.ok) {
+          success++;
+        } else {
+          failed++;
+          const tpl = templates.find((t) => t.id === id);
+          console.error(`Failed ${tpl?.name}:`, result);
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+    setSelectedIds(new Set());
+    setBulkSubmitting(false);
+
+    if (failed === 0) {
+      toast.success(`${success} template(s) enviado(s) à Meta com sucesso!`);
+    } else {
+      toast.warning(`${success} enviado(s), ${failed} falha(s)`);
+    }
+  };
+
+  // Eligible templates for bulk Meta submission (not yet approved)
+  const eligibleForMeta = useMemo(
+    () => templates.filter((t) => t.status !== "approved"),
+    [templates]
+  );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === eligibleForMeta.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(eligibleForMeta.map((t) => t.id)));
+    }
+  };
+
     setDialogOpen(false);
     setEditingId(null);
     setForm(emptyForm);

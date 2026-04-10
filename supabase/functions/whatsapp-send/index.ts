@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -8,8 +9,6 @@ const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-const GRAPH_API = `https://graph.facebook.com/v22.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -62,6 +61,22 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Resolve phone_number_id from whatsapp_accounts, fallback to env var
+    let phoneNumberId = WHATSAPP_PHONE_NUMBER_ID;
+    const { data: waAccount } = await supabase
+      .from("whatsapp_accounts")
+      .select("phone_number_id")
+      .eq("tenant_id", tenant_id)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    if (waAccount?.phone_number_id) {
+      phoneNumberId = waAccount.phone_number_id;
+    }
+
+    const GRAPH_API = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
 
     // Build WhatsApp API payload
     let waPayload: Record<string, unknown>;

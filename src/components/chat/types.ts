@@ -6,10 +6,13 @@ export interface Message {
   content: string | null;
   status: string;
   created_at: string;
+  updated_at: string;
   customer_id: string | null;
   tenant_id: string;
   wamid: string | null;
   template_name: string | null;
+  media_url: string | null;
+  metadata: any;
 }
 
 export interface Conversation {
@@ -20,7 +23,9 @@ export interface Conversation {
   lastMessage: string;
   lastMessageAt: string;
   unread: number;
+  lastDirection?: string;
 }
 
 export type DateFilter = "all" | "today" | "7days" | "30days";
 export type StatusFilter = "all" | "unread";
+export type SidebarTab = "all" | "unread";

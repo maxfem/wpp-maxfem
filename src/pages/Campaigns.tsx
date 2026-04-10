@@ -161,6 +161,22 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const toggleCampaign = useMutation({
+    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
+      const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
+      const newStatus = isActive ? "draft" : "scheduled";
+      const { error } = await supabase
+        .from("campaigns")
+        .update({ status: newStatus })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const filtered = useMemo(() => {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())
@@ -379,7 +395,11 @@ export default function Campaigns() {
                         <StIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
-                      <Switch className="scale-75" />
+                      <Switch
+                        className="scale-75"
+                        checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                        onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -432,7 +452,13 @@ export default function Campaigns() {
                           : "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>
-                      <TableCell className="text-right"><Switch className="scale-75" /></TableCell>
+                      <TableCell className="text-right">
+                        <Switch
+                          className="scale-75"
+                          checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                          onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                        />
+                      </TableCell>
                       <TableCell>{renderCampaignActions(c)}</TableCell>
                     </TableRow>
                   );

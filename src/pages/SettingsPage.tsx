@@ -1,5 +1,6 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useNavigate } from "react-router-dom";
 import {
   Plug,
   MessageCircle,
@@ -13,18 +14,20 @@ import {
 } from "lucide-react";
 
 const sections = [
-  { title: "Integrações", desc: "Conectores com e-commerces, ERPs e canais", icon: Plug },
+  { title: "Integrações", desc: "Conectores com e-commerces, ERPs e canais", icon: Plug, path: null },
+  { title: "WhatsApp", desc: "Números e modelos de mensagem HSM", icon: MessageCircle, path: "/settings/whatsapp" },
   { title: "WhatsApp", desc: "Números e modelos de mensagem HSM", icon: MessageCircle },
-  { title: "Atendimento", desc: "Configurações do inbox de suporte", icon: Headphones },
-  { title: "Tags de Clientes", desc: "Tags para segmentação de clientes", icon: Tags },
-  { title: "Colaboradores", desc: "Gerenciar equipe e permissões", icon: UsersRound },
-  { title: "Atributos Customizados", desc: "Campos extras no perfil do cliente", icon: SlidersHorizontal },
-  { title: "Mapeamento de Status", desc: "Mapear status de pedidos da plataforma", icon: Map },
-  { title: "Chaves de Acesso", desc: "API Keys para integração externa", icon: Key },
-  { title: "Webhooks", desc: "Endpoints para notificações push", icon: Webhook },
+  { title: "Atendimento", desc: "Configurações do inbox de suporte", icon: Headphones, path: null },
+  { title: "Tags de Clientes", desc: "Tags para segmentação de clientes", icon: Tags, path: null },
+  { title: "Colaboradores", desc: "Gerenciar equipe e permissões", icon: UsersRound, path: null },
+  { title: "Atributos Customizados", desc: "Campos extras no perfil do cliente", icon: SlidersHorizontal, path: null },
+  { title: "Mapeamento de Status", desc: "Mapear status de pedidos da plataforma", icon: Map, path: null },
+  { title: "Chaves de Acesso", desc: "API Keys para integração externa", icon: Key, path: null },
+  { title: "Webhooks", desc: "Endpoints para notificações push", icon: Webhook, path: null },
 ];
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
@@ -39,6 +42,7 @@ export default function SettingsPage() {
             <Card
               key={s.title}
               className="border border-border hover:border-primary/30 transition-colors cursor-pointer"
+              onClick={() => s.path && navigate(s.path)}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-3">

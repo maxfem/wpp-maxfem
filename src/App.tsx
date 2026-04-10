@@ -18,6 +18,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfUse from "./pages/TermsOfUse";
 import MessageTemplates from "./pages/MessageTemplates";
 import Lists from "./pages/Lists";
+import SettingsWhatsApp from "./pages/SettingsWhatsApp";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ const App = () => (
             <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
             <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/settings/whatsapp" element={<ProtectedRoute><SettingsWhatsApp /></ProtectedRoute>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfUse />} />
             <Route path="*" element={<NotFound />} />

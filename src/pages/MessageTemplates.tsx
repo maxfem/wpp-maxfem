@@ -762,6 +762,13 @@ export default function MessageTemplates() {
                     const st = statusConfig[t.status] || statusConfig.draft;
                     return (
                       <TableRow key={t.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(t.id)}
+                            onCheckedChange={() => toggleSelect(t.id)}
+                            disabled={t.status === "approved"}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />

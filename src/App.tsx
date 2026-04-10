@@ -18,6 +18,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfUse from "./pages/TermsOfUse";
 import MessageTemplates from "./pages/MessageTemplates";
 import Lists from "./pages/Lists";
+import SettingsWhatsApp from "./pages/SettingsWhatsApp";
 
 const queryClient = new QueryClient();
 

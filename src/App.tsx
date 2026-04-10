@@ -10,6 +10,7 @@ import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
 import Automations from "./pages/Automations";
 import CampaignFlowEditor from "./pages/CampaignFlowEditor";
+import CampaignDetails from "./pages/CampaignDetails";
 import Activities from "./pages/Activities";
 import Chat from "./pages/Chat";
 import SettingsPage from "./pages/SettingsPage";

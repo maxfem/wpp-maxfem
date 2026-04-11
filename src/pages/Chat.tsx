@@ -250,6 +250,43 @@ export default function Chat() {
     },
   });
 
+  // Update customer attributes helper
+  const updateCustomerAttr = useCallback(async (customerId: string, updates: Record<string, any>) => {
+    const customer = customers.find((c) => c.id === customerId);
+    const attrs = (customer?.custom_attributes as Record<string, any>) || {};
+    await supabase
+      .from("customers")
+      .update({ custom_attributes: { ...attrs, ...updates } })
+      .eq("id", customerId);
+    queryClient.invalidateQueries({ queryKey: ["customers-lookup", tenantId] });
+  }, [customers, tenantId, queryClient]);
+
+  const handleToggleFavorite = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_favorite: !selectedConv.isFavorite });
+    toast.success(selectedConv.isFavorite ? "Removido dos favoritos" : "Marcado como favorito");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleToggleMute = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_muted: !selectedConv.isMuted });
+    toast.success(selectedConv.isMuted ? "Notificações reativadas" : "Conversa silenciada");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleArchive = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_archived: true });
+    setSelectedPhoneKey(null);
+    toast.success("Conversa arquivada");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleSetStatus = useCallback((status: "open" | "resolved" | "pending") => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { conversation_status: status });
+    const labels = { open: "Reaberta", resolved: "Resolvida", pending: "Marcada como pendente" };
+    toast.success(`Conversa ${labels[status].toLowerCase()}`);
+  }, [selectedConv, updateCustomerAttr]);
+
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-4rem)] animate-fade-in">
@@ -291,6 +328,10 @@ export default function Chat() {
                 showContactPanel={showContactPanel}
                 onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
                 onSearchInChat={() => setSearchInChat(!searchInChat)}
+                onToggleFavorite={handleToggleFavorite}
+                onToggleMute={handleToggleMute}
+                onArchive={handleArchive}
+                onSetStatus={handleSetStatus}
               />
               <ChatMessageArea
                 messages={selectedMessages}

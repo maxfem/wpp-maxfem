@@ -395,9 +395,14 @@ export default function MessageTemplates() {
   };
 
   // Eligible templates for bulk Meta submission (not yet approved and valid)
+  const filteredTemplates = useMemo(
+    () => statusFilter === "all" ? templates : templates.filter((t) => t.status === statusFilter),
+    [templates, statusFilter]
+  );
+
   const eligibleForMeta = useMemo(
-    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
-    [templates]
+    () => filteredTemplates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
+    [filteredTemplates]
   );
 
   const toggleSelect = (id: string) => {

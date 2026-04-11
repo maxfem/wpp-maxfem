@@ -349,6 +349,56 @@ export type Database = {
           },
         ]
       }
+      integrations: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          last_synced_at: string | null
+          provider: string
+          sync_error: string | null
+          sync_settings: Json
+          sync_status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_synced_at?: string | null
+          provider: string
+          sync_error?: string | null
+          sync_settings?: Json
+          sync_status?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_synced_at?: string | null
+          provider?: string
+          sync_error?: string | null
+          sync_settings?: Json
+          sync_status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       link_clicks: {
         Row: {
           clicked_at: string

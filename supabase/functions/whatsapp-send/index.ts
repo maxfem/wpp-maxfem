@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,12 +16,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -32,58 +30,51 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = user.id;
     const body = await req.json();
-    const { phone, message, tenant_id, customer_id, template_name, template_language, template_components } = body;
+    const {
+      phone, message, tenant_id, customer_id,
+      template_name, template_language, template_components,
+      media_type, media_url, filename,
+    } = body;
 
     if (!phone || !tenant_id) {
       return new Response(JSON.stringify({ error: "phone and tenant_id are required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Verify tenant membership
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: isMember } = await supabase.rpc("is_tenant_member", {
-      _user_id: userId,
-      _tenant_id: tenant_id,
+      _user_id: user.id, _tenant_id: tenant_id,
     });
 
     if (!isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Resolve phone_number_id from whatsapp_accounts, fallback to env var
+    // Resolve phone_number_id
     let phoneNumberId = WHATSAPP_PHONE_NUMBER_ID;
     const { data: waAccount } = await supabase
       .from("whatsapp_accounts")
       .select("phone_number_id")
-      .eq("tenant_id", tenant_id)
-      .eq("is_active", true)
-      .limit(1)
-      .single();
-
-    if (waAccount?.phone_number_id) {
-      phoneNumberId = waAccount.phone_number_id;
-    }
+      .eq("tenant_id", tenant_id).eq("is_active", true).limit(1).single();
+    if (waAccount?.phone_number_id) phoneNumberId = waAccount.phone_number_id;
 
     const GRAPH_API = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
 
-    // Build WhatsApp API payload
     let waPayload: Record<string, unknown>;
     let msgType = "text";
     let content = message || "";
+    let savedMediaUrl: string | null = null;
 
     if (template_name) {
+      // Template message
       msgType = "template";
       content = `[Template: ${template_name}]`;
       waPayload = {
@@ -96,7 +87,24 @@ Deno.serve(async (req) => {
           components: template_components || [],
         },
       };
+    } else if (media_type && media_url) {
+      // Media message (image, video, audio, document)
+      msgType = media_type;
+      savedMediaUrl = media_url;
+      content = message || `[${media_type === "image" ? "Imagem" : media_type === "video" ? "Vídeo" : media_type === "audio" ? "Áudio" : "Documento"}]`;
+
+      const mediaPayload: Record<string, unknown> = { link: media_url };
+      if (message && media_type !== "audio") mediaPayload.caption = message;
+      if (media_type === "document" && filename) mediaPayload.filename = filename;
+
+      waPayload = {
+        messaging_product: "whatsapp",
+        to: phone,
+        type: media_type,
+        [media_type]: mediaPayload,
+      };
     } else {
+      // Text message
       waPayload = {
         messaging_product: "whatsapp",
         to: phone,
@@ -105,7 +113,6 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Send to WhatsApp API
     const waResponse = await fetch(GRAPH_API, {
       method: "POST",
       headers: {
@@ -120,14 +127,12 @@ Deno.serve(async (req) => {
     if (!waResponse.ok) {
       console.error("WhatsApp API error:", waResult);
       return new Response(JSON.stringify({ error: "WhatsApp API error", details: waResult }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const wamid = waResult.messages?.[0]?.id;
 
-    // Save to database
     await supabase.from("whatsapp_messages").insert({
       tenant_id,
       customer_id: customer_id || null,
@@ -135,20 +140,19 @@ Deno.serve(async (req) => {
       direction: "outbound",
       message_type: msgType,
       content,
+      media_url: savedMediaUrl,
       wamid,
       status: "sent",
       template_name: template_name || null,
     });
 
     return new Response(JSON.stringify({ success: true, wamid }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Send error:", error);
     return new Response(JSON.stringify({ error: "Internal error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

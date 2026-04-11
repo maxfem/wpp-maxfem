@@ -375,6 +375,26 @@ Deno.serve(async (req) => {
               campaign: campaignVars,
             };
 
+            // Create tracked link for dynamic URL button (cart recovery / pix payment)
+            let buttonUrlCode: string | undefined;
+            if (hasDynamicUrlButton) {
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
+              if (dynamicUrl) {
+                const code = generateCode(10);
+                await supabase.from("tracked_links").insert({
+                  tenant_id: campaign.tenant_id,
+                  campaign_id: campaign.id,
+                  customer_id: customer.id,
+                  original_url: dynamicUrl,
+                  code,
+                  utm_source: "whatsapp",
+                  utm_medium: "campaign",
+                  utm_campaign: campaign.name,
+                });
+                buttonUrlCode = code;
+              }
+            }
+
             // Send via Meta Graph API
             const waRes = await fetch(
               `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
@@ -391,7 +411,10 @@ Deno.serve(async (req) => {
                   template: {
                     name: templateName,
                     language: { code: templateLanguage },
-                    components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar),
+                    components: buildTemplateComponents(
+                      variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                      buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                    ),
                   },
                 }),
               }

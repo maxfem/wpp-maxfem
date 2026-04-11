@@ -10,6 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 
 const PROVIDERS = [
   {
+    id: "openai",
+    name: "OpenAI",
+    description: "Assistente de IA para atendimento. Sugere respostas, copilot inteligente no chat.",
+    logo: "",
+    color: "#10A37F",
+    features: ["Assistente IA", "Sugestão de Respostas", "Copilot"],
+  },
+  {
     id: "yampi",
     name: "Yampi",
     description: "Checkout transparente e gestão de e-commerce. Sincronize clientes, pedidos, carrinhos abandonados e transações Pix.",

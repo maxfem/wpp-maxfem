@@ -267,6 +267,7 @@ export default function Chat() {
             conversation={selectedConv}
             messages={selectedMessages}
             customer={selectedCustomer}
+            orders={customerOrders}
           />
         )}
       </div>

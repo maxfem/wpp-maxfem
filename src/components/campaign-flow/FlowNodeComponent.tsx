@@ -1,4 +1,3 @@
-import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,

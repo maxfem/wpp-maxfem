@@ -19,7 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface Order {
   id: string;
@@ -78,7 +78,8 @@ function CopilotTab({
   customer: ContactInfoPanelProps["customer"];
 }) {
   const { currentTenant } = useAuth();
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const queryClient = useQueryClient();
+  const [aiEnabled, setAiEnabled] = useState(false);
   const [toneOverride, setToneOverride] = useState("default");
   const [extraContext, setExtraContext] = useState("");
   const [suggestion, setSuggestion] = useState("");
@@ -103,7 +104,7 @@ function CopilotTab({
   // Load per-conversation settings from customer attributes
   useEffect(() => {
     const attrs = customer?.custom_attributes || {};
-    setAiEnabled(attrs.ai_enabled !== false);
+    setAiEnabled(attrs.ai_enabled === true);
     setToneOverride(attrs.ai_tone || "default");
     setExtraContext(attrs.ai_context || "");
   }, [customer?.id]);
@@ -115,6 +116,7 @@ function CopilotTab({
       .from("customers")
       .update({ custom_attributes: { ...attrs, ...updates } })
       .eq("id", customer.id);
+    queryClient.invalidateQueries({ queryKey: ["customers-lookup", currentTenant?.id] });
   };
 
   const handleSuggest = async () => {

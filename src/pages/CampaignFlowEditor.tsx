@@ -22,17 +22,17 @@ import { Switch } from "@/components/ui/switch";
 import { X, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { FlowSidebar } from "@/components/campaign-flow/FlowSidebar";
+import { FlowSidebar, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 import FlowNodeComponent from "@/components/campaign-flow/FlowNodeComponent";
 import StartNode from "@/components/campaign-flow/StartNode";
 import { NodeConfigPanel } from "@/components/campaign-flow/NodeConfigPanel";
 
-const defaultNodes: Node[] = [
+const makeDefaultNodes = (triggerLabel: string): Node[] => [
   {
     id: "start",
     type: "startNode",
     position: { x: 400, y: 60 },
-    data: { label: "Lead inserido" },
+    data: { label: triggerLabel },
     deletable: false,
   },
 ];
@@ -46,7 +46,7 @@ function FlowEditorInner() {
   const { id } = useParams();
   const { currentTenant } = useAuth();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState(defaultNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(makeDefaultNodes("Lead inserido"));
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [campaignName, setCampaignName] = useState("Sem nome");
   const [isActive, setIsActive] = useState(false);
@@ -56,9 +56,19 @@ function FlowEditorInner() {
   const [selectedListId, setSelectedListId] = useState<string>("all");
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
+  const [selectedTrigger, setSelectedTrigger] = useState<string>("");
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";
+
+  // Update start node label when trigger changes
+  const handleTriggerChange = useCallback((trigger: string) => {
+    setSelectedTrigger(trigger);
+    const label = getTriggerLabel(trigger);
+    setNodes((nds) =>
+      nds.map((n) => n.id === "start" ? { ...n, data: { ...n.data, label } } : n)
+    );
+  }, [setNodes]);
 
   // Load campaign data from DB
   useEffect(() => {
@@ -66,16 +76,22 @@ function FlowEditorInner() {
     (async () => {
       const { data } = await supabase
         .from("campaigns")
-        .select("name, status, flow_data, scheduled_at, list_id")
+        .select("name, status, flow_data, scheduled_at, list_id, trigger_type")
         .eq("id", id)
         .single();
       if (data) {
         setCampaignName(data.name);
         setIsActive(data.status === "running");
+        if (data.trigger_type) {
+          setSelectedTrigger(data.trigger_type);
+        }
         if (data.flow_data && typeof data.flow_data === "object") {
           const fd = data.flow_data as any;
           if (fd.nodes?.length) setNodes(fd.nodes);
           if (fd.edges?.length) setEdges(fd.edges);
+        } else if (isAutomation && data.trigger_type) {
+          // No flow data yet, set start node with trigger label
+          setNodes(makeDefaultNodes(getTriggerLabel(data.trigger_type)));
         }
         if (data.scheduled_at) {
           const dt = new Date(data.scheduled_at);
@@ -88,7 +104,7 @@ function FlowEditorInner() {
         setLoaded(true);
       }
     })();
-  }, [id, loaded, setNodes, setEdges]);
+  }, [id, loaded, setNodes, setEdges, isAutomation]);
 
   const nodeTypes = useMemo(
     () => ({
@@ -153,11 +169,10 @@ function FlowEditorInner() {
   const handleSave = async () => {
     const flowData = { nodes, edges };
 
-    // Build scheduled_at from date + time
     let scheduledAt: string | null = null;
     let status = isActive ? "running" : "draft";
 
-    if (scheduledDate && scheduledTime) {
+    if (!isAutomation && scheduledDate && scheduledTime) {
       scheduledAt = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
       if (new Date(scheduledAt) > new Date()) {
         status = "scheduled";
@@ -166,16 +181,23 @@ function FlowEditorInner() {
 
     const listId = selectedListId === "all" ? null : selectedListId;
 
+    const payload: any = {
+      name: campaignName,
+      status,
+      flow_data: flowData as any,
+      list_id: listId,
+    };
+
+    if (isAutomation) {
+      payload.trigger_type = selectedTrigger;
+    } else {
+      payload.scheduled_at = scheduledAt;
+    }
+
     if (id && id !== "new") {
       const { error } = await supabase
         .from("campaigns")
-        .update({
-          name: campaignName,
-          status,
-          flow_data: flowData as any,
-          scheduled_at: scheduledAt,
-          list_id: listId,
-        })
+        .update(payload)
         .eq("id", id);
       if (error) {
         toast.error("Erro ao salvar: " + error.message);
@@ -184,19 +206,15 @@ function FlowEditorInner() {
     } else if (currentTenant) {
       const { error } = await supabase.from("campaigns").insert({
         tenant_id: currentTenant.id,
-        name: campaignName,
         type: "custom",
-        status,
-        flow_data: flowData as any,
-        scheduled_at: scheduledAt,
-        list_id: listId,
+        ...payload,
       });
       if (error) {
         toast.error("Erro ao salvar: " + error.message);
         return;
       }
     }
-    toast.success(scheduledAt ? "Campanha agendada!" : "Campanha salva!");
+    toast.success(isAutomation ? "Automação salva!" : scheduledAt ? "Campanha agendada!" : "Campanha salva!");
   };
 
   const currentSelectedNode = selectedNode
@@ -214,7 +232,7 @@ function FlowEditorInner() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Ativo</span>
+            <span className="text-xs text-muted-foreground">{isAutomation ? "Ativa" : "Ativo"}</span>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
           <Button variant="outline" size="sm" onClick={handleSave}>
@@ -237,6 +255,9 @@ function FlowEditorInner() {
           onScheduledDateChange={setScheduledDate}
           scheduledTime={scheduledTime}
           onScheduledTimeChange={setScheduledTime}
+          isAutomation={isAutomation}
+          selectedTrigger={selectedTrigger}
+          onTriggerChange={handleTriggerChange}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

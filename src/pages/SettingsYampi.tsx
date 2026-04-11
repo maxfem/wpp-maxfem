@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +30,18 @@ import {
   Trash2,
 } from "lucide-react";
 
+const PHASE_LABELS: Record<string, string> = {
+  customers: "Sincronizando clientes...",
+  orders: "Sincronizando pedidos...",
+  carts: "Sincronizando carrinhos abandonados...",
+};
+
+const PHASE_PROGRESS: Record<string, number> = {
+  customers: 33,
+  orders: 66,
+  carts: 100,
+};
+
 export default function SettingsYampi() {
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
@@ -43,6 +55,8 @@ export default function SettingsYampi() {
   const [syncCustomers, setSyncCustomers] = useState(true);
   const [syncOrders, setSyncOrders] = useState(true);
   const [syncAbandonedCarts, setSyncAbandonedCarts] = useState(true);
+  const [syncPhaseLabel, setSyncPhaseLabel] = useState("");
+  const [syncProgress, setSyncProgress] = useState(0);
 
   const { data: integration, isLoading } = useQuery({
     queryKey: ["integration-yampi", currentTenant?.id],
@@ -106,28 +120,47 @@ export default function SettingsYampi() {
   const syncMutation = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("Sem tenant");
-      const { data, error } = await supabase.functions.invoke("yampi-sync", {
-        body: { tenant_id: currentTenant.id },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
-      toast.success(data?.message || "Sincronização iniciada em segundo plano!");
-    },
-    onError: (err: any) => toast.error(`Erro na sincronização: ${err.message}`),
-  });
 
-  // Auto-refresh while syncing
-  useEffect(() => {
-    if (integration && (integration as any).sync_status === "syncing") {
-      const interval = setInterval(() => {
-        queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
-      }, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [(integration as any)?.sync_status]);
+      // Reset stuck status
+      if (integration && (integration as any).sync_status === "syncing") {
+        await supabase.from("integrations").update({ sync_status: "pending", sync_error: null }).eq("id", integration.id);
+      }
+
+      const phases = ["customers", "orders", "carts"];
+      const results: Record<string, number> = {};
+
+      for (const phase of phases) {
+        setSyncPhaseLabel(PHASE_LABELS[phase]);
+        setSyncProgress(PHASE_PROGRESS[phase] - 20);
+
+        const { data, error } = await supabase.functions.invoke("yampi-sync", {
+          body: { tenant_id: currentTenant.id, phase },
+        });
+
+        if (error) throw new Error(`Erro na fase ${phase}: ${error.message}`);
+        if (data?.error) throw new Error(data.error);
+
+        results[phase] = data?.synced || 0;
+        setSyncProgress(PHASE_PROGRESS[phase]);
+      }
+
+      return results;
+    },
+    onSuccess: (results) => {
+      setSyncPhaseLabel("");
+      setSyncProgress(0);
+      queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
+      toast.success(
+        `Sincronização concluída! ${results.customers || 0} clientes, ${results.orders || 0} pedidos, ${results.carts || 0} carrinhos.`
+      );
+    },
+    onError: (err: any) => {
+      setSyncPhaseLabel("");
+      setSyncProgress(0);
+      queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
+      toast.error(`Erro na sincronização: ${err.message}`);
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -207,7 +240,7 @@ export default function SettingsYampi() {
         </div>
 
         {/* Status Banner */}
-        {integration && (
+        {integration && !syncMutation.isPending && (
           <Card className={`border ${syncStatus === "failed" ? "border-destructive/50 bg-destructive/5" : syncStatus === "success" ? "border-green-500/30 bg-green-500/5" : "border-border"}`}>
             <CardContent className="py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -218,7 +251,7 @@ export default function SettingsYampi() {
                 <span className="text-sm text-foreground">
                   {syncStatus === "success" && "Última sincronização concluída"}
                   {syncStatus === "failed" && "Erro na última sincronização"}
-                  {syncStatus === "syncing" && "Sincronizando..."}
+                  {syncStatus === "syncing" && "Sincronização em andamento (pode estar travada)"}
                   {syncStatus === "pending" && "Aguardando primeira sincronização"}
                 </span>
                 {lastSynced && (
@@ -232,6 +265,22 @@ export default function SettingsYampi() {
                   {syncError}
                 </span>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Sync Progress */}
+        {syncMutation.isPending && (
+          <Card className="border border-primary/30 bg-primary/5">
+            <CardContent className="py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm font-medium text-foreground">{syncPhaseLabel}</span>
+              </div>
+              <Progress value={syncProgress} className="h-2" />
+              <p className="text-xs text-muted-foreground">
+                Não feche esta página enquanto a sincronização estiver em andamento.
+              </p>
             </CardContent>
           </Card>
         )}

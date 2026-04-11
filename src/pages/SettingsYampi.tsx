@@ -114,12 +114,20 @@ export default function SettingsYampi() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
-      toast.success(
-        `Sincronização concluída! ${data?.customers_synced || 0} clientes, ${data?.orders_synced || 0} pedidos, ${data?.carts_synced || 0} carrinhos.`
-      );
+      toast.success(data?.message || "Sincronização iniciada em segundo plano!");
     },
     onError: (err: any) => toast.error(`Erro na sincronização: ${err.message}`),
   });
+
+  // Auto-refresh while syncing
+  useEffect(() => {
+    if (integration && (integration as any).sync_status === "syncing") {
+      const interval = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ["integration-yampi"] });
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [(integration as any)?.sync_status]);
 
   const deleteMutation = useMutation({
     mutationFn: async () => {

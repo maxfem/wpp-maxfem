@@ -493,7 +493,44 @@ Deno.serve(async (req) => {
     let nextPhase: string | null = null;
     let done = false;
 
-    if (phase === "customers") {
+    if (phase === "refresh_tracking") {
+      // Quick mode: refresh tracking for all shipped orders missing tracking
+      const { data: shippedOrders } = await supabase
+        .from("orders")
+        .select("id, external_id")
+        .eq("tenant_id", tenant_id)
+        .in("status", ["shipped"])
+        .is("tracking_code", null)
+        .limit(50);
+
+      let updated = 0;
+      for (const order of (shippedOrders || [])) {
+        const yampiId = order.external_id?.replace("yampi_", "");
+        if (!yampiId) continue;
+        try {
+          const detailRes = await yampiGet(config.alias, `orders/${yampiId}`, config.user_token, config.user_secret_key);
+          const d = detailRes?.data;
+          const trackCode = d?.track_code || null;
+          const trackUrl = d?.track_url || null;
+          const trackCarrier = d?.shipment_service || null;
+          console.log(`[refresh] Order ${yampiId}: track_code=${trackCode}`);
+          if (trackCode) {
+            await supabase.from("orders").update({
+              tracking_code: trackCode,
+              tracking_url: trackUrl,
+              carrier: trackCarrier,
+            }).eq("id", order.id);
+            updated++;
+          }
+        } catch (e) {
+          console.error(`[refresh] Error for order ${yampiId}:`, e);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, phase, synced: updated, done: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } else if (phase === "customers") {
       if (syncSettings?.customers !== false) {
         synced = await syncCustomers(supabase, tenant_id, config);
       }

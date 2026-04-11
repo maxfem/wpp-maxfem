@@ -228,7 +228,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     const trackingUrl = o.track_url || o.tracking_url || null;
     const carrier = o.shipment_service || o.carrier || null;
     const deliveryEstimate = o.date_delivery || null;
-    const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || null;
+    
 
     // Extract payment summary
     const paymentSummary = (o.payments?.data || []).map((p: any) => ({

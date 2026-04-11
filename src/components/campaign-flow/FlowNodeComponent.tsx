@@ -112,4 +112,4 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
   );
 }
 
-export default memo(FlowNodeComponent);
+export default FlowNodeComponent;

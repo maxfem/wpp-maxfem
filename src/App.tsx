@@ -23,6 +23,7 @@ import SettingsWhatsApp from "./pages/SettingsWhatsApp";
 import SettingsIntegrations from "./pages/SettingsIntegrations";
 import SettingsYampi from "./pages/SettingsYampi";
 import SettingsOpenAI from "./pages/SettingsOpenAI";
+import SettingsBling from "./pages/SettingsBling";
 
 const queryClient = new QueryClient();
 

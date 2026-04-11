@@ -26,6 +26,14 @@ const PROVIDERS = [
     features: ["Clientes", "Pedidos", "Carrinhos Abandonados", "Pix Não Pago", "Rastreio"],
   },
   {
+    id: "bling",
+    name: "Bling",
+    description: "ERP completo com emissão de NF-e, controle de estoque, financeiro e pedidos.",
+    logo: "",
+    color: "#0055AA",
+    features: ["Clientes", "Pedidos", "Produtos", "NF-e", "Estoque", "Financeiro"],
+  },
+  {
     id: "nuvemshop",
     name: "Nuvemshop",
     description: "Plataforma de e-commerce líder na América Latina.",

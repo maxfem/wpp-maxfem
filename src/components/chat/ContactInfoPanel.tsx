@@ -1,16 +1,29 @@
+import { useState, useEffect } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { Conversation, Message } from "./types";
 import {
   Phone, Mail, Tag, MessageSquare, ShoppingBag, Calendar,
-  ExternalLink, Copy, MapPin, Globe, Edit2, Bot
+  ExternalLink, Copy, Edit2, Bot, StickyNote, Save, Package,
+  CheckCircle2, XCircle, Clock, CreditCard, Truck, RotateCcw
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+
+interface Order {
+  id: string;
+  external_id: string | null;
+  total: number;
+  status: string;
+  mapped_status: string | null;
+  created_at: string;
+}
 
 interface ContactInfoPanelProps {
   conversation: Conversation | undefined;
@@ -25,27 +38,75 @@ interface ContactInfoPanelProps {
     total_spent: number | null;
     last_order_at: string | null;
     created_at: string;
+    custom_attributes?: any;
   } | null;
+  orders?: Order[];
 }
 
-export function ContactInfoPanel({ conversation, messages, customer }: ContactInfoPanelProps) {
+const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
+  paid: { label: "Pago", color: "bg-green-500/10 text-green-600 border-green-200", icon: CheckCircle2 },
+  delivered: { label: "Entregue", color: "bg-green-500/10 text-green-600 border-green-200", icon: CheckCircle2 },
+  pending: { label: "Pendente", color: "bg-yellow-500/10 text-yellow-600 border-yellow-200", icon: Clock },
+  waiting_payment: { label: "Aguardando", color: "bg-yellow-500/10 text-yellow-600 border-yellow-200", icon: Clock },
+  pix_pending: { label: "Pix Pendente", color: "bg-orange-500/10 text-orange-600 border-orange-200", icon: CreditCard },
+  invoiced: { label: "Faturado", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Package },
+  shipped: { label: "Enviado", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Truck },
+  cancelled: { label: "Cancelado", color: "bg-red-500/10 text-red-600 border-red-200", icon: XCircle },
+  refunded: { label: "Reembolsado", color: "bg-red-500/10 text-red-600 border-red-200", icon: RotateCcw },
+};
+
+function getStatusInfo(status: string, mappedStatus: string | null) {
+  const key = mappedStatus || status;
+  return statusConfig[key] || { label: key, color: "bg-muted text-muted-foreground border-border", icon: Package };
+}
+
+const formatCurrency = (v: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+export function ContactInfoPanel({ conversation, messages, customer, orders = [] }: ContactInfoPanelProps) {
   const navigate = useNavigate();
+  const [notes, setNotes] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesDirty, setNotesDirty] = useState(false);
+
+  useEffect(() => {
+    const saved = customer?.custom_attributes?.internal_notes || "";
+    setNotes(saved);
+    setNotesDirty(false);
+  }, [customer?.id]);
+
   if (!conversation) return null;
 
   const totalMessages = messages.length;
   const inboundCount = messages.filter((m) => m.direction === "inbound").length;
   const outboundCount = messages.filter((m) => m.direction === "outbound").length;
-  const firstMessage = messages[0];
-  const lastMessage = messages[messages.length - 1];
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("Copiado!");
   };
 
+  const saveNotes = async () => {
+    if (!customer?.id) return;
+    setSavingNotes(true);
+    try {
+      const attrs = customer.custom_attributes || {};
+      const { error } = await supabase
+        .from("customers")
+        .update({ custom_attributes: { ...attrs, internal_notes: notes } })
+        .eq("id", customer.id);
+      if (error) throw error;
+      toast.success("Observações salvas!");
+      setNotesDirty(false);
+    } catch {
+      toast.error("Erro ao salvar observações");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
   return (
     <div className="w-[320px] border-l border-border bg-card flex flex-col">
-      {/* Chatwoot-style tabs */}
       <Tabs defaultValue="contact" className="flex-1 flex flex-col">
         <TabsList className="w-full h-10 rounded-none bg-transparent border-b border-border p-0 shrink-0">
           <TabsTrigger
@@ -65,7 +126,7 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
 
         <TabsContent value="contact" className="flex-1 mt-0 overflow-hidden">
           <ScrollArea className="h-full">
-            {/* Profile section */}
+            {/* Profile */}
             <div className="p-5 text-center">
               <Avatar className="h-16 w-16 mx-auto mb-3">
                 <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">
@@ -82,40 +143,28 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
 
             <Separator />
 
-            {/* Contact details - Chatwoot style */}
+            {/* Contact details */}
             <div className="p-4 space-y-3">
               <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Informações do contato
               </h4>
-
               <div className="space-y-2.5">
-                {/* Phone */}
                 <div className="flex items-center gap-2.5">
                   <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="text-xs text-foreground flex-1">{conversation.phone}</span>
-                  <button
-                    onClick={() => copyToClipboard(conversation.phone)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
+                  <button onClick={() => copyToClipboard(conversation.phone)} className="text-muted-foreground hover:text-foreground">
                     <Copy className="h-3 w-3" />
                   </button>
                 </div>
-
-                {/* Email */}
                 {customer?.email && (
                   <div className="flex items-center gap-2.5">
                     <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs text-foreground flex-1 truncate">{customer.email}</span>
-                    <button
-                      onClick={() => copyToClipboard(customer.email!)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
+                    <button onClick={() => copyToClipboard(customer.email!)} className="text-muted-foreground hover:text-foreground">
                       <Copy className="h-3 w-3" />
                     </button>
                   </div>
                 )}
-
-                {/* Customer since */}
                 {customer?.created_at && (
                   <div className="flex items-center gap-2.5">
                     <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -126,14 +175,8 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
                   </div>
                 )}
               </div>
-
               {customer?.id && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs h-8 mt-2"
-                  onClick={() => navigate("/customers")}
-                >
+                <Button variant="outline" size="sm" className="w-full text-xs h-8 mt-2" onClick={() => navigate("/customers")}>
                   <ExternalLink className="h-3 w-3 mr-1.5" />
                   Ver perfil completo
                 </Button>
@@ -141,6 +184,31 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
             </div>
 
             <Separator />
+
+            {/* Notes / Observations */}
+            {customer?.id && (
+              <>
+                <div className="p-4 space-y-2">
+                  <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <StickyNote className="h-3 w-3" />
+                    Observações
+                  </h4>
+                  <Textarea
+                    placeholder="Adicione observações sobre este contato..."
+                    className="text-xs min-h-[70px] resize-none"
+                    value={notes}
+                    onChange={(e) => { setNotes(e.target.value); setNotesDirty(true); }}
+                  />
+                  {notesDirty && (
+                    <Button size="sm" className="w-full text-xs h-7" onClick={saveNotes} disabled={savingNotes}>
+                      <Save className="h-3 w-3 mr-1" />
+                      {savingNotes ? "Salvando..." : "Salvar observações"}
+                    </Button>
+                  )}
+                </div>
+                <Separator />
+              </>
+            )}
 
             {/* Tags */}
             {customer?.tags && customer.tags.length > 0 && (
@@ -152,9 +220,7 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
                   </h4>
                   <div className="flex flex-wrap gap-1">
                     {customer.tags.map((tag, i) => (
-                      <Badge key={i} variant="secondary" className="text-[10px] rounded-sm">
-                        {tag}
-                      </Badge>
+                      <Badge key={i} variant="secondary" className="text-[10px] rounded-sm">{tag}</Badge>
                     ))}
                   </div>
                 </div>
@@ -185,7 +251,7 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
 
             <Separator />
 
-            {/* Commerce info */}
+            {/* Commerce summary */}
             {customer && (customer.total_orders || customer.total_spent) && (
               <>
                 <div className="p-4">
@@ -203,9 +269,7 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
                     {customer.total_spent != null && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">Total gasto</span>
-                        <span className="font-semibold text-foreground">
-                          {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(customer.total_spent)}
-                        </span>
+                        <span className="font-semibold text-foreground">{formatCurrency(customer.total_spent)}</span>
                       </div>
                     )}
                     {customer.last_order_at && (
@@ -221,6 +285,50 @@ export function ContactInfoPanel({ conversation, messages, customer }: ContactIn
                 <Separator />
               </>
             )}
+
+            {/* Order history */}
+            <div className="p-4">
+              <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Package className="h-3 w-3" />
+                Histórico de pedidos
+              </h4>
+              {orders.length === 0 ? (
+                <div className="text-center py-4">
+                  <ShoppingBag className="h-6 w-6 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-[11px] text-muted-foreground">Nenhum pedido encontrado</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {orders.map((order) => {
+                    const info = getStatusInfo(order.status, order.mapped_status);
+                    const Icon = info.icon;
+                    return (
+                      <div key={order.id} className="rounded-lg border border-border p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-foreground">
+                            #{order.external_id?.replace("yampi_", "") || order.id.slice(0, 8)}
+                          </span>
+                          <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-5 gap-1 ${info.color}`}>
+                            <Icon className="h-2.5 w-2.5" />
+                            {info.label}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(order.created_at).toLocaleDateString("pt-BR")}
+                          </span>
+                          <span className="text-xs font-semibold text-foreground">
+                            {formatCurrency(order.total)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <Separator />
 
             {/* Previous conversations */}
             <div className="p-4">

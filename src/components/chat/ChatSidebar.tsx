@@ -63,7 +63,7 @@ export function ChatSidebar({
     : conversations;
 
   return (
-    <div className="w-[340px] min-w-[340px] border-r border-border flex flex-col bg-card overflow-hidden">
+    <div className="w-[380px] min-w-[380px] border-r border-border flex flex-col bg-card overflow-hidden">
       {/* Header */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-2">

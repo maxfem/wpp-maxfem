@@ -1,4 +1,3 @@
-import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
@@ -112,4 +111,4 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
   );
 }
 
-export default memo(FlowNodeComponent);
+export default FlowNodeComponent;

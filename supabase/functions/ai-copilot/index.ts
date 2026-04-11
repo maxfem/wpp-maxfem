@@ -170,8 +170,8 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   return JSON.stringify({
     customer_name: customerName,
     cpf: cleanCpf,
-    orders_count: orders.length,
-    orders,
+    orders_count: formattedOrders.length,
+    orders: formattedOrders,
   });
 }
 

@@ -1,45 +1,63 @@
 
 
-# Separar Campanhas e Automações
+# Integração OpenAI para Assistente de Atendimento
 
-## Problema Atual
-Tudo está na mesma tabela `campaigns`. Ambas as páginas (Campanhas e Automações) consultam a mesma tabela sem filtro, mostrando os mesmos registros. Não há distinção clara no banco entre um disparo pontual agendado (campanha) e uma régua acionada por evento (automação).
+## Visão Geral
+Adicionar OpenAI como integração em `/settings/integrations/openai`, onde o usuário configura API Key, tom, nível de inteligência (modelo) e prompt do agente. Na aba Copilot do chat, transformar em assistente funcional com toggle de ativar/desativar por conversa e opções específicas por conversa.
 
-## Solução
-
-### 1. Migração SQL — Adicionar coluna `kind`
-Adicionar uma coluna `kind` na tabela `campaigns` com valores `campaign` ou `automation`:
-
+## Passo 1 — Migração SQL
+Adicionar colunas na tabela `integrations` para armazenar configurações de IA:
 ```sql
-ALTER TABLE campaigns ADD COLUMN kind TEXT NOT NULL DEFAULT 'campaign';
--- Marcar registros existentes que têm trigger_type como automações
-UPDATE campaigns SET kind = 'automation' WHERE trigger_type IS NOT NULL;
+-- A config jsonb já existe na tabela integrations, vamos usar para:
+-- config.openai_api_key (encriptado no futuro)
+-- config.tone (formal, informal, neutro)  
+-- config.model (gpt-4o-mini, gpt-4o, gpt-4-turbo)
+-- config.system_prompt (texto livre)
+-- config.ai_enabled (boolean global)
+```
+Nenhuma migração necessária — a coluna `config` jsonb já existe.
+
+## Passo 2 — Página de Configuração OpenAI (`src/pages/SettingsOpenAI.tsx`)
+Nova página seguindo o padrão do SettingsYampi:
+- Campo de API Key (com toggle de visibilidade)
+- Seletor de Tom: Formal, Informal, Amigável, Técnico
+- Seletor de Modelo: gpt-4o-mini (econômico), gpt-4o (balanceado), gpt-4-turbo (avançado)
+- Textarea para prompt do sistema (instruções da agente)
+- Botão Salvar que persiste tudo em `integrations` com `provider = 'openai'`
+- Botão Testar conexão (chama a API para validar a key)
+
+## Passo 3 — Adicionar OpenAI na lista de integrações
+Em `SettingsIntegrations.tsx`, adicionar card da OpenAI no array PROVIDERS:
+- Nome: OpenAI
+- Cor: #10A37F
+- Features: ["Assistente IA", "Sugestão de Respostas", "Copilot"]
+
+## Passo 4 — Rota no App.tsx
+```
+/settings/integrations/openai → SettingsOpenAI
 ```
 
-### 2. Página Campanhas (`Campaigns.tsx`)
-- Filtrar query: `.eq("kind", "campaign")`
-- Criar campanha sempre com `kind: "campaign"`, sem `trigger_type`
-- Toggle alterna entre `draft` e `scheduled` (agendar envio)
-- Status possíveis: draft, scheduled, sending, sent, failed, finished
-- Remover referências a automações
+## Passo 5 — Edge Function `ai-copilot`
+Nova edge function que:
+- Recebe: mensagens da conversa, tenant_id, configurações opcionais por conversa
+- Busca config da OpenAI na tabela `integrations`
+- Chama a API da OpenAI com o prompt do sistema + histórico
+- Retorna sugestão de resposta
 
-### 3. Página Automações (`Automations.tsx`)
-- Filtrar query: `.eq("kind", "automation")`
-- Criar automação sempre com `kind: "automation"`, com `trigger_type` obrigatório
-- Toggle alterna entre `draft` e `running` (ativar/desativar)
-- Status possíveis: draft, running, paused
-- StatusConfig próprio com labels adequados: "Inativa" (draft), "Ativa" (running)
+## Passo 6 — Tab Copilot funcional (`ContactInfoPanel.tsx`)
+Substituir o placeholder "Em breve" por:
+- **Toggle Ativar/Desativar IA** nesta conversa (estado local, persistido em `custom_attributes` do customer)
+- **Seletor de tom** por conversa (override do global)
+- **Campo de contexto** específico da conversa (ex: "cliente VIP, priorizar")
+- **Botão "Sugerir resposta"** que chama a edge function e mostra a sugestão
+- **Botão "Copiar"** para colar a sugestão no input
+- Indicador de status da integração (configurada/não configurada)
 
-### 4. Campaign Executor (`campaign-executor`)
-- Campanhas: processar quando `kind = 'campaign'` AND `status = 'scheduled'` AND `scheduled_at <= now()`
-- Automações: processar via `automation_queue` quando `kind = 'automation'` AND `status = 'running'`
-
-### 5. Activities filtradas por kind
-- Query de `campaign_activities` em cada página filtra apenas pelos IDs de campanhas/automações do respectivo `kind`
-
-## Arquivos Alterados
-- **Migração SQL** — coluna `kind` + update dos existentes
-- **`src/pages/Campaigns.tsx`** — filtro `.eq("kind", "campaign")`, toggle → scheduled/draft
-- **`src/pages/Automations.tsx`** — filtro `.eq("kind", "automation")`, toggle → running/draft, status labels próprios
-- **`supabase/functions/campaign-executor/index.ts`** — filtro por `kind` nas queries
+## Arquivos
+- **Nova migração**: nenhuma (usa `config` jsonb existente)
+- **`src/pages/SettingsOpenAI.tsx`** — nova página de configuração
+- **`src/pages/SettingsIntegrations.tsx`** — adicionar card OpenAI
+- **`src/App.tsx`** — nova rota
+- **`supabase/functions/ai-copilot/index.ts`** — edge function
+- **`src/components/chat/ContactInfoPanel.tsx`** — tab Copilot funcional
 

@@ -81,6 +81,15 @@ export default function Chat() {
   });
 
   // Build conversations
+  // Build a map of customer attributes by phone
+  const customerAttrMap = useMemo(() => {
+    const map = new Map<string, any>();
+    customers.forEach((c) => {
+      if (c.phone) map.set(normalizePhone(c.phone), c.custom_attributes || {});
+    });
+    return map;
+  }, [customers]);
+
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
     const customerMap = new Map<string, string>();
@@ -92,6 +101,7 @@ export default function Chat() {
     for (const msg of allMessages) {
       const phoneKey = normalizePhone(msg.phone);
       const existing = map.get(phoneKey);
+      const attrs = customerAttrMap.get(phoneKey) || {};
 
       if (!existing) {
         map.set(phoneKey, {
@@ -103,6 +113,10 @@ export default function Chat() {
           lastMessageAt: msg.created_at,
           unread: msg.direction === "inbound" && msg.status === "received" ? 1 : 0,
           lastDirection: msg.direction,
+          isFavorite: !!attrs.is_favorite,
+          isMuted: !!attrs.is_muted,
+          isArchived: !!attrs.is_archived,
+          conversationStatus: attrs.conversation_status || "open",
         });
         continue;
       }

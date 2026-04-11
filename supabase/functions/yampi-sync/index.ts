@@ -329,6 +329,80 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     }
   }
 
+  // ===== Enqueue order-based automation triggers =====
+  // Fetch active automations for order triggers
+  const orderTriggerTypes = ["order_created", "order_created_pix", "order_created_boleto", "order_paid", "order_rejected_card"];
+  const { data: orderAutomations } = await supabase
+    .from("campaigns")
+    .select("id, trigger_type")
+    .eq("tenant_id", tenant_id)
+    .eq("kind", "automation")
+    .eq("status", "running")
+    .in("trigger_type", orderTriggerTypes);
+
+  if (orderAutomations && orderAutomations.length > 0) {
+    let enqueued = 0;
+    for (const o of orders) {
+      const customerId = yampiIdToCustomer.get(o.customer_id);
+      if (!customerId) continue;
+
+      const orderStatus = o.status?.data?.alias || "pending";
+      const payments = o.payments?.data || [];
+      const paymentMethod = payments[0]?.payment_method?.alias || "";
+      const paymentStatus = payments[0]?.status || "";
+
+      // Determine which triggers this order matches
+      const matchedTriggers: string[] = [];
+
+      // order_created — any new order
+      matchedTriggers.push("order_created");
+
+      // order_created_pix — Pix payment pending
+      if (paymentMethod === "pix" && paymentStatus !== "paid") {
+        matchedTriggers.push("order_created_pix");
+      }
+
+      // order_created_boleto — Boleto payment pending
+      if ((paymentMethod === "boleto" || paymentMethod === "bank_slip") && paymentStatus !== "paid") {
+        matchedTriggers.push("order_created_boleto");
+      }
+
+      // order_paid — paid orders
+      if (orderStatus === "paid" || paymentStatus === "paid") {
+        matchedTriggers.push("order_paid");
+      }
+
+      // order_rejected_card — card rejected
+      if (paymentMethod === "credit_card" && (paymentStatus === "refused" || paymentStatus === "rejected" || paymentStatus === "cancelled")) {
+        matchedTriggers.push("order_rejected_card");
+      }
+
+      for (const automation of orderAutomations) {
+        if (!matchedTriggers.includes(automation.trigger_type)) continue;
+        const { error: qErr } = await supabase.from("automation_queue").insert({
+          tenant_id,
+          campaign_id: automation.id,
+          customer_id: customerId,
+          trigger_type: automation.trigger_type,
+          trigger_data: {
+            yampi_order_id: o.id,
+            order_number: String(o.number || o.id),
+            total: o.value_total || 0,
+            payment_method: paymentMethod,
+            status: orderStatus,
+          },
+          status: "pending",
+        });
+        if (qErr && !qErr.message?.includes("duplicate")) {
+          console.error("Order queue insert error:", qErr.message);
+        } else if (!qErr) {
+          enqueued++;
+        }
+      }
+    }
+    console.log(`Phase orders: enqueued ${enqueued} automation triggers`);
+  }
+
   console.log(`Phase orders: synced ${synced}`);
   return synced;
 }

@@ -165,6 +165,7 @@ export type Database = {
           has_bonus: boolean | null
           has_survey: boolean | null
           id: string
+          kind: string
           last_error: string | null
           list_id: string | null
           name: string
@@ -185,6 +186,7 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          kind?: string
           last_error?: string | null
           list_id?: string | null
           name: string
@@ -205,6 +207,7 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          kind?: string
           last_error?: string | null
           list_id?: string | null
           name?: string

@@ -158,7 +158,12 @@ Deno.serve(async (req) => {
         type: "BUTTONS",
         buttons: buttons.map((btn) => {
           if (btn.type === "URL") {
-            return { type: "URL", text: btn.text, url: btn.url };
+            const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: btn.url };
+            // If URL contains {{1}}, Meta requires an example value for the dynamic suffix
+            if (btn.url?.includes("{{1}}")) {
+              urlObj.example = ["https://example.com/checkout"];
+            }
+            return urlObj;
           }
           if (btn.type === "PHONE_NUMBER") {
             return { type: "PHONE_NUMBER", text: btn.text, phone_number: btn.phone_number };

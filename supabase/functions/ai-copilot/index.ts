@@ -63,7 +63,16 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   const ordersRes = await yampiGet(alias, `customers/${yampiCustomerId}/orders`, user_token, user_secret_key, {
     "limit": "10",
     "sort": "-created_at",
+    "include": "shipments,items,payments,status",
   });
+
+  console.log("[copilot] Raw orders response keys:", ordersRes?.data?.length, JSON.stringify(ordersRes?.data?.[0] ? Object.keys(ordersRes.data[0]) : []));
+  if (ordersRes?.data?.[0]) {
+    const first = ordersRes.data[0];
+    console.log("[copilot] First order shipments:", JSON.stringify(first.shipments));
+    console.log("[copilot] First order shipping:", JSON.stringify(first.shipping));
+    console.log("[copilot] First order tracking:", JSON.stringify(first.tracking));
+  }
 
   if (!ordersRes?.data?.length) {
     return JSON.stringify({
@@ -74,38 +83,31 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
     });
   }
 
-  const statusLabels: Record<string, string> = {
-    waiting_payment: "Aguardando pagamento",
-    paid: "Pago",
-    invoiced: "Faturado",
-    shipped: "Enviado",
-    delivered: "Entregue",
-    cancelled: "Cancelado",
-    refunded: "Reembolsado",
-  };
 
   const orders = ordersRes.data.map((o: any) => {
     const status = o.status?.data?.alias || "pending";
-    const trackingCode = o.shipments?.data?.[0]?.tracking_code || null;
-    const trackingUrl = o.shipments?.data?.[0]?.tracking_url || null;
-    const carrier = o.shipments?.data?.[0]?.carrier || null;
-
-    const payments = (o.payments?.data || []).map((p: any) => ({
-      method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-      status: p.status || "N/A",
-      value: p.value,
-    }));
+    // Try multiple paths for tracking data
+    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
+    let trackingCode = shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null;
+    let trackingUrl = shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null;
+    let carrier = shipment?.carrier || shipment?.shipping_company || o.carrier || null;
+    const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || o.delivery_estimate || null;
 
     return {
+      order_id: o.id,
       order_number: o.number || o.id,
-      status: statusLabels[status] || status,
-      status_alias: status,
-      total: o.value_total,
-      created_at: o.created_at?.date || o.created_at,
+      status,
       tracking_code: trackingCode,
       tracking_url: trackingUrl,
       carrier,
-      payments,
+      delivery_estimate: deliveryEstimate,
+      total: o.value_total,
+      created_at: o.created_at?.date || o.created_at,
+      payments: (o.payments?.data || []).map((p: any) => ({
+        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+        status: p.status || "N/A",
+        value: p.value,
+      })),
       items_count: o.items?.data?.length || 0,
       items: (o.items?.data || []).slice(0, 5).map((i: any) => ({
         name: i.name || i.sku?.data?.title || "Produto",
@@ -115,11 +117,52 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
     };
   });
 
+  // For orders missing tracking, try fetching individual order details
+  for (let i = 0; i < orders.length && i < 3; i++) {
+    if (!orders[i].tracking_code && ["shipped", "invoiced", "in_transit", "em_transporte"].includes((orders[i].status || "").toLowerCase().replace(/\s/g, "_"))) {
+      try {
+        const detailRes = await yampiGet(alias, `orders/${orders[i].order_id}`, user_token, user_secret_key, {
+          "include": "shipments",
+        });
+        if (detailRes?.data) {
+          const d = detailRes.data;
+          const s = d.shipments?.data?.[0] || d.shipping?.data?.[0];
+          if (s) {
+            orders[i].tracking_code = s.tracking_code || s.tracking_number || orders[i].tracking_code;
+            orders[i].tracking_url = s.tracking_url || s.tracking_link || orders[i].tracking_url;
+            orders[i].carrier = s.carrier || s.shipping_company || orders[i].carrier;
+            console.log(`[copilot] Order ${orders[i].order_number} detail shipment:`, JSON.stringify(s));
+          }
+        }
+      } catch (e) {
+        console.error(`[copilot] Error fetching order detail:`, e);
+      }
+    }
+  }
+
+  // Map status labels for the final output
+  const statusLabelsMap: Record<string, string> = {
+    waiting_payment: "Aguardando pagamento",
+    paid: "Pago",
+    invoiced: "Faturado",
+    shipped: "Enviado",
+    in_transit: "Em transporte",
+    delivered: "Entregue",
+    cancelled: "Cancelado",
+    refunded: "Reembolsado",
+  };
+
+  const formattedOrders = orders.map((o: any) => ({
+    ...o,
+    status: statusLabelsMap[o.status] || o.status,
+    status_alias: o.status,
+  }));
+
   return JSON.stringify({
     customer_name: customerName,
     cpf: cleanCpf,
-    orders_count: orders.length,
-    orders,
+    orders_count: formattedOrders.length,
+    orders: formattedOrders,
   });
 }
 

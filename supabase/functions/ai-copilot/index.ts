@@ -95,9 +95,12 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
 
   const orders = ordersRes.data.map((o: any) => {
     const status = o.status?.data?.alias || "pending";
-    const trackingCode = o.shipments?.data?.[0]?.tracking_code || null;
-    const trackingUrl = o.shipments?.data?.[0]?.tracking_url || null;
-    const carrier = o.shipments?.data?.[0]?.carrier || null;
+    // Try multiple paths for tracking data
+    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
+    const trackingCode = shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null;
+    const trackingUrl = shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null;
+    const carrier = shipment?.carrier || shipment?.shipping_company || o.carrier || null;
+    const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || o.delivery_estimate || null;
 
     const payments = (o.payments?.data || []).map((p: any) => ({
       method: p.payment_method?.name || p.payment_method?.alias || "N/A",

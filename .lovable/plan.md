@@ -1,43 +1,60 @@
 
 
-# Correção definitiva: lookup local + sync completo para IA do WhatsApp
+# Plano: Implementar todos os gatilhos de automação faltantes
 
-## Situação atual
+## Diagnóstico
 
-O código do webhook e do copilot **já está correto** — a busca local por CPF funciona e retorna os dados. O problema é que:
+Existem 11 trigger_types distintos nas automações. Apenas 3 estão implementados no `yampi-sync`:
 
-1. **Pagamentos (payment_summary) estão vazios em 100% dos pedidos** — a API da Yampi no modo lista (`orders?include=payments`) não retorna dados de pagamento para todos os pedidos. Só vem no detalhe individual.
-2. **O refresh_tracking processa apenas 20 pedidos por vez**, deixando muitos sem rastreio.
-3. **O prompt da IA não é assertivo o suficiente** — quando tem tracking_code, a IA deveria retornar de forma clara e direta com o código e o link.
+| Trigger | Status | Fonte |
+|---------|--------|-------|
+| `cart_abandoned` | Implementado | yampi-sync (carts) |
+| `order_created_pix` | Implementado | yampi-sync (orders) |
+| `order_created_boleto` | Implementado | yampi-sync (orders) |
+| `order_paid` | Implementado | yampi-sync (orders) |
+| `order_rejected_card` | Implementado | yampi-sync (orders) |
+| `order_approved` | **Faltando** | Mapear status Yampi "aprovado/invoiced" |
+| `order_delivered` | **Faltando** | Mapear status Yampi "delivered/entregue" |
+| `invoice_issued` | **Faltando** | Mapear status Yampi "invoiced" (NF emitida) |
+| `return_approved` | **Faltando** | Mapear status Yampi "returned/exchanged" |
+| `first_purchase` | **Faltando** | Detectar cliente com total_orders = 1 |
+| `birthday` | **Faltando** | Cron diário comparando data de aniversário |
+| `first_purchase_anniversary` | **Faltando** | Cron diário comparando data da 1ª compra |
+| `inactivity` | **Faltando** | Cron diário verificando dias desde última compra |
+| `7 dias após entrega` | **Faltando** | Cron verificando pedidos entregues há 7 dias |
 
-## Plano de correção
+## Plano de implementação
 
-### 1) Melhorar o sync de pedidos individuais
-No `yampi-sync`, para pedidos enviados (shipped/on_carriage/in_transit), buscar detalhes individuais (`orders/{id}`) para capturar:
-- `track_code` e `track_url` (rastreio)
-- Dados de pagamento que não vêm na listagem
-- Aumentar o limite de 20 para 50 pedidos por refresh
+### 1. Adicionar triggers baseados em status de pedido no `yampi-sync`
 
-### 2) Corrigir extração de pagamentos
-No `yampi-sync`, quando `paymentSummary` vier vazio da listagem, buscar o detalhe individual do pedido para extrair os dados de pagamento reais (método, valor, parcelas).
+No bloco `matchedTriggers` da função `syncOrders`, adicionar:
 
-### 3) Reforçar o prompt da IA
-No `whatsapp-webhook`, atualizar as instruções do sistema para:
-- Quando o tracking_code existir, **sempre** informar o código e o link de rastreio
-- Formatar a resposta com dados concretos (número do pedido, status, código, link)
-- Não dizer "código ainda não foi atualizado" quando o código EXISTE nos dados
+- **`order_approved`**: quando `orderStatus` for `approved`, `invoiced`, ou `paid`
+- **`order_delivered`**: quando `orderStatus` for `delivered` ou `entregue`
+- **`invoice_issued`**: quando `orderStatus` for `invoiced`
+- **`return_approved`**: quando `orderStatus` for `returned`, `exchanged`, ou similar
+- **`first_purchase`**: quando o pedido é `paid` e o cliente tem `total_orders <= 1`
 
-### 4) Re-sincronizar pedidos
-Rodar a sincronização completa (customers + orders + refresh_tracking) para popular os campos que estavam faltando.
+### 2. Criar Edge Function `automation-cron` para triggers baseados em tempo/data
+
+Nova função que roda via cron (1x por dia) e processa:
+
+- **`birthday`**: busca clientes com `custom_attributes->birthday` igual ao dia atual, enfileira para automações ativas com trigger `birthday`
+- **`first_purchase_anniversary`**: busca clientes com `last_order_at` completando N anos hoje e `total_orders >= 1`
+- **`inactivity`**: busca clientes com `last_order_at` há 30/60/90 dias (confere com o nome da automação), enfileira para a automação correspondente
+- **`7 dias após entrega`** (NPS): busca pedidos com status `delivered` entregues há exatamente 7 dias
+
+### 3. Configurar cron job
+
+Agendar `automation-cron` para rodar 1x por dia (ex: 09:00 UTC) via `pg_cron`.
+
+### 4. Garantir campo de aniversário
+
+Verificar se o `yampi-sync` já salva o campo `birthday` do cliente em `custom_attributes`. Se não, adicionar na sincronização de clientes.
 
 ## Arquivos impactados
-- `supabase/functions/yampi-sync/index.ts` — melhorar extração de pagamento e aumentar limite de refresh
-- `supabase/functions/whatsapp-webhook/index.ts` — reforçar prompt da IA para ser mais direto com dados de rastreio
-- `supabase/functions/ai-copilot/index.ts` — mesma melhoria no prompt
 
-## Resultado esperado
-Após as correções, quando um cliente informar o CPF no WhatsApp:
-- A IA vai retornar o código de rastreio e o link quando disponíveis
-- Os pagamentos vão aparecer nos dados do pedido
-- A resposta será direta e concreta, sem ambiguidade
+- `supabase/functions/yampi-sync/index.ts` — adicionar triggers de status de pedido + salvar birthday
+- `supabase/functions/automation-cron/index.ts` — **novo** — triggers baseados em tempo
+- Cron job via `pg_cron` para a nova função
 

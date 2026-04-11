@@ -14,6 +14,64 @@ export type Database = {
   }
   public: {
     Tables: {
+      automation_queue: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          processed_at: string | null
+          status: string
+          tenant_id: string
+          trigger_data: Json | null
+          trigger_type: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          processed_at?: string | null
+          status?: string
+          tenant_id: string
+          trigger_data?: Json | null
+          trigger_type: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          processed_at?: string | null
+          status?: string
+          tenant_id?: string
+          trigger_data?: Json | null
+          trigger_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_queue_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_queue_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_queue_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_activities: {
         Row: {
           attribution_order_id: string | null

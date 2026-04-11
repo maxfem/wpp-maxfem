@@ -6,15 +6,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Conversation, Message } from "./types";
 import {
   Phone, Mail, Tag, MessageSquare, ShoppingBag, Calendar,
   ExternalLink, Copy, Edit2, Bot, StickyNote, Save, Package,
-  CheckCircle2, XCircle, Clock, CreditCard, Truck, RotateCcw
+  CheckCircle2, XCircle, Clock, CreditCard, Truck, RotateCcw,
+  Sparkles, Loader2, AlertCircle
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
 
 interface Order {
   id: string;

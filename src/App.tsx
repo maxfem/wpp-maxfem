@@ -63,7 +63,8 @@ const App = () => (
             <Route path="/automations" element={<ProtectedRoute><Automations /></ProtectedRoute>} />
             <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
             <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
-            <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+            <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+            <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
             <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
             <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />

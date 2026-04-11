@@ -117,6 +117,24 @@ Deno.serve(async (req) => {
 
         console.log(`Campaign ${campaign.id}: sending to ${customers.length} contacts, template: ${templateName}`);
 
+        if (customers.length === 0) {
+          console.warn(`Campaign ${campaign.id} has no valid recipients`);
+          await supabase
+            .from("campaigns")
+            .update({ status: "failed" })
+            .eq("id", campaign.id);
+
+          results.push({
+            campaign_id: campaign.id,
+            sent: 0,
+            failed: 0,
+            total: 0,
+            status: "failed",
+            error: "No valid recipients",
+          });
+          continue;
+        }
+
         let sentCount = 0;
         let failedCount = 0;
 
@@ -189,10 +207,12 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Mark campaign as sent
+        const finalStatus = sentCount > 0 ? "sent" : "failed";
+
+        // Mark campaign with the real sending outcome
         await supabase
           .from("campaigns")
-          .update({ status: "sent" })
+          .update({ status: finalStatus })
           .eq("id", campaign.id);
 
         results.push({
@@ -200,9 +220,10 @@ Deno.serve(async (req) => {
           sent: sentCount,
           failed: failedCount,
           total: customers.length,
+          status: finalStatus,
         });
 
-        console.log(`Campaign ${campaign.id} completed: ${sentCount} sent, ${failedCount} failed`);
+        console.log(`Campaign ${campaign.id} completed with status ${finalStatus}: ${sentCount} sent, ${failedCount} failed`);
       } catch (err) {
         console.error(`Error processing campaign ${campaign.id}:`, err);
         await supabase.from("campaigns").update({ status: "draft" }).eq("id", campaign.id);

@@ -26,6 +26,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   scheduled: { label: "Agendado", className: "bg-yellow-100 text-yellow-700" },
   sending: { label: "Enviando", className: "bg-blue-100 text-blue-700" },
   sent: { label: "Enviado", className: "bg-green-100 text-green-700" },
+  failed: { label: "Falhou", className: "bg-destructive/10 text-destructive" },
   finished: { label: "Encerrada", className: "bg-muted text-muted-foreground" },
 };
 

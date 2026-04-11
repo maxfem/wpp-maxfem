@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
@@ -81,6 +81,15 @@ export default function Chat() {
   });
 
   // Build conversations
+  // Build a map of customer attributes by phone
+  const customerAttrMap = useMemo(() => {
+    const map = new Map<string, any>();
+    customers.forEach((c) => {
+      if (c.phone) map.set(normalizePhone(c.phone), c.custom_attributes || {});
+    });
+    return map;
+  }, [customers]);
+
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
     const customerMap = new Map<string, string>();
@@ -92,6 +101,7 @@ export default function Chat() {
     for (const msg of allMessages) {
       const phoneKey = normalizePhone(msg.phone);
       const existing = map.get(phoneKey);
+      const attrs = customerAttrMap.get(phoneKey) || {};
 
       if (!existing) {
         map.set(phoneKey, {
@@ -103,6 +113,10 @@ export default function Chat() {
           lastMessageAt: msg.created_at,
           unread: msg.direction === "inbound" && msg.status === "received" ? 1 : 0,
           lastDirection: msg.direction,
+          isFavorite: !!attrs.is_favorite,
+          isMuted: !!attrs.is_muted,
+          isArchived: !!attrs.is_archived,
+          conversationStatus: attrs.conversation_status || "open",
         });
         continue;
       }
@@ -122,9 +136,11 @@ export default function Chat() {
       }
     }
 
-    let convs = Array.from(map.values()).sort(
-      (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-    );
+    let convs = Array.from(map.values())
+      .filter((c) => !c.isArchived)
+      .sort(
+        (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+      );
 
     if (dateFilter !== "all") {
       const now = new Date();
@@ -148,7 +164,7 @@ export default function Chat() {
     }
 
     return convs;
-  }, [allMessages, customers, searchTerm, dateFilter, statusFilter]);
+  }, [allMessages, customers, customerAttrMap, searchTerm, dateFilter, statusFilter]);
 
   const selectedMessages = useMemo(
     () =>
@@ -234,6 +250,43 @@ export default function Chat() {
     },
   });
 
+  // Update customer attributes helper
+  const updateCustomerAttr = useCallback(async (customerId: string, updates: Record<string, any>) => {
+    const customer = customers.find((c) => c.id === customerId);
+    const attrs = (customer?.custom_attributes as Record<string, any>) || {};
+    await supabase
+      .from("customers")
+      .update({ custom_attributes: { ...attrs, ...updates } })
+      .eq("id", customerId);
+    queryClient.invalidateQueries({ queryKey: ["customers-lookup", tenantId] });
+  }, [customers, tenantId, queryClient]);
+
+  const handleToggleFavorite = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_favorite: !selectedConv.isFavorite });
+    toast.success(selectedConv.isFavorite ? "Removido dos favoritos" : "Marcado como favorito");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleToggleMute = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_muted: !selectedConv.isMuted });
+    toast.success(selectedConv.isMuted ? "Notificações reativadas" : "Conversa silenciada");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleArchive = useCallback(() => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { is_archived: true });
+    setSelectedPhoneKey(null);
+    toast.success("Conversa arquivada");
+  }, [selectedConv, updateCustomerAttr]);
+
+  const handleSetStatus = useCallback((status: "open" | "resolved" | "pending") => {
+    if (!selectedConv?.customerId) return;
+    updateCustomerAttr(selectedConv.customerId, { conversation_status: status });
+    const labels = { open: "Reaberta", resolved: "Resolvida", pending: "Marcada como pendente" };
+    toast.success(`Conversa ${labels[status].toLowerCase()}`);
+  }, [selectedConv, updateCustomerAttr]);
+
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-4rem)] animate-fade-in">
@@ -275,6 +328,10 @@ export default function Chat() {
                 showContactPanel={showContactPanel}
                 onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
                 onSearchInChat={() => setSearchInChat(!searchInChat)}
+                onToggleFavorite={handleToggleFavorite}
+                onToggleMute={handleToggleMute}
+                onArchive={handleArchive}
+                onSetStatus={handleSetStatus}
               />
               <ChatMessageArea
                 messages={selectedMessages}

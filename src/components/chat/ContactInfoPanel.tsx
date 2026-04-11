@@ -116,6 +116,7 @@ function CopilotTab({
       .from("customers")
       .update({ custom_attributes: { ...attrs, ...updates } })
       .eq("id", customer.id);
+    queryClient.invalidateQueries({ queryKey: ["customers-lookup", currentTenant?.id] });
   };
 
   const handleSuggest = async () => {

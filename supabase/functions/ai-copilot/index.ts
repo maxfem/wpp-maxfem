@@ -83,15 +83,6 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
     });
   }
 
-  const statusLabels: Record<string, string> = {
-    waiting_payment: "Aguardando pagamento",
-    paid: "Pago",
-    invoiced: "Faturado",
-    shipped: "Enviado",
-    delivered: "Entregue",
-    cancelled: "Cancelado",
-    refunded: "Reembolsado",
-  };
 
   const orders = ordersRes.data.map((o: any) => {
     const status = o.status?.data?.alias || "pending";

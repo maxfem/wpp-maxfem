@@ -86,12 +86,42 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+// Generate a random short code for tracked links
+function generateCode(len = 8): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < len; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Determine the dynamic URL for a customer (cart recovery or pix payment)
+function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
+  const attrs = customer?.custom_attributes || {};
+  const cart = attrs?.abandoned_cart || {};
+
+  // Cart abandoned templates → Yampi checkout recovery URL
+  if (templateName.startsWith("carrinho_abandonado") && cart?.recovery_url) {
+    return cart.recovery_url;
+  }
+
+  // Pix payment templates → Yampi payment URL (or fallback to account page)
+  if (templateName.startsWith("pix_nao_pago")) {
+    return attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
+  }
+
+  return null;
+}
+
 // Build template components with parameters filled from resolved variables
 function buildTemplateComponents(
   variableMappings: string[],
   ctx: { customer: any; order: any; campaign: any },
   bodyVarCount: number,
   hasHeaderVar: boolean,
+  buttonUrlCode?: string, // tracked link code for dynamic URL buttons
+  buttonUrlIndex?: number, // which button (0-based) has the dynamic URL
 ) {
   const components: any[] = [];
 
@@ -112,6 +142,16 @@ function buildTemplateComponents(
       params.push({ type: "text", text: value || "-" });
     }
     components.push({ type: "body", parameters: params });
+  }
+
+  // Button URL parameters (dynamic {{1}} in URL buttons)
+  if (buttonUrlCode !== undefined && buttonUrlIndex !== undefined) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: String(buttonUrlIndex),
+      parameters: [{ type: "text", text: buttonUrlCode }],
+    });
   }
 
   return components;
@@ -214,7 +254,7 @@ Deno.serve(async (req) => {
         // Fetch template from DB to detect variables AND get sample_values mappings
         const { data: templateRecord } = await supabase
           .from("message_templates")
-          .select("body, header_type, header_content, sample_values")
+          .select("body, header_type, header_content, sample_values, buttons")
           .eq("name", templateName)
           .eq("tenant_id", campaign.tenant_id)
           .limit(1)
@@ -230,7 +270,14 @@ Deno.serve(async (req) => {
         // Get variable mappings from sample_values (e.g. ["customer.name", "order.total"])
         const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
 
-        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}, mappings=${JSON.stringify(variableMappings)}`);
+        // Detect if any URL button has a dynamic {{1}} variable
+        const templateButtons = (templateRecord?.buttons as any[]) || [];
+        const dynamicUrlBtnIndex = templateButtons.findIndex(
+          (b: any) => b.type === "URL" && b.url?.includes("{{1}}")
+        );
+        const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+
+        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}, dynamicUrlBtn=${hasDynamicUrlButton}, mappings=${JSON.stringify(variableMappings)}`);
 
         // Extract campaign-level variables from actions/flow
         const campaignVars: any = {};
@@ -328,6 +375,26 @@ Deno.serve(async (req) => {
               campaign: campaignVars,
             };
 
+            // Create tracked link for dynamic URL button (cart recovery / pix payment)
+            let buttonUrlCode: string | undefined;
+            if (hasDynamicUrlButton) {
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
+              if (dynamicUrl) {
+                const code = generateCode(10);
+                await supabase.from("tracked_links").insert({
+                  tenant_id: campaign.tenant_id,
+                  campaign_id: campaign.id,
+                  customer_id: customer.id,
+                  original_url: dynamicUrl,
+                  code,
+                  utm_source: "whatsapp",
+                  utm_medium: "campaign",
+                  utm_campaign: campaign.name,
+                });
+                buttonUrlCode = code;
+              }
+            }
+
             // Send via Meta Graph API
             const waRes = await fetch(
               `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
@@ -344,7 +411,10 @@ Deno.serve(async (req) => {
                   template: {
                     name: templateName,
                     language: { code: templateLanguage },
-                    components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar),
+                    components: buildTemplateComponents(
+                      variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                      buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                    ),
                   },
                 }),
               }

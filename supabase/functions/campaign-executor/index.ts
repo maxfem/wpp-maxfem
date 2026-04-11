@@ -86,12 +86,42 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+// Generate a random short code for tracked links
+function generateCode(len = 8): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < len; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Determine the dynamic URL for a customer (cart recovery or pix payment)
+function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
+  const attrs = customer?.custom_attributes || {};
+  const cart = attrs?.abandoned_cart || {};
+
+  // Cart abandoned templates → Yampi checkout recovery URL
+  if (templateName.startsWith("carrinho_abandonado") && cart?.recovery_url) {
+    return cart.recovery_url;
+  }
+
+  // Pix payment templates → Yampi payment URL (or fallback to account page)
+  if (templateName.startsWith("pix_nao_pago")) {
+    return attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
+  }
+
+  return null;
+}
+
 // Build template components with parameters filled from resolved variables
 function buildTemplateComponents(
   variableMappings: string[],
   ctx: { customer: any; order: any; campaign: any },
   bodyVarCount: number,
   hasHeaderVar: boolean,
+  buttonUrlCode?: string, // tracked link code for dynamic URL buttons
+  buttonUrlIndex?: number, // which button (0-based) has the dynamic URL
 ) {
   const components: any[] = [];
 
@@ -112,6 +142,16 @@ function buildTemplateComponents(
       params.push({ type: "text", text: value || "-" });
     }
     components.push({ type: "body", parameters: params });
+  }
+
+  // Button URL parameters (dynamic {{1}} in URL buttons)
+  if (buttonUrlCode !== undefined && buttonUrlIndex !== undefined) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: String(buttonUrlIndex),
+      parameters: [{ type: "text", text: buttonUrlCode }],
+    });
   }
 
   return components;

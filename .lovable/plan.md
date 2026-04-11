@@ -1,63 +1,23 @@
 
 
-# Integração OpenAI para Assistente de Atendimento
+# Botão de Salvamento para Toggle da IA
 
-## Visão Geral
-Adicionar OpenAI como integração em `/settings/integrations/openai`, onde o usuário configura API Key, tom, nível de inteligência (modelo) e prompt do agente. Na aba Copilot do chat, transformar em assistente funcional com toggle de ativar/desativar por conversa e opções específicas por conversa.
+## Problema
+O toggle da IA salva automaticamente ao mudar, mas o estado não persiste corretamente — volta a ficar ativado.
 
-## Passo 1 — Migração SQL
-Adicionar colunas na tabela `integrations` para armazenar configurações de IA:
-```sql
--- A config jsonb já existe na tabela integrations, vamos usar para:
--- config.openai_api_key (encriptado no futuro)
--- config.tone (formal, informal, neutro)  
--- config.model (gpt-4o-mini, gpt-4o, gpt-4-turbo)
--- config.system_prompt (texto livre)
--- config.ai_enabled (boolean global)
-```
-Nenhuma migração necessária — a coluna `config` jsonb já existe.
+## Solução
+Trocar o salvamento automático por um fluxo explícito com botão "Salvar". O toggle muda localmente, e o usuário clica em "Salvar configurações" para persistir no banco. Isso garante controle total e feedback claro.
 
-## Passo 2 — Página de Configuração OpenAI (`src/pages/SettingsOpenAI.tsx`)
-Nova página seguindo o padrão do SettingsYampi:
-- Campo de API Key (com toggle de visibilidade)
-- Seletor de Tom: Formal, Informal, Amigável, Técnico
-- Seletor de Modelo: gpt-4o-mini (econômico), gpt-4o (balanceado), gpt-4-turbo (avançado)
-- Textarea para prompt do sistema (instruções da agente)
-- Botão Salvar que persiste tudo em `integrations` com `provider = 'openai'`
-- Botão Testar conexão (chama a API para validar a key)
+## Alterações em `src/components/chat/ContactInfoPanel.tsx`
 
-## Passo 3 — Adicionar OpenAI na lista de integrações
-Em `SettingsIntegrations.tsx`, adicionar card da OpenAI no array PROVIDERS:
-- Nome: OpenAI
-- Cor: #10A37F
-- Features: ["Assistente IA", "Sugestão de Respostas", "Copilot"]
+1. **Adicionar estado `dirty`** para rastrear mudanças não salvas (toggle, tom, contexto)
+2. **Remover salvamento automático** do `onCheckedChange` do Switch, do `onValueChange` do Select de tom, e do `onBlur` do Textarea de contexto — todos passam a alterar apenas estado local
+3. **Adicionar botão "Salvar configurações"** que salva `ai_enabled`, `ai_tone` e `ai_context` de uma vez com feedback visual (loading + toast de sucesso/erro)
+4. **Indicador visual** de mudanças pendentes (botão fica destacado quando há alterações não salvas)
 
-## Passo 4 — Rota no App.tsx
-```
-/settings/integrations/openai → SettingsOpenAI
-```
-
-## Passo 5 — Edge Function `ai-copilot`
-Nova edge function que:
-- Recebe: mensagens da conversa, tenant_id, configurações opcionais por conversa
-- Busca config da OpenAI na tabela `integrations`
-- Chama a API da OpenAI com o prompt do sistema + histórico
-- Retorna sugestão de resposta
-
-## Passo 6 — Tab Copilot funcional (`ContactInfoPanel.tsx`)
-Substituir o placeholder "Em breve" por:
-- **Toggle Ativar/Desativar IA** nesta conversa (estado local, persistido em `custom_attributes` do customer)
-- **Seletor de tom** por conversa (override do global)
-- **Campo de contexto** específico da conversa (ex: "cliente VIP, priorizar")
-- **Botão "Sugerir resposta"** que chama a edge function e mostra a sugestão
-- **Botão "Copiar"** para colar a sugestão no input
-- Indicador de status da integração (configurada/não configurada)
-
-## Arquivos
-- **Nova migração**: nenhuma (usa `config` jsonb existente)
-- **`src/pages/SettingsOpenAI.tsx`** — nova página de configuração
-- **`src/pages/SettingsIntegrations.tsx`** — adicionar card OpenAI
-- **`src/App.tsx`** — nova rota
-- **`supabase/functions/ai-copilot/index.ts`** — edge function
-- **`src/components/chat/ContactInfoPanel.tsx`** — tab Copilot funcional
+## Resultado
+- Toggle muda localmente sem salvar
+- Botão "Salvar configurações" persiste tudo no banco
+- Feedback claro: botão desabilitado quando não há mudanças, loading durante salvamento
+- Desativação da IA é forçada e persistida de forma confiável
 

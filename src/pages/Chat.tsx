@@ -203,12 +203,12 @@ export default function Chat() {
 
         <div className="flex-1 flex flex-col bg-background min-w-0">
           {!selectedPhoneKey ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center bg-accent/20">
               <div className="text-center">
                 <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                   <MessageSquare className="h-8 w-8 text-muted-foreground" />
                 </div>
-                <h2 className="text-lg font-semibold text-foreground mb-1">WhatsApp Inbox</h2>
+                <h2 className="text-lg font-semibold text-foreground mb-1">Atendimento</h2>
                 <p className="text-sm text-muted-foreground">
                   Selecione uma conversa para começar
                 </p>

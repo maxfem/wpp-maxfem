@@ -48,7 +48,7 @@ const planItems = [
 
 const executeItems = [
   { title: "Atividades", url: "/activities", icon: Activity },
-  { title: "Atendimento", url: "/chat", icon: MessageSquare },
+  { title: "Atendimento", url: "/atendimento", icon: MessageSquare },
 ];
 
 const manageItems = [

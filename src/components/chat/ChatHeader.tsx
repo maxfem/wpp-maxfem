@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, User, Search, MoreVertical, Star, Archive, Volume2, VolumeX, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Conversation } from "./types";
 import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -25,26 +26,42 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
   if (!conversation) return null;
 
   return (
-    <div className="h-16 border-b border-border flex items-center justify-between px-4 bg-card">
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Avatar className="h-10 w-10">
-            <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-              {conversation.customerName.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-foreground">
-            {conversation.customerName}
-          </p>
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <Phone className="h-3 w-3" />
-            {conversation.phone}
-          </p>
+    <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card">
+      <div className="flex items-center gap-3 min-w-0">
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+            {conversation.customerName.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground truncate">
+              {conversation.customerName}
+            </p>
+            <Badge variant="outline" className="text-[9px] h-4 px-1.5 shrink-0">
+              📱 WhatsApp
+            </Badge>
+            {showContactPanel ? (
+              <button
+                onClick={onToggleContactPanel}
+                className="text-xs text-primary hover:underline shrink-0"
+              >
+                Fechar detalhes
+              </button>
+            ) : (
+              <button
+                onClick={onToggleContactPanel}
+                className="text-xs text-primary hover:underline shrink-0"
+              >
+                Ver detalhes
+              </button>
+            )}
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-1">
+
+      <div className="flex items-center gap-2">
+        {/* Action buttons */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onSearchInChat}>
@@ -54,40 +71,6 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
           <TooltipContent>Buscar na conversa</TooltipContent>
         </Tooltip>
 
-        {conversation.customerId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => navigate(`/customers`)}
-              >
-                <User className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Ver perfil</TooltipContent>
-          </Tooltip>
-        )}
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={onToggleContactPanel}
-            >
-              {showContactPanel ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{showContactPanel ? "Fechar painel" : "Info do contato"}</TooltipContent>
-        </Tooltip>
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -95,18 +78,49 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem className="text-xs">
-              <Star className="h-3.5 w-3.5 mr-2" />
+            <DropdownMenuItem className="text-xs gap-2">
+              <Star className="h-3.5 w-3.5" />
               Marcar como favorito
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-xs">
-              <VolumeX className="h-3.5 w-3.5 mr-2" />
+            <DropdownMenuItem className="text-xs gap-2">
+              <VolumeX className="h-3.5 w-3.5" />
               Silenciar conversa
             </DropdownMenuItem>
+            {conversation.customerId && (
+              <DropdownMenuItem className="text-xs gap-2" onClick={() => navigate("/customers")}>
+                <User className="h-3.5 w-3.5" />
+                Ver perfil do cliente
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-xs">
-              <Archive className="h-3.5 w-3.5 mr-2" />
+            <DropdownMenuItem className="text-xs gap-2">
+              <Archive className="h-3.5 w-3.5" />
               Arquivar conversa
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Resolve button - Chatwoot style */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="h-8 text-xs gap-1.5 bg-green-600 hover:bg-green-700 text-white">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Resolver
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem className="text-xs gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+              Resolver
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-xs gap-2">
+              <Clock className="h-3.5 w-3.5 text-amber-500" />
+              Pendente
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-xs gap-2">
+              <RotateCcw className="h-3.5 w-3.5 text-blue-500" />
+              Reabrir
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

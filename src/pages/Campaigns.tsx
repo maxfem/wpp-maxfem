@@ -26,7 +26,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2,
-  Check, Clock, FileText, LayoutGrid, List, CalendarIcon,
+  Check, Clock, FileText, LayoutGrid, List, CalendarIcon, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
@@ -38,6 +38,7 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; cla
   sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
   scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
   running: { label: "Em execução", icon: Zap, className: "bg-blue-100 text-blue-700" },
+  failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
   finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
 

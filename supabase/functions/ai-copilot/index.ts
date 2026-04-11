@@ -63,7 +63,16 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   const ordersRes = await yampiGet(alias, `customers/${yampiCustomerId}/orders`, user_token, user_secret_key, {
     "limit": "10",
     "sort": "-created_at",
+    "include": "shipments,items,payments,status",
   });
+
+  console.log("[copilot] Raw orders response keys:", ordersRes?.data?.length, JSON.stringify(ordersRes?.data?.[0] ? Object.keys(ordersRes.data[0]) : []));
+  if (ordersRes?.data?.[0]) {
+    const first = ordersRes.data[0];
+    console.log("[copilot] First order shipments:", JSON.stringify(first.shipments));
+    console.log("[copilot] First order shipping:", JSON.stringify(first.shipping));
+    console.log("[copilot] First order tracking:", JSON.stringify(first.tracking));
+  }
 
   if (!ordersRes?.data?.length) {
     return JSON.stringify({

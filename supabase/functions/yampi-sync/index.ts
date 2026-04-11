@@ -324,7 +324,43 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { tenant_id, phase = "customers" } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { tenant_id, phase = "customers", cron = false } = body;
+
+    // CRON MODE: auto-discover all tenants with active Yampi and sync carts
+    if (cron) {
+      const { data: integrations } = await supabase
+        .from("integrations")
+        .select("tenant_id, config, sync_settings")
+        .eq("provider", "yampi")
+        .eq("is_active", true);
+
+      if (!integrations || integrations.length === 0) {
+        return new Response(JSON.stringify({ message: "No Yampi integrations found" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const cronResults: any[] = [];
+      for (const int of integrations) {
+        const cfg = int.config as any;
+        if (!cfg?.alias || !cfg?.user_token || !cfg?.user_secret_key) continue;
+        const syncSettings = int.sync_settings as any;
+        if (syncSettings?.abandoned_carts === false) continue;
+        try {
+          const synced = await syncCarts(supabase, int.tenant_id, cfg);
+          cronResults.push({ tenant_id: int.tenant_id, synced });
+        } catch (err) {
+          console.error(`Cron cart sync error for tenant ${int.tenant_id}:`, err);
+          cronResults.push({ tenant_id: int.tenant_id, error: String(err) });
+        }
+      }
+
+      return new Response(JSON.stringify({ cron: true, results: cronResults }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!tenant_id) {
       return new Response(JSON.stringify({ error: "tenant_id obrigatório" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -126,6 +126,7 @@ export default function MessageTemplates() {
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const tenantId = currentTenant?.id;
 
@@ -394,9 +395,14 @@ export default function MessageTemplates() {
   };
 
   // Eligible templates for bulk Meta submission (not yet approved and valid)
+  const filteredTemplates = useMemo(
+    () => statusFilter === "all" ? templates : templates.filter((t) => t.status === statusFilter),
+    [templates, statusFilter]
+  );
+
   const eligibleForMeta = useMemo(
-    () => templates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
-    [templates]
+    () => filteredTemplates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
+    [filteredTemplates]
   );
 
   const toggleSelect = (id: string) => {
@@ -801,7 +807,32 @@ export default function MessageTemplates() {
           </Card>
         ) : (
           <Card>
-            {/* Bulk action bar */}
+            {/* Status filter bar */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+              <span className="text-sm text-muted-foreground mr-1">Filtrar:</span>
+              {[
+                { value: "all", label: "Todos" },
+                { value: "draft", label: "Rascunho" },
+                { value: "pending", label: "Pendente" },
+                { value: "approved", label: "Aprovado" },
+                { value: "rejected", label: "Rejeitado" },
+              ].map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={statusFilter === opt.value ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => { setStatusFilter(opt.value); setSelectedIds(new Set()); }}
+                >
+                  {opt.label}
+                  {opt.value !== "all" && (
+                    <span className="ml-1 opacity-70">
+                      ({templates.filter((t) => t.status === opt.value).length})
+                    </span>
+                  )}
+                </Button>
+              ))}
+            </div>
             {selectedIds.size > 0 && (
               <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5 border-b border-border">
                 <span className="text-sm text-foreground">
@@ -858,7 +889,7 @@ export default function MessageTemplates() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {templates.map((t) => {
+                  {filteredTemplates.map((t) => {
                     const st = statusConfig[t.status] || statusConfig.draft;
                     return (
                       <TableRow key={t.id}>

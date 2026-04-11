@@ -63,7 +63,7 @@ export function ChatSidebar({
     : conversations;
 
   return (
-    <div className="w-[340px] border-r border-border flex flex-col bg-card">
+    <div className="w-[340px] min-w-[340px] border-r border-border flex flex-col bg-card overflow-hidden">
       {/* Header */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-2">
@@ -234,8 +234,8 @@ export function ChatSidebar({
                   <CircleDot className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 text-primary fill-primary" />
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0.5">
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
                   <span className={cn(
                     "text-sm truncate",
                     conv.unread > 0 ? "font-semibold text-foreground" : "font-medium text-foreground"
@@ -243,7 +243,7 @@ export function ChatSidebar({
                     {conv.customerName}
                   </span>
                   <span className={cn(
-                    "text-[10px] shrink-0 ml-2",
+                    "text-[10px] shrink-0 whitespace-nowrap",
                     conv.unread > 0 ? "text-primary font-medium" : "text-muted-foreground"
                   )}>
                     {formatTime(conv.lastMessageAt)}

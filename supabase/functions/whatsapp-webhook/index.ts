@@ -4,114 +4,81 @@ const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
-const YAMPI_BASE = "https://api.dooki.com.br/v2";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// ===== Yampi helpers =====
-async function yampiGet(alias: string, path: string, token: string, secret: string, params: Record<string, string> = {}) {
-  const url = new URL(`${YAMPI_BASE}/${alias}/${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { "Content-Type": "application/json", "User-Token": token, "User-Secret-Key": secret },
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
+// ===== Local lookup: query orders from local DB by CPF =====
 async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string> {
-  const { data: integration } = await supabase
-    .from("integrations")
-    .select("config")
-    .eq("tenant_id", tenantId)
-    .eq("provider", "yampi")
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!integration) return JSON.stringify({ error: "Integração Yampi não configurada." });
-
-  const config = integration.config as any;
-  const { alias, user_token, user_secret_key } = config;
-  if (!alias || !user_token || !user_secret_key) return JSON.stringify({ error: "Credenciais Yampi incompletas." });
-
   const cleanCpf = cpf.replace(/\D/g, "");
-  const searchRes = await yampiGet(alias, "customers", user_token, user_secret_key, { q: cleanCpf, limit: "5" });
-  if (!searchRes?.data?.length) return JSON.stringify({ error: "Nenhum cliente encontrado com esse CPF.", cpf: cleanCpf });
-
-  const yampiCustomer = searchRes.data.find((c: any) => (c.cpf || "").replace(/\D/g, "") === cleanCpf) || searchRes.data[0];
-  const customerName = yampiCustomer.name || `${yampiCustomer.first_name || ""} ${yampiCustomer.last_name || ""}`.trim();
-
-  const ordersRes = await yampiGet(alias, `customers/${yampiCustomer.id}/orders`, user_token, user_secret_key, {
-    limit: "10",
-    sort: "-created_at",
-    include: "shipments,items,payments,status",
-  });
-  if (!ordersRes?.data?.length) {
-    return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders: [], message: "Cliente encontrado, mas sem pedidos." });
+  if (cleanCpf.length < 11) {
+    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
   }
 
-  const orders = ordersRes.data.map((o: any) => {
-    const status = o.status?.data?.alias || "pending";
-    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
+  // Find customer by document (normalized CPF)
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("id, name, document, phone")
+    .eq("tenant_id", tenantId)
+    .eq("document", cleanCpf)
+    .maybeSingle();
 
-    return {
-      order_id: o.id,
-      order_number: o.number || o.id,
-      status_alias: status,
-      total: o.value_total,
-      created_at: o.created_at?.date || o.created_at,
-      tracking_code: shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null,
-      tracking_url: shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null,
-      carrier: shipment?.carrier || shipment?.shipping_company || o.carrier || null,
-      payments: (o.payments?.data || []).map((p: any) => ({
-        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-        status: p.status || "N/A",
-        value: p.value,
-      })),
-    };
-  });
+  if (!customer) {
+    return JSON.stringify({ error: "Nenhum cliente encontrado com esse CPF.", cpf: cleanCpf });
+  }
 
-  for (let i = 0; i < orders.length && i < 3; i++) {
-    if (orders[i].tracking_code) continue;
+  // Fetch orders for this customer
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("id, external_id, order_number, total, status, mapped_status, status_alias, tracking_code, tracking_url, carrier, delivery_estimate, payment_summary, items_summary, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customer.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
-    try {
-      const detailRes = await yampiGet(alias, `orders/${orders[i].order_id}`, user_token, user_secret_key, {
-        include: "shipments,status,payments,items",
-      });
-
-      const detailOrder = detailRes?.data;
-      const shipment = detailOrder?.shipments?.data?.[0] || detailOrder?.shipping?.data?.[0] || detailOrder?.shipments?.[0] || detailOrder?.shipping?.[0];
-
-      if (shipment) {
-        orders[i].tracking_code = shipment.tracking_code || shipment.tracking_number || orders[i].tracking_code;
-        orders[i].tracking_url = shipment.tracking_url || shipment.tracking_link || orders[i].tracking_url;
-        orders[i].carrier = shipment.carrier || shipment.shipping_company || orders[i].carrier;
-        console.log(`[webhook] Tracking found on order detail ${orders[i].order_number}:`, JSON.stringify(shipment));
-      }
-    } catch (error) {
-      console.error(`[webhook] Error fetching order detail ${orders[i].order_number}:`, error);
-    }
+  if (!orders || orders.length === 0) {
+    return JSON.stringify({
+      customer_name: customer.name,
+      cpf: cleanCpf,
+      orders: [],
+      message: "Cliente encontrado, mas sem pedidos registrados.",
+    });
   }
 
   const statusLabels: Record<string, string> = {
+    pending: "Aguardando pagamento",
     waiting_payment: "Aguardando pagamento",
     paid: "Pago",
     invoiced: "Faturado",
     shipped: "Enviado",
+    on_carriage: "Em transporte",
     in_transit: "Em transporte",
     delivered: "Entregue",
     cancelled: "Cancelado",
     refunded: "Reembolsado",
   };
 
-  const formattedOrders = orders.map((order: any) => ({
-    ...order,
-    status: statusLabels[order.status_alias] || order.status_alias,
+  const formattedOrders = orders.map((o: any) => ({
+    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+    status: statusLabels[o.status_alias || o.status] || o.status,
+    status_alias: o.status_alias || o.status,
+    total: o.total,
+    created_at: o.created_at,
+    tracking_code: o.tracking_code || null,
+    tracking_url: o.tracking_url || null,
+    carrier: o.carrier || null,
+    payments: o.payment_summary || [],
+    items: o.items_summary || [],
   }));
 
-  console.log("[webhook] Orders lookup result:", JSON.stringify(formattedOrders));
+  console.log("[webhook] Local orders lookup result:", JSON.stringify(formattedOrders));
 
-  return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders_count: formattedOrders.length, orders: formattedOrders });
+  return JSON.stringify({
+    customer_name: customer.name,
+    cpf: cleanCpf,
+    orders_count: formattedOrders.length,
+    orders: formattedOrders,
+    note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem.",
+  });
 }
 
 const aiTools = [
@@ -119,7 +86,7 @@ const aiTools = [
     type: "function" as const,
     function: {
       name: "lookup_orders_by_cpf",
-      description: "Consulta pedidos de um cliente pelo CPF na plataforma de e-commerce. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras.",
+      description: "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras.",
       parameters: {
         type: "object",
         properties: { cpf: { type: "string", description: "CPF do cliente" } },
@@ -172,7 +139,6 @@ async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<stri
   return data.tenant_id;
 }
 
-/** Download media from Meta Graph API and upload to Supabase Storage */
 async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId: string): Promise<string | null> {
   try {
     const metaRes = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
@@ -261,7 +227,6 @@ async function markRepliedActivity(customerId: string, tenantId: string) {
     .is("replied_at", null).gte("sent_at", cutoff);
 }
 
-/** Auto-respond using AI if copilot is enabled for this customer */
 async function tryAutoRespondWithAI(
   tenantId: string,
   customerId: string,
@@ -269,14 +234,12 @@ async function tryAutoRespondWithAI(
   customerAttrs: Record<string, any> | null,
 ) {
   try {
-    // AI is enabled by default; only skip if explicitly disabled
     const attrs = customerAttrs || {};
     if (attrs.ai_enabled === false) {
       console.log(`[webhook] AI disabled for customer ${customerId}`);
       return;
     }
 
-    // Check if OpenAI integration is configured
     const { data: integration } = await supabase
       .from("integrations")
       .select("config")
@@ -297,7 +260,6 @@ async function tryAutoRespondWithAI(
       return;
     }
 
-    // Fetch recent conversation history
     const { data: recentMsgs } = await supabase
       .from("whatsapp_messages")
       .select("direction, content, message_type, created_at")
@@ -320,7 +282,7 @@ async function tryAutoRespondWithAI(
       technical: "Seja preciso, objetivo e técnico.",
     };
 
-    // Check if Yampi is configured
+    // Check if Yampi integration exists (for order lookup tool)
     const { data: yampiInt } = await supabase
       .from("integrations")
       .select("id")
@@ -331,7 +293,7 @@ async function tryAutoRespondWithAI(
     const hasYampi = !!yampiInt;
 
     const orderInstructions = hasYampi
-      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente.`
+      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados do sistema. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente. Se o rastreio não aparecer nos dados, informe que o pedido foi encontrado mas o código de rastreio ainda não foi atualizado, e sugira verificar novamente mais tarde.`
       : "";
 
     const fullSystemPrompt = `${systemPrompt}
@@ -342,7 +304,6 @@ ${orderInstructions}
 
 Você está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
 
-    // Build messages for OpenAI (reverse since we fetched desc)
     const chatMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
       ...recentMsgs.reverse().map((m: any) => ({
@@ -377,7 +338,6 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
     let result = await openaiResponse.json();
     let assistantMessage = result.choices?.[0]?.message;
 
-    // Handle tool calls (up to 3 iterations)
     let iterations = 0;
     while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
       iterations++;
@@ -414,7 +374,6 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       return;
     }
 
-    // Resolve phone_number_id for sending
     let phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
     const { data: waAccount } = await supabase
       .from("whatsapp_accounts")
@@ -425,7 +384,6 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       .single();
     if (waAccount?.phone_number_id) phoneNumberId = waAccount.phone_number_id;
 
-    // Send via WhatsApp
     const GRAPH_API = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
     const waResponse = await fetch(GRAPH_API, {
       method: "POST",
@@ -449,7 +407,6 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
 
     const wamid = waResult.messages?.[0]?.id;
 
-    // Save the AI reply as outbound message
     await supabase.from("whatsapp_messages").insert({
       tenant_id: tenantId,
       customer_id: customerId,
@@ -507,7 +464,6 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Handle status updates
           if (value.statuses && Array.isArray(value.statuses)) {
             for (const status of value.statuses) {
               const { id: wamid, status: msgStatus } = status;
@@ -516,7 +472,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Handle incoming messages
           if (value.messages && Array.isArray(value.messages)) {
             const contact = value.contacts?.[0];
 
@@ -567,7 +522,6 @@ Deno.serve(async (req) => {
                   content = `[${msgType}]`;
               }
 
-              // Find or create customer
               let customer = await findCustomerByPhone(phone, tenantId);
               if (!customer) {
                 const customerName = contact?.profile?.name || phone;
@@ -580,7 +534,6 @@ Deno.serve(async (req) => {
                 customer = newCustomer;
               }
 
-              // Save message with resolved media URL
               await supabase.from("whatsapp_messages").insert({
                 tenant_id: tenantId,
                 customer_id: customer!.id,
@@ -597,7 +550,6 @@ Deno.serve(async (req) => {
               await markRepliedActivity(customer!.id, tenantId);
               console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
 
-              // Try AI auto-response (async, don't block webhook)
               tryAutoRespondWithAI(tenantId, customer!.id, phone, customer!.custom_attributes || null);
             }
           }

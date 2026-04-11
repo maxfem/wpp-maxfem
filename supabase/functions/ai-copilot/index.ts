@@ -7,145 +7,48 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const YAMPI_BASE = "https://api.dooki.com.br/v2";
-
-// ===== Yampi helpers =====
-async function yampiGet(alias: string, path: string, token: string, secret: string, params: Record<string, string> = {}) {
-  const url = new URL(`${YAMPI_BASE}/${alias}/${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { "Content-Type": "application/json", "User-Token": token, "User-Secret-Key": secret },
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
+// ===== Local lookup: query orders from local DB by CPF =====
 async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any): Promise<string> {
-  // 1. Get Yampi config
-  const { data: integration } = await adminClient
-    .from("integrations")
-    .select("config")
+  const cleanCpf = cpf.replace(/\D/g, "");
+  if (cleanCpf.length < 11) {
+    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+  }
+
+  const { data: customer } = await adminClient
+    .from("customers")
+    .select("id, name, document, phone")
     .eq("tenant_id", tenantId)
-    .eq("provider", "yampi")
-    .eq("is_active", true)
+    .eq("document", cleanCpf)
     .maybeSingle();
 
-  if (!integration) {
-    return JSON.stringify({ error: "Integração Yampi não configurada para este tenant." });
-  }
-
-  const config = integration.config as any;
-  const { alias, user_token, user_secret_key } = config;
-  if (!alias || !user_token || !user_secret_key) {
-    return JSON.stringify({ error: "Credenciais Yampi incompletas." });
-  }
-
-  // 2. Search customer by CPF in Yampi
-  const cleanCpf = cpf.replace(/\D/g, "");
-  const searchRes = await yampiGet(alias, "customers", user_token, user_secret_key, {
-    "q": cleanCpf,
-    "limit": "5",
-  });
-
-  if (!searchRes?.data?.length) {
+  if (!customer) {
     return JSON.stringify({ error: "Nenhum cliente encontrado com esse CPF.", cpf: cleanCpf });
   }
 
-  const yampiCustomer = searchRes.data.find((c: any) => {
-    const cCpf = (c.cpf || "").replace(/\D/g, "");
-    return cCpf === cleanCpf;
-  }) || searchRes.data[0];
+  const { data: orders } = await adminClient
+    .from("orders")
+    .select("id, external_id, order_number, total, status, mapped_status, status_alias, tracking_code, tracking_url, carrier, delivery_estimate, payment_summary, items_summary, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customer.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
-  const yampiCustomerId = yampiCustomer.id;
-  const customerName = yampiCustomer.name || `${yampiCustomer.first_name || ""} ${yampiCustomer.last_name || ""}`.trim();
-
-  // 3. Fetch orders for this customer
-  const ordersRes = await yampiGet(alias, `customers/${yampiCustomerId}/orders`, user_token, user_secret_key, {
-    "limit": "10",
-    "sort": "-created_at",
-    "include": "shipments,items,payments,status",
-  });
-
-  console.log("[copilot] Raw orders response keys:", ordersRes?.data?.length, JSON.stringify(ordersRes?.data?.[0] ? Object.keys(ordersRes.data[0]) : []));
-  if (ordersRes?.data?.[0]) {
-    const first = ordersRes.data[0];
-    console.log("[copilot] First order shipments:", JSON.stringify(first.shipments));
-    console.log("[copilot] First order shipping:", JSON.stringify(first.shipping));
-    console.log("[copilot] First order tracking:", JSON.stringify(first.tracking));
-  }
-
-  if (!ordersRes?.data?.length) {
+  if (!orders || orders.length === 0) {
     return JSON.stringify({
-      customer_name: customerName,
+      customer_name: customer.name,
       cpf: cleanCpf,
       orders: [],
       message: "Cliente encontrado, mas sem pedidos registrados.",
     });
   }
 
-
-  const orders = ordersRes.data.map((o: any) => {
-    const status = o.status?.data?.alias || "pending";
-    // Try multiple paths for tracking data
-    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
-    let trackingCode = shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null;
-    let trackingUrl = shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null;
-    let carrier = shipment?.carrier || shipment?.shipping_company || o.carrier || null;
-    const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || o.delivery_estimate || null;
-
-    return {
-      order_id: o.id,
-      order_number: o.number || o.id,
-      status,
-      tracking_code: trackingCode,
-      tracking_url: trackingUrl,
-      carrier,
-      delivery_estimate: deliveryEstimate,
-      total: o.value_total,
-      created_at: o.created_at?.date || o.created_at,
-      payments: (o.payments?.data || []).map((p: any) => ({
-        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-        status: p.status || "N/A",
-        value: p.value,
-      })),
-      items_count: o.items?.data?.length || 0,
-      items: (o.items?.data || []).slice(0, 5).map((i: any) => ({
-        name: i.name || i.sku?.data?.title || "Produto",
-        quantity: i.quantity,
-        price: i.price,
-      })),
-    };
-  });
-
-  // For orders missing tracking, try fetching individual order details
-  for (let i = 0; i < orders.length && i < 3; i++) {
-    if (!orders[i].tracking_code && ["shipped", "invoiced", "in_transit", "em_transporte"].includes((orders[i].status || "").toLowerCase().replace(/\s/g, "_"))) {
-      try {
-        const detailRes = await yampiGet(alias, `orders/${orders[i].order_id}`, user_token, user_secret_key, {
-          "include": "shipments",
-        });
-        if (detailRes?.data) {
-          const d = detailRes.data;
-          const s = d.shipments?.data?.[0] || d.shipping?.data?.[0];
-          if (s) {
-            orders[i].tracking_code = s.tracking_code || s.tracking_number || orders[i].tracking_code;
-            orders[i].tracking_url = s.tracking_url || s.tracking_link || orders[i].tracking_url;
-            orders[i].carrier = s.carrier || s.shipping_company || orders[i].carrier;
-            console.log(`[copilot] Order ${orders[i].order_number} detail shipment:`, JSON.stringify(s));
-          }
-        }
-      } catch (e) {
-        console.error(`[copilot] Error fetching order detail:`, e);
-      }
-    }
-  }
-
-  // Map status labels for the final output
-  const statusLabelsMap: Record<string, string> = {
+  const statusLabels: Record<string, string> = {
+    pending: "Aguardando pagamento",
     waiting_payment: "Aguardando pagamento",
     paid: "Pago",
     invoiced: "Faturado",
     shipped: "Enviado",
+    on_carriage: "Em transporte",
     in_transit: "Em transporte",
     delivered: "Entregue",
     cancelled: "Cancelado",
@@ -153,27 +56,36 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   };
 
   const formattedOrders = orders.map((o: any) => ({
-    ...o,
-    status: statusLabelsMap[o.status] || o.status,
-    status_alias: o.status,
+    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+    status: statusLabels[o.status_alias || o.status] || o.status,
+    status_alias: o.status_alias || o.status,
+    total: o.total,
+    created_at: o.created_at,
+    tracking_code: o.tracking_code || null,
+    tracking_url: o.tracking_url || null,
+    carrier: o.carrier || null,
+    payments: o.payment_summary || [],
+    items: o.items_summary || [],
   }));
 
+  console.log("[copilot] Local orders lookup result:", JSON.stringify(formattedOrders));
+
   return JSON.stringify({
-    customer_name: customerName,
+    customer_name: customer.name,
     cpf: cleanCpf,
     orders_count: formattedOrders.length,
     orders: formattedOrders,
+    note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem.",
   });
 }
 
-// ===== OpenAI tools definition =====
 const tools = [
   {
     type: "function" as const,
     function: {
       name: "lookup_orders_by_cpf",
       description:
-        "Consulta pedidos de um cliente pelo CPF na plataforma de e-commerce (Yampi). Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento, nota fiscal ou qualquer informação relacionada a compras. Solicite o CPF ao cliente antes de chamar esta função.",
+        "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento, nota fiscal ou qualquer informação relacionada a compras. Solicite o CPF ao cliente antes de chamar esta função.",
       parameters: {
         type: "object",
         properties: {
@@ -231,7 +143,6 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch OpenAI integration config
     const { data: integration } = await adminClient
       .from("integrations")
       .select("config")
@@ -256,7 +167,7 @@ serve(async (req) => {
       });
     }
 
-    // Check if Yampi is configured to enable order lookup tool
+    // Check if Yampi integration exists (for order lookup tool)
     const { data: yampiIntegration } = await adminClient
       .from("integrations")
       .select("id")
@@ -279,7 +190,7 @@ serve(async (req) => {
     };
 
     const orderInstructions = hasYampi
-      ? `\n\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente. Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou qualquer assunto relacionado a compras, solicite o CPF para fazer a consulta. Se o cliente já informou o CPF na conversa, use-o diretamente chamando a função.`
+      ? `\n\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados. Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou qualquer assunto relacionado a compras, solicite o CPF para fazer a consulta. Se o cliente já informou o CPF na conversa, use-o diretamente chamando a função. Se o rastreio não aparecer nos dados, informe que o pedido foi encontrado mas o código de rastreio ainda não foi atualizado.`
       : "";
 
     const fullSystemPrompt = `${systemPrompt}
@@ -298,7 +209,6 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       })),
     ];
 
-    // First OpenAI call (with tools if Yampi available)
     const openaiBody: any = {
       model,
       messages: chatMessages,
@@ -338,7 +248,6 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
     let result = await openaiResponse.json();
     let assistantMessage = result.choices?.[0]?.message;
 
-    // Handle tool calls (up to 3 iterations to prevent infinite loops)
     let iterations = 0;
     while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
       iterations++;
@@ -357,7 +266,6 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
         }
       }
 
-      // Second call with tool results
       openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },

@@ -46,6 +46,12 @@ async function yampiGetAll(alias: string, path: string, token: string, secret: s
   return allData;
 }
 
+function normalizeCpf(cpf: string | null | undefined): string | null {
+  if (!cpf) return null;
+  const clean = cpf.replace(/\D/g, "");
+  return clean.length >= 11 ? clean : null;
+}
+
 // ===== PHASE: CUSTOMERS =====
 async function syncCustomers(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
@@ -76,12 +82,14 @@ async function syncCustomers(supabase: any, tenant_id: string, config: any) {
       const phone = c.phone?.full_number || null;
       const email = c.email || null;
       const name = c.name || `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Cliente";
+      const cpfNormalized = normalizeCpf(c.cpf);
 
       const customerData: any = {
         tenant_id,
         name,
         phone,
         email,
+        document: cpfNormalized,
         custom_attributes: {
           yampi_id: c.id,
           cpf: c.cpf,
@@ -123,7 +131,6 @@ async function attributeConversions(supabase: any, tenant_id: string, orders: { 
   const now = new Date().toISOString();
 
   for (const order of orders) {
-    // Find recent activity without conversion, prioritize clicked
     const { data: activity } = await supabase
       .from("campaign_activities")
       .select("id")
@@ -169,9 +176,22 @@ async function fetchAllRows(supabase: any, table: string, select: string, filter
   return allRows;
 }
 
+const STATUS_MAP: Record<string, string> = {
+  waiting_payment: "pending",
+  paid: "paid",
+  invoiced: "invoiced",
+  shipped: "shipped",
+  on_carriage: "shipped",
+  in_transit: "shipped",
+  em_transporte: "shipped",
+  delivered: "delivered",
+  cancelled: "cancelled",
+  refunded: "refunded",
+};
+
 async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
-  const orders = await yampiGetAll(alias, "orders", user_token, user_secret_key);
+  const orders = await yampiGetAll(alias, "orders?include=shipments,payments,status,items", user_token, user_secret_key);
 
   const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
 
@@ -182,7 +202,6 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   }
 
   const externalIds = orders.map((o: any) => `yampi_${o.id}`);
-  // Fetch existing orders in batches of 500 to avoid .in() limits
   const existingOrders: any[] = [];
   for (let i = 0; i < externalIds.length; i += 500) {
     const batch = externalIds.slice(i, i + 500);
@@ -190,16 +209,6 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     if (data) existingOrders.push(...data);
   }
   const existingOrderMap = new Map(existingOrders.map((o: any) => [o.external_id, o.id]));
-
-  const statusMap: Record<string, string> = {
-    waiting_payment: "pending",
-    paid: "paid",
-    invoiced: "invoiced",
-    shipped: "shipped",
-    delivered: "delivered",
-    cancelled: "cancelled",
-    refunded: "refunded",
-  };
 
   const toInsertOrders: any[] = [];
   let synced = 0;
@@ -209,10 +218,31 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     if (!customerId) continue;
 
     const orderStatus = o.status?.data?.alias || "pending";
-    const mappedStatus = statusMap[orderStatus] || orderStatus;
+    const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;
     const isPix = o.payments?.data?.some((p: any) =>
       p.payment_method?.alias === "pix" && p.status !== "paid"
     );
+
+    // Extract tracking/shipping data
+    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
+    const trackingCode = shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null;
+    const trackingUrl = shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null;
+    const carrier = shipment?.carrier || shipment?.shipping_company || o.carrier || null;
+    const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || null;
+
+    // Extract payment summary
+    const paymentSummary = (o.payments?.data || []).map((p: any) => ({
+      method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+      status: p.status || "N/A",
+      value: p.value,
+    }));
+
+    // Extract items summary
+    const itemsSummary = (o.items?.data || []).slice(0, 10).map((i: any) => ({
+      name: i.name || i.sku?.data?.title || "Produto",
+      quantity: i.quantity,
+      price: i.price,
+    }));
 
     const orderData: any = {
       tenant_id,
@@ -221,6 +251,14 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       total: o.value_total || 0,
       status: mappedStatus,
       mapped_status: isPix ? "pix_pending" : mappedStatus,
+      order_number: String(o.number || o.id),
+      status_alias: orderStatus,
+      tracking_code: trackingCode,
+      tracking_url: trackingUrl,
+      carrier,
+      delivery_estimate: deliveryEstimate,
+      payment_summary: paymentSummary,
+      items_summary: itemsSummary,
     };
 
     const existingId = existingOrderMap.get(`yampi_${o.id}`);
@@ -232,6 +270,35 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     synced++;
   }
 
+  // For orders missing tracking that are shipped, try fetching individual details
+  const shippedWithoutTracking = orders.filter((o: any) => {
+    const status = o.status?.data?.alias || "";
+    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0];
+    const hasTracking = shipment?.tracking_code || shipment?.tracking_number || o.tracking_code;
+    return !hasTracking && ["shipped", "on_carriage", "in_transit", "invoiced"].includes(status);
+  });
+
+  for (const o of shippedWithoutTracking.slice(0, 10)) {
+    try {
+      const detailRes = await yampiGet(alias, `orders/${o.id}`, user_token, user_secret_key, { include: "shipments" });
+      const d = detailRes?.data;
+      const s = d?.shipments?.data?.[0] || d?.shipping?.data?.[0];
+      if (s?.tracking_code || s?.tracking_number) {
+        const extId = existingOrderMap.get(`yampi_${o.id}`);
+        if (extId) {
+          await supabase.from("orders").update({
+            tracking_code: s.tracking_code || s.tracking_number,
+            tracking_url: s.tracking_url || s.tracking_link || null,
+            carrier: s.carrier || s.shipping_company || null,
+          }).eq("id", extId);
+          console.log(`[sync] Updated tracking for order yampi_${o.id}: ${s.tracking_code || s.tracking_number}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[sync] Error fetching order detail ${o.id}:`, e);
+    }
+  }
+
   if (toInsertOrders.length > 0) {
     for (let i = 0; i < toInsertOrders.length; i += 50) {
       const batch = toInsertOrders.slice(i, i + 50);
@@ -239,7 +306,6 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       if (error) {
         console.error("Order batch insert error:", error.message);
       } else if (inserted) {
-        // Attribution: link new orders to recent campaign activities
         await attributeConversions(supabase, tenant_id, inserted);
       }
     }
@@ -265,7 +331,6 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
       if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, { id: c.id, custom_attributes: attrs });
     }
 
-    // Fetch active cart_abandoned automations for this tenant
     const { data: automations } = await supabase
       .from("campaigns")
       .select("id")
@@ -296,7 +361,6 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
         },
       }).eq("id", customer.id);
 
-      // Enqueue into automation_queue for each active automation
       for (const campaignId of activeAutomationIds) {
         if (!customer.id) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
@@ -307,7 +371,6 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
           trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl },
           status: "pending",
         });
-        // Unique index will silently reject duplicates (conflict = already queued)
         if (qErr && !qErr.message?.includes("duplicate")) {
           console.error("Queue insert error:", qErr.message);
         }
@@ -343,7 +406,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { tenant_id, phase = "customers", cron = false } = body;
 
-    // CRON MODE: auto-discover all tenants with active Yampi and sync carts
+    // CRON MODE
     if (cron) {
       const { data: integrations } = await supabase
         .from("integrations")
@@ -406,7 +469,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Test credentials on first phase
     if (phase === "customers") {
       const testRes = await yampiGet(alias, "customers", user_token, user_secret_key, { limit: "1" });
       if (!testRes) {
@@ -443,7 +505,6 @@ Deno.serve(async (req) => {
       if (syncSettings?.abandoned_carts !== false) {
         synced = await syncCarts(supabase, tenant_id, config);
       }
-      // Mark success
       await supabase.from("integrations").update({
         sync_status: "success",
         sync_error: null,
@@ -465,7 +526,6 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error("yampi-sync error:", err);
 
-    // Try to mark as failed
     try {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

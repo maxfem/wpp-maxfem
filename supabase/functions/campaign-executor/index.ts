@@ -5,7 +5,33 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-Deno.serve(async (req) => {
+// Build template components with parameters filled from customer data
+function buildTemplateComponents(customer: any, bodyVarCount: number, hasHeaderVar: boolean) {
+  const components: any[] = [];
+  const customerName = customer.name || "Cliente";
+
+  // Header parameters (if template header has {{1}})
+  if (hasHeaderVar) {
+    components.push({
+      type: "header",
+      parameters: [{ type: "text", text: customerName }],
+    });
+  }
+
+  // Body parameters - fill {{1}} with name, rest with empty/default
+  if (bodyVarCount > 0) {
+    const params: any[] = [];
+    for (let i = 0; i < bodyVarCount; i++) {
+      // First variable is typically the customer name
+      params.push({ type: "text", text: i === 0 ? customerName : "-" });
+    }
+    components.push({ type: "body", parameters: params });
+  }
+
+  return components;
+}
+
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

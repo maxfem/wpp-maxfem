@@ -107,16 +107,50 @@ function CopilotTab({
     setAiEnabled(attrs.ai_enabled !== false);
     setToneOverride(attrs.ai_tone || "default");
     setExtraContext(attrs.ai_context || "");
-  }, [customer?.id]);
+  }, [customer?.id, customer?.custom_attributes]);
 
   const savePerConversationSettings = async (updates: Record<string, any>) => {
-    if (!customer?.id) return;
-    const attrs = customer.custom_attributes || {};
-    await supabase
+    if (!currentTenant?.id || !conversation?.phone) {
+      throw new Error("Não foi possível identificar o contato desta conversa.");
+    }
+
+    let targetCustomerId = customer?.id || null;
+    let currentAttrs = (customer?.custom_attributes as Record<string, any>) || {};
+
+    if (!targetCustomerId) {
+      const normalizedPhone = conversation.phone.replace(/\D/g, "");
+      const phoneVariants = Array.from(
+        new Set(
+          normalizedPhone.startsWith("55") && normalizedPhone.length >= 12
+            ? [normalizedPhone, `+${normalizedPhone}`, normalizedPhone.slice(2), `+${normalizedPhone.slice(2)}`]
+            : [normalizedPhone, `+${normalizedPhone}`, `55${normalizedPhone}`, `+55${normalizedPhone}`]
+        )
+      );
+
+      const { data: matchedCustomer, error: lookupError } = await supabase
+        .from("customers")
+        .select("id, custom_attributes")
+        .eq("tenant_id", currentTenant.id)
+        .or(phoneVariants.map((phone) => `phone.eq.${phone}`).join(","))
+        .maybeSingle();
+
+      if (lookupError) throw lookupError;
+      if (!matchedCustomer?.id) {
+        throw new Error("Esse contato ainda não está vinculado a um cliente para salvar a configuração.");
+      }
+
+      targetCustomerId = matchedCustomer.id;
+      currentAttrs = (matchedCustomer.custom_attributes as Record<string, any>) || {};
+    }
+
+    const { error } = await supabase
       .from("customers")
-      .update({ custom_attributes: { ...attrs, ...updates } })
-      .eq("id", customer.id);
-    queryClient.invalidateQueries({ queryKey: ["customers-lookup", currentTenant?.id] });
+      .update({ custom_attributes: { ...currentAttrs, ...updates } })
+      .eq("id", targetCustomerId);
+
+    if (error) throw error;
+
+    await queryClient.invalidateQueries({ queryKey: ["customers-lookup", currentTenant.id] });
   };
 
   const handleSuggest = async () => {
@@ -183,9 +217,15 @@ function CopilotTab({
           </div>
           <Switch
             checked={aiEnabled}
-            onCheckedChange={(v) => {
+            onCheckedChange={async (v) => {
+              const previousValue = aiEnabled;
               setAiEnabled(v);
-              savePerConversationSettings({ ai_enabled: v });
+              try {
+                await savePerConversationSettings({ ai_enabled: v });
+              } catch (error) {
+                setAiEnabled(previousValue);
+                toast.error(error instanceof Error ? error.message : "Erro ao salvar configuração da IA");
+              }
             }}
           />
         </div>

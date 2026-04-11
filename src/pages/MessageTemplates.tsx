@@ -889,7 +889,7 @@ export default function MessageTemplates() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {templates.map((t) => {
+                  {filteredTemplates.map((t) => {
                     const st = statusConfig[t.status] || statusConfig.draft;
                     return (
                       <TableRow key={t.id}>

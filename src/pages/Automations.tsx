@@ -162,6 +162,23 @@ export default function Automations() {
     onError: (e) => toast.error(e.message),
   });
 
+  const toggleAutomation = useMutation({
+    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
+      const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
+      const newStatus = isActive ? "draft" : "scheduled";
+      const { error } = await supabase
+        .from("campaigns")
+        .update({ status: newStatus })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["automations"] });
+      toast.success("Status atualizado!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const filtered = useMemo(() => {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())
@@ -349,7 +366,11 @@ export default function Automations() {
                         <StIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
-                      <Switch className="scale-75" />
+                      <Switch
+                        className="scale-75"
+                        checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                        onCheckedChange={() => toggleAutomation.mutate({ id: c.id, currentStatus: c.status })}
+                      />
                     </div>
                   </CardContent>
                 </Card>

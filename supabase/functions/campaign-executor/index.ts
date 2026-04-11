@@ -157,6 +157,243 @@ function buildTemplateComponents(
   return components;
 }
 
+// ===== AUTOMATION QUEUE PROCESSOR =====
+async function processAutomationQueue(supabase: any) {
+  const results: any[] = [];
+
+  // Fetch pending items (limit 50 per run to avoid timeout)
+  const { data: queueItems, error: qErr } = await supabase
+    .from("automation_queue")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (qErr || !queueItems || queueItems.length === 0) {
+    return results;
+  }
+
+  console.log(`Processing ${queueItems.length} automation queue items`);
+
+  // Group by campaign to load template once per campaign
+  const byCampaign = new Map<string, any[]>();
+  for (const item of queueItems) {
+    const list = byCampaign.get(item.campaign_id) || [];
+    list.push(item);
+    byCampaign.set(item.campaign_id, list);
+  }
+
+  for (const [campaignId, items] of byCampaign) {
+    // Load campaign
+    const { data: campaign } = await supabase
+      .from("campaigns")
+      .select("*")
+      .eq("id", campaignId)
+      .single();
+
+    if (!campaign || campaign.status !== "running") {
+      // Mark items as failed if campaign is no longer active
+      for (const item of items) {
+        await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
+      }
+      continue;
+    }
+
+    // Get WhatsApp credentials
+    const { data: waAccount } = await supabase
+      .from("whatsapp_accounts")
+      .select("phone_number_id")
+      .eq("tenant_id", campaign.tenant_id)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    const phoneNumberId = waAccount?.phone_number_id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+    const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+
+    if (!phoneNumberId || !accessToken) {
+      console.error(`Automation ${campaignId}: no WhatsApp credentials`);
+      continue;
+    }
+
+    // Extract template from flow_data
+    const flowData = campaign.flow_data as any;
+    let templateName: string | null = null;
+    let templateLanguage = "pt_BR";
+
+    if (flowData?.nodes) {
+      const sendNode = flowData.nodes.find(
+        (n: any) => n.data?.nodeType === "sendWhatsApp" && (n.data?.template || n.data?.templateName)
+      );
+      if (sendNode) {
+        templateName = sendNode.data.template || sendNode.data.templateName;
+        templateLanguage = sendNode.data.templateLanguage || "pt_BR";
+      }
+    }
+
+    if (!templateName) {
+      console.error(`Automation ${campaignId}: no template in flow`);
+      for (const item of items) {
+        await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
+      }
+      continue;
+    }
+
+    // Load template record
+    const { data: templateRecord } = await supabase
+      .from("message_templates")
+      .select("body, header_type, header_content, sample_values, buttons")
+      .eq("name", templateName)
+      .eq("tenant_id", campaign.tenant_id)
+      .limit(1)
+      .single();
+
+    const bodyVarCount = templateRecord?.body
+      ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length
+      : 0;
+    const hasHeaderVar = templateRecord?.header_type === "text" &&
+      templateRecord?.header_content?.includes("{{");
+    const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
+    const templateButtons = (templateRecord?.buttons as any[]) || [];
+    const dynamicUrlBtnIndex = templateButtons.findIndex(
+      (b: any) => b.type === "URL" && b.url?.includes("{{1}}")
+    );
+    const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+
+    // Extract campaign-level variables
+    const campaignVars: any = {};
+    if (flowData?.nodes) {
+      for (const node of flowData.nodes) {
+        if (node.data?.coupon) campaignVars.coupon = node.data.coupon;
+        if (node.data?.discount) campaignVars.discount = node.data.discount;
+      }
+    }
+
+    // Process each queued item
+    for (const item of items) {
+      try {
+        // Mark as processing
+        await supabase.from("automation_queue").update({ status: "processing" }).eq("id", item.id);
+
+        // Load customer
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id, name, phone, email, custom_attributes")
+          .eq("id", item.customer_id)
+          .single();
+
+        if (!customer?.phone) {
+          await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
+          continue;
+        }
+
+        let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
+        if (!phone.startsWith("55") && phone.length <= 11) {
+          phone = "55" + phone;
+        }
+
+        const ctx = { customer, order: null, campaign: campaignVars };
+
+        // Create tracked link for dynamic URL button
+        let buttonUrlCode: string | undefined;
+        if (hasDynamicUrlButton) {
+          const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
+          if (dynamicUrl) {
+            const code = generateCode(10);
+            await supabase.from("tracked_links").insert({
+              tenant_id: campaign.tenant_id,
+              campaign_id: campaign.id,
+              customer_id: customer.id,
+              original_url: dynamicUrl,
+              code,
+              utm_source: "whatsapp",
+              utm_medium: "automation",
+              utm_campaign: campaign.name,
+            });
+            buttonUrlCode = code;
+          }
+        }
+
+        // Send via Meta Graph API
+        const waRes = await fetch(
+          `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to: phone,
+              type: "template",
+              template: {
+                name: templateName,
+                language: { code: templateLanguage },
+                components: buildTemplateComponents(
+                  variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                  buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                ),
+              },
+            }),
+          }
+        );
+
+        const waData = await waRes.json();
+
+        if (waData.messages?.[0]?.id) {
+          await supabase.from("whatsapp_messages").insert({
+            tenant_id: campaign.tenant_id,
+            customer_id: customer.id,
+            phone,
+            direction: "outbound",
+            message_type: "template",
+            template_name: templateName,
+            wamid: waData.messages[0].id,
+            status: "sent",
+            content: `[Automação: ${templateName}]`,
+          });
+
+          await supabase.from("campaign_activities").insert({
+            tenant_id: campaign.tenant_id,
+            campaign_id: campaign.id,
+            customer_id: customer.id,
+            status: "sent",
+            channel: "whatsapp",
+            sent_at: new Date().toISOString(),
+          });
+
+          await supabase.from("automation_queue").update({
+            status: "sent",
+            processed_at: new Date().toISOString(),
+          }).eq("id", item.id);
+
+          console.log(`Automation sent to ${phone} (campaign ${campaignId})`);
+        } else {
+          const apiErr = waData?.error?.message || JSON.stringify(waData);
+          console.error(`Automation send failed to ${phone}: ${apiErr}`);
+          await supabase.from("automation_queue").update({
+            status: "failed",
+            processed_at: new Date().toISOString(),
+          }).eq("id", item.id);
+        }
+
+        await new Promise((r) => setTimeout(r, 100));
+      } catch (err) {
+        console.error(`Automation queue item ${item.id} error:`, err);
+        await supabase.from("automation_queue").update({
+          status: "failed",
+          processed_at: new Date().toISOString(),
+        }).eq("id", item.id);
+      }
+    }
+
+    results.push({ campaign_id: campaignId, processed: items.length });
+  }
+
+  return results;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

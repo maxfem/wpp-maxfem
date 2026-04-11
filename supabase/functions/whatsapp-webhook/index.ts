@@ -272,15 +272,30 @@ async function tryAutoRespondWithAI(
       technical: "Seja preciso, objetivo e técnico.",
     };
 
+    // Check if Yampi is configured
+    const { data: yampiInt } = await supabase
+      .from("integrations")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "yampi")
+      .eq("is_active", true)
+      .maybeSingle();
+    const hasYampi = !!yampiInt;
+
+    const orderInstructions = hasYampi
+      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente.`
+      : "";
+
     const fullSystemPrompt = `${systemPrompt}
 
 Tom de voz: ${toneInstructions[tone] || toneInstructions.friendly}
 ${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}
+${orderInstructions}
 
 Você está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
 
     // Build messages for OpenAI (reverse since we fetched desc)
-    const chatMessages = [
+    const chatMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
       ...recentMsgs.reverse().map((m: any) => ({
         role: m.direction === "inbound" ? "user" : "assistant",
@@ -288,18 +303,21 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       })),
     ];
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiBody: any = {
+      model,
+      messages: chatMessages,
+      max_tokens: 500,
+      temperature: 0.7,
+    };
+    if (hasYampi) {
+      openaiBody.tools = aiTools;
+      openaiBody.tool_choice = "auto";
+    }
+
+    let openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: chatMessages,
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(openaiBody),
     });
 
     if (!openaiResponse.ok) {
@@ -308,8 +326,40 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       return;
     }
 
-    const result = await openaiResponse.json();
-    const aiReply = result.choices?.[0]?.message?.content?.trim();
+    let result = await openaiResponse.json();
+    let assistantMessage = result.choices?.[0]?.message;
+
+    // Handle tool calls (up to 3 iterations)
+    let iterations = 0;
+    while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
+      iterations++;
+      chatMessages.push(assistantMessage);
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        if (toolCall.function.name === "lookup_orders_by_cpf") {
+          const args = JSON.parse(toolCall.function.arguments);
+          console.log(`[webhook] Tool call: lookup_orders_by_cpf(${args.cpf})`);
+          const toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
+          chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
+        }
+      }
+
+      openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, messages: chatMessages, max_tokens: 800, temperature: 0.7 }),
+      });
+
+      if (!openaiResponse.ok) {
+        console.error("[webhook] OpenAI tool follow-up error:", openaiResponse.status);
+        break;
+      }
+
+      result = await openaiResponse.json();
+      assistantMessage = result.choices?.[0]?.message;
+    }
+
+    const aiReply = assistantMessage?.content?.trim();
 
     if (!aiReply) {
       console.log(`[webhook] OpenAI returned empty response`);

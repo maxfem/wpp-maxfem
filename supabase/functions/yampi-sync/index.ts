@@ -151,14 +151,29 @@ async function attributeConversions(supabase: any, tenant_id: string, orders: { 
 }
 
 // ===== PHASE: ORDERS =====
+async function fetchAllRows(supabase: any, table: string, select: string, filters: Record<string, any>, pageSize = 1000) {
+  const allRows: any[] = [];
+  let from = 0;
+  while (true) {
+    let query = supabase.from(table).select(select).range(from, from + pageSize - 1);
+    for (const [k, v] of Object.entries(filters)) {
+      query = query.eq(k, v);
+    }
+    const { data, error } = await query;
+    if (error) { console.error(`fetchAllRows ${table} error:`, error.message); break; }
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allRows;
+}
+
 async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
   const orders = await yampiGetAll(alias, "orders", user_token, user_secret_key);
 
-  const { data: allCustomers } = await supabase
-    .from("customers")
-    .select("id, custom_attributes")
-    .eq("tenant_id", tenant_id);
+  const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
 
   const yampiIdToCustomer = new Map<number, string>();
   for (const c of (allCustomers || [])) {
@@ -167,10 +182,14 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   }
 
   const externalIds = orders.map((o: any) => `yampi_${o.id}`);
-  const { data: existingOrders } = externalIds.length > 0
-    ? await supabase.from("orders").select("id, external_id").eq("tenant_id", tenant_id).in("external_id", externalIds.slice(0, 1000))
-    : { data: [] };
-  const existingOrderMap = new Map((existingOrders || []).map((o: any) => [o.external_id, o.id]));
+  // Fetch existing orders in batches of 500 to avoid .in() limits
+  const existingOrders: any[] = [];
+  for (let i = 0; i < externalIds.length; i += 500) {
+    const batch = externalIds.slice(i, i + 500);
+    const { data } = await supabase.from("orders").select("id, external_id").eq("tenant_id", tenant_id).in("external_id", batch);
+    if (data) existingOrders.push(...data);
+  }
+  const existingOrderMap = new Map(existingOrders.map((o: any) => [o.external_id, o.id]));
 
   const statusMap: Record<string, string> = {
     waiting_payment: "pending",
@@ -238,10 +257,7 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
   try {
     const carts = await yampiGetAll(alias, "checkout/carts", user_token, user_secret_key);
 
-    const { data: allCustomers } = await supabase
-      .from("customers")
-      .select("id, custom_attributes")
-      .eq("tenant_id", tenant_id);
+    const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
 
     const yampiIdToCustomer = new Map<number, { id: string; custom_attributes: any }>();
     for (const c of (allCustomers || [])) {

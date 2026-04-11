@@ -126,6 +126,7 @@ export default function MessageTemplates() {
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const tenantId = currentTenant?.id;
 

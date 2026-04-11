@@ -1,20 +1,18 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
 const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-/** Remove all non-digit chars */
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, "");
 }
 
-/** Try to find a customer by phone with multiple format variations */
 async function findCustomerByPhone(phone: string, tenantId?: string) {
   const clean = normalizePhone(phone);
-  
   const variations = new Set<string>();
   variations.add(clean);
   variations.add(`+${clean}`);
@@ -27,25 +25,14 @@ async function findCustomerByPhone(phone: string, tenantId?: string) {
   }
 
   const orFilter = Array.from(variations).map(v => `phone.eq.${v}`).join(",");
-  
-  let query = supabase
-    .from("customers")
-    .select("id, tenant_id, name, phone")
-    .or(orFilter)
-    .limit(1);
-  
-  if (tenantId) {
-    query = query.eq("tenant_id", tenantId);
-  }
+  let query = supabase.from("customers").select("id, tenant_id, name, phone").or(orFilter).limit(1);
+  if (tenantId) query = query.eq("tenant_id", tenantId);
 
   const { data, error } = await query;
-  if (error) {
-    console.error("findCustomerByPhone error:", error);
-  }
+  if (error) console.error("findCustomerByPhone error:", error);
   return data?.[0] || null;
 }
 
-/** Resolve tenant_id from phone_number_id via whatsapp_accounts table */
 async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("whatsapp_accounts")
@@ -56,16 +43,71 @@ async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<stri
     .single();
 
   if (error || !data) {
-    console.warn(`[webhook] No whatsapp_account found for phone_number_id=${phoneNumberId}, falling back to first tenant`);
+    console.warn(`[webhook] No whatsapp_account for phone_number_id=${phoneNumberId}, fallback`);
     const { data: tenants } = await supabase.from("tenants").select("id").limit(1);
     return tenants?.[0]?.id || null;
   }
   return data.tenant_id;
 }
 
-/** Propagate status updates to campaign_activities via wamid lookup */
+/** Download media from Meta Graph API and upload to Supabase Storage */
+async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId: string): Promise<string | null> {
+  try {
+    // Step 1: Get the media URL from Meta
+    const metaRes = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+    });
+    if (!metaRes.ok) {
+      console.error(`[webhook] Failed to get media URL for ${mediaId}: ${metaRes.status}`);
+      return null;
+    }
+    const metaData = await metaRes.json();
+    const downloadUrl = metaData.url;
+    if (!downloadUrl) return null;
+
+    // Step 2: Download the actual media
+    const mediaRes = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+    });
+    if (!mediaRes.ok) {
+      console.error(`[webhook] Failed to download media: ${mediaRes.status}`);
+      return null;
+    }
+    const mediaBlob = await mediaRes.blob();
+
+    // Determine file extension from mime type
+    const extMap: Record<string, string> = {
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+      "video/mp4": "mp4", "video/3gpp": "3gp",
+      "audio/aac": "aac", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/amr": "amr", "audio/ogg": "ogg",
+      "application/pdf": "pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    };
+    const ext = extMap[mimeType] || "bin";
+    const filePath = `${tenantId}/${mediaId}.${ext}`;
+
+    // Step 3: Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from("whatsapp-media")
+      .upload(filePath, mediaBlob, { contentType: mimeType, upsert: true });
+
+    if (uploadError) {
+      console.error(`[webhook] Storage upload error:`, uploadError);
+      return null;
+    }
+
+    // Step 4: Get public URL
+    const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(filePath);
+    console.log(`[webhook] Media stored: ${urlData.publicUrl}`);
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error(`[webhook] downloadAndStoreMedia error:`, err);
+    return null;
+  }
+}
+
 async function propagateStatusToActivity(wamid: string, status: string) {
-  // Find the message to get customer_id and tenant_id
   const { data: msg } = await supabase
     .from("whatsapp_messages")
     .select("customer_id, tenant_id")
@@ -79,59 +121,30 @@ async function propagateStatusToActivity(wamid: string, status: string) {
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
   if (status === "delivered") {
-    await supabase
-      .from("campaign_activities")
-      .update({ delivered_at: now })
-      .eq("customer_id", msg.customer_id)
-      .eq("tenant_id", msg.tenant_id)
-      .is("delivered_at", null)
-      .gte("sent_at", cutoff);
-    console.log("[webhook] Propagated delivered_at for customer", msg.customer_id);
+    await supabase.from("campaign_activities").update({ delivered_at: now })
+      .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .is("delivered_at", null).gte("sent_at", cutoff);
   } else if (status === "read") {
-    await supabase
-      .from("campaign_activities")
-      .update({ read_at: now })
-      .eq("customer_id", msg.customer_id)
-      .eq("tenant_id", msg.tenant_id)
-      .is("read_at", null)
-      .gte("sent_at", cutoff);
-    console.log("[webhook] Propagated read_at for customer", msg.customer_id);
+    await supabase.from("campaign_activities").update({ read_at: now })
+      .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .is("read_at", null).gte("sent_at", cutoff);
   } else if (status === "failed") {
-    await supabase
-      .from("campaign_activities")
-      .update({ status: "failed" })
-      .eq("customer_id", msg.customer_id)
-      .eq("tenant_id", msg.tenant_id)
-      .eq("status", "pending")
-      .gte("sent_at", cutoff);
-    console.log("[webhook] Propagated failed status for customer", msg.customer_id);
+    await supabase.from("campaign_activities").update({ status: "failed" })
+      .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .eq("status", "pending").gte("sent_at", cutoff);
   }
 }
 
-/** Mark replied_at on recent campaign_activities for inbound messages */
 async function markRepliedActivity(customerId: string, tenantId: string) {
   const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
-  const { data, error } = await supabase
-    .from("campaign_activities")
-    .update({ replied_at: now })
-    .eq("customer_id", customerId)
-    .eq("tenant_id", tenantId)
-    .is("replied_at", null)
-    .gte("sent_at", cutoff)
-    .select("id");
-
-  if (data?.length) {
-    console.log(`[webhook] Marked replied_at on ${data.length} activities for customer ${customerId}`);
-  }
-  if (error) {
-    console.error("[webhook] markRepliedActivity error:", error);
-  }
+  await supabase.from("campaign_activities").update({ replied_at: now })
+    .eq("customer_id", customerId).eq("tenant_id", tenantId)
+    .is("replied_at", null).gte("sent_at", cutoff);
 }
 
 Deno.serve(async (req) => {
-  // Webhook verification (GET)
   if (req.method === "GET") {
     const url = new URL(req.url);
     const mode = url.searchParams.get("hub.mode");
@@ -145,15 +158,13 @@ Deno.serve(async (req) => {
     return new Response("Forbidden", { status: 403 });
   }
 
-  // Incoming messages (POST)
   if (req.method === "POST") {
     try {
       const body = await req.json();
-      console.log("[webhook] POST received, body:", JSON.stringify(body).substring(0, 2000));
+      console.log("[webhook] POST received");
 
       const entries = body?.entry;
       if (!entries || !Array.isArray(entries)) {
-        console.log("[webhook] No entries in body");
         return new Response("OK", { status: 200 });
       }
 
@@ -166,32 +177,17 @@ Deno.serve(async (req) => {
           if (!value) continue;
 
           const phoneNumberId = value.metadata?.phone_number_id;
-          console.log("[webhook] phone_number_id:", phoneNumberId);
-
-          // Resolve tenant from phone_number_id
           const tenantId = await resolveTenantByPhoneNumberId(phoneNumberId || "");
           if (!tenantId) {
-            console.error("[webhook] Could not resolve tenant for phone_number_id:", phoneNumberId);
+            console.error("[webhook] Could not resolve tenant for:", phoneNumberId);
             continue;
           }
-          console.log("[webhook] Resolved tenant_id:", tenantId);
 
           // Handle status updates
           if (value.statuses && Array.isArray(value.statuses)) {
             for (const status of value.statuses) {
               const { id: wamid, status: msgStatus } = status;
-              console.log("[webhook] Status update:", wamid, "->", msgStatus);
-              
-              const { error: updateError } = await supabase
-                .from("whatsapp_messages")
-                .update({ status: msgStatus })
-                .eq("wamid", wamid);
-              
-              if (updateError) {
-                console.error("[webhook] Status update error:", updateError);
-              }
-
-              // Propagate to campaign_activities
+              await supabase.from("whatsapp_messages").update({ status: msgStatus }).eq("wamid", wamid);
               await propagateStatusToActivity(wamid, msgStatus);
             }
           }
@@ -205,10 +201,8 @@ Deno.serve(async (req) => {
               const wamid = message.id;
               const msgType = message.type || "text";
 
-              console.log("[webhook] Incoming message from:", phone, "type:", msgType, "wamid:", wamid);
-
               let content = "";
-              let mediaUrl = "";
+              let mediaUrl: string | null = null;
 
               switch (msgType) {
                 case "text":
@@ -217,70 +211,68 @@ Deno.serve(async (req) => {
                 case "image":
                 case "video":
                 case "audio":
-                case "document":
-                  content = message[msgType]?.caption || "";
-                  mediaUrl = message[msgType]?.id || "";
+                case "document": {
+                  const mediaData = message[msgType];
+                  content = mediaData?.caption || "";
+                  const mediaId = mediaData?.id;
+                  const mimeType = mediaData?.mime_type || "application/octet-stream";
+                  if (mediaId) {
+                    mediaUrl = await downloadAndStoreMedia(mediaId, mimeType, tenantId);
+                  }
+                  // Store filename for documents
+                  if (msgType === "document" && mediaData?.filename) {
+                    content = content || mediaData.filename;
+                  }
                   break;
+                }
+                case "sticker": {
+                  const stickerId = message.sticker?.id;
+                  const stickerMime = message.sticker?.mime_type || "image/webp";
+                  if (stickerId) {
+                    mediaUrl = await downloadAndStoreMedia(stickerId, stickerMime, tenantId);
+                  }
+                  content = "[Sticker]";
+                  break;
+                }
                 case "reaction":
                   content = message.reaction?.emoji || "";
                   break;
                 case "location":
-                  content = `${message.location?.latitude},${message.location?.longitude}`;
+                  content = `📍 ${message.location?.latitude},${message.location?.longitude}`;
                   break;
                 default:
-                  content = JSON.stringify(message[msgType] || {});
+                  content = `[${msgType}]`;
               }
 
-              // Find customer by phone (with normalization)
+              // Find or create customer
               let customer = await findCustomerByPhone(phone, tenantId);
-              console.log("[webhook] Customer lookup result:", customer ? `found id=${customer.id}` : "not found");
-
               if (!customer) {
-                // Create customer as lead
                 const customerName = contact?.profile?.name || phone;
-                console.log("[webhook] Creating new customer/lead:", customerName);
-                
                 const { data: newCustomer, error: createError } = await supabase
                   .from("customers")
-                  .insert({
-                    name: customerName,
-                    phone: phone,
-                    tenant_id: tenantId,
-                    is_lead: true,
-                  })
+                  .insert({ name: customerName, phone, tenant_id: tenantId, is_lead: true })
                   .select("id, tenant_id, name, phone")
                   .single();
-
-                if (createError) {
-                  console.error("[webhook] Failed to create customer:", createError);
-                  continue;
-                }
+                if (createError) { console.error("[webhook] Create customer error:", createError); continue; }
                 customer = newCustomer;
-                console.log("[webhook] Created customer:", customer?.id);
               }
 
-              // Save message
-              const { error: insertError } = await supabase.from("whatsapp_messages").insert({
+              // Save message with resolved media URL
+              await supabase.from("whatsapp_messages").insert({
                 tenant_id: tenantId,
                 customer_id: customer!.id,
                 phone,
                 direction: "inbound",
-                message_type: msgType,
+                message_type: msgType === "sticker" ? "image" : msgType,
                 content,
-                media_url: mediaUrl || null,
+                media_url: mediaUrl,
                 wamid,
                 status: "received",
                 metadata: { phone_number_id: phoneNumberId, contact_name: contact?.profile?.name },
               });
 
-              if (insertError) {
-                console.error("[webhook] Failed to save message:", insertError);
-              } else {
-                console.log("[webhook] Message saved successfully from", phone, "content:", content.substring(0, 80));
-              }
-
-              // Mark replied_at on recent campaign_activities
               await markRepliedActivity(customer!.id, tenantId);
+              console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
             }
           }
         }
@@ -288,8 +280,8 @@ Deno.serve(async (req) => {
 
       return new Response("OK", { status: 200 });
     } catch (error) {
-      console.error("[webhook] Unhandled error:", error);
-      return new Response("OK", { status: 200 }); // Always return 200 to Meta
+      console.error("[webhook] Error:", error);
+      return new Response("OK", { status: 200 });
     }
   }
 

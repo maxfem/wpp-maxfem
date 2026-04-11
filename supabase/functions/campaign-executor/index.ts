@@ -100,6 +100,23 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Fetch template from DB to detect variables
+        const { data: templateRecord } = await supabase
+          .from("message_templates")
+          .select("body, header_type, header_content")
+          .eq("name", templateName)
+          .eq("tenant_id", campaign.tenant_id)
+          .limit(1)
+          .single();
+
+        // Count body variables like {{1}}, {{2}}, etc.
+        const bodyVarCount = templateRecord?.body
+          ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length
+          : 0;
+        const hasHeaderVar = templateRecord?.header_type === "text" &&
+          templateRecord?.header_content?.includes("{{");
+
+        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}`);
         // Get contacts
         let customers: any[] = [];
         if (campaign.list_id) {

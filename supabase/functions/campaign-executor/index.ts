@@ -541,20 +541,36 @@ Deno.serve(async (req) => {
         // Get contacts with FULL data (including custom_attributes for Yampi fields)
         let customers: any[] = [];
         if (campaign.list_id) {
-          const { data: members } = await supabase
-            .from("contact_list_members")
-            .select("customer_id, customers(id, name, phone, email, custom_attributes)")
-            .eq("list_id", campaign.list_id);
-          customers = (members || [])
-            .map((m: any) => m.customers)
-            .filter((c: any) => c?.phone);
+          // Paginate contact_list_members
+          let from = 0;
+          const pageSize = 1000;
+          while (true) {
+            const { data: members } = await supabase
+              .from("contact_list_members")
+              .select("customer_id, customers(id, name, phone, email, custom_attributes)")
+              .eq("list_id", campaign.list_id)
+              .range(from, from + pageSize - 1);
+            if (!members || members.length === 0) break;
+            customers.push(...members.map((m: any) => m.customers).filter((c: any) => c?.phone));
+            if (members.length < pageSize) break;
+            from += pageSize;
+          }
         } else {
-          const { data } = await supabase
-            .from("customers")
-            .select("id, name, phone, email, custom_attributes")
-            .eq("tenant_id", campaign.tenant_id)
-            .not("phone", "is", null);
-          customers = data || [];
+          // Paginate all tenant customers
+          let from = 0;
+          const pageSize = 1000;
+          while (true) {
+            const { data } = await supabase
+              .from("customers")
+              .select("id, name, phone, email, custom_attributes")
+              .eq("tenant_id", campaign.tenant_id)
+              .not("phone", "is", null)
+              .range(from, from + pageSize - 1);
+            if (!data || data.length === 0) break;
+            customers.push(...data);
+            if (data.length < pageSize) break;
+            from += pageSize;
+          }
         }
 
         // If templates need order data, fetch latest order for each customer

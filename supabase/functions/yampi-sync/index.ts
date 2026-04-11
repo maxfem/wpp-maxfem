@@ -21,7 +21,8 @@ async function yampiGet(alias: string, path: string, token: string, secret: stri
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Yampi API ${res.status}: ${body}`);
+    console.error(`Yampi API error ${res.status} on ${path}: ${body}`);
+    return null; // Return null instead of throwing to allow partial sync
   }
 
   return res.json();

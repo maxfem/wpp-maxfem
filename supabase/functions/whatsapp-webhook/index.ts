@@ -293,7 +293,14 @@ async function tryAutoRespondWithAI(
     const hasYampi = !!yampiInt;
 
     const orderInstructions = hasYampi
-      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados do sistema. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente. Se o rastreio não aparecer nos dados, informe que o pedido foi encontrado mas o código de rastreio ainda não foi atualizado, e sugira verificar novamente mais tarde.`
+      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados do sistema. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente.
+
+REGRAS IMPORTANTES para resposta sobre pedidos:
+- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio ao cliente de forma clara e direta.
+- Se houver dados de pagamento (payments), informe o método e status do pagamento.
+- Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio. Se o tracking_code TEM um valor, informe-o obrigatoriamente.
+- Nunca invente informações. Use apenas os dados retornados pela função.`
       : "";
 
     const fullSystemPrompt = `${systemPrompt}

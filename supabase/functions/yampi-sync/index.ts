@@ -270,30 +270,46 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     synced++;
   }
 
-  // For orders missing tracking that are shipped, try fetching individual details
-  const shippedWithoutTracking = orders.filter((o: any) => {
+  // For orders missing tracking or payment, fetch individual details
+  const needsEnrichment = orders.filter((o: any) => {
     const status = o.status?.data?.alias || "";
     const hasTracking = o.track_code;
-    return !hasTracking && ["shipped", "on_carriage", "in_transit", "invoiced"].includes(status);
+    const hasPayments = (o.payments?.data || []).length > 0 && o.payments.data.some((p: any) => p.value);
+    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid"].includes(status) && (!hasTracking || !hasPayments);
   });
 
-  for (const o of shippedWithoutTracking.slice(0, 20)) {
+  for (const o of needsEnrichment.slice(0, 50)) {
     try {
-      const detailRes = await yampiGet(alias, `orders/${o.id}`, user_token, user_secret_key);
+      const detailRes = await yampiGet(alias, `orders/${o.id}?include=payments`, user_token, user_secret_key);
       const d = detailRes?.data;
-      const trackCode = d?.track_code || null;
-      const trackUrl = d?.track_url || null;
-      const trackCarrier = d?.shipment_service || null;
+      if (!d) continue;
 
-      if (trackCode) {
-        const extId = existingOrderMap.get(`yampi_${o.id}`);
-        if (extId) {
-          await supabase.from("orders").update({
-            tracking_code: trackCode,
-            tracking_url: trackUrl,
-            carrier: trackCarrier,
-          }).eq("id", extId);
-          console.log(`[sync] Updated tracking for order yampi_${o.id}: ${trackCode}`);
+      const trackCode = d.track_code || null;
+      const trackUrl = d.track_url || null;
+      const trackCarrier = d.shipment_service || null;
+
+      // Extract payment from detail if missing
+      const detailPayments = (d.payments?.data || []).map((p: any) => ({
+        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+        status: p.status || "N/A",
+        value: p.value,
+        installments: p.installments || 1,
+      }));
+
+      const extId = existingOrderMap.get(`yampi_${o.id}`);
+      if (extId) {
+        const updateData: any = {};
+        if (trackCode) {
+          updateData.tracking_code = trackCode;
+          updateData.tracking_url = trackUrl;
+          updateData.carrier = trackCarrier;
+        }
+        if (detailPayments.length > 0) {
+          updateData.payment_summary = detailPayments;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await supabase.from("orders").update(updateData).eq("id", extId);
+          console.log(`[sync] Enriched order yampi_${o.id}: tracking=${trackCode}, payments=${detailPayments.length}`);
         }
       }
     } catch (e) {
@@ -494,32 +510,52 @@ Deno.serve(async (req) => {
     let done = false;
 
     if (phase === "refresh_tracking") {
-      // Quick mode: refresh tracking for all shipped orders missing tracking
+      // Refresh tracking AND payment for shipped orders missing data
       const { data: shippedOrders } = await supabase
         .from("orders")
-        .select("id, external_id")
+        .select("id, external_id, tracking_code, payment_summary")
         .eq("tenant_id", tenant_id)
-        .in("status", ["shipped"])
-        .is("tracking_code", null)
+        .in("status", ["shipped", "paid", "invoiced"])
         .limit(50);
 
+      // Filter: missing tracking OR empty payment_summary
+      const needsRefresh = (shippedOrders || []).filter((o: any) => {
+        const noTracking = !o.tracking_code;
+        const noPayments = !o.payment_summary || (Array.isArray(o.payment_summary) && o.payment_summary.length === 0);
+        return noTracking || noPayments;
+      });
+
       let updated = 0;
-      for (const order of (shippedOrders || [])) {
+      for (const order of needsRefresh) {
         const yampiId = order.external_id?.replace("yampi_", "");
         if (!yampiId) continue;
         try {
-          const detailRes = await yampiGet(config.alias, `orders/${yampiId}`, config.user_token, config.user_secret_key);
+          const detailRes = await yampiGet(config.alias, `orders/${yampiId}?include=payments`, config.user_token, config.user_secret_key);
           const d = detailRes?.data;
-          const trackCode = d?.track_code || null;
-          const trackUrl = d?.track_url || null;
-          const trackCarrier = d?.shipment_service || null;
-          console.log(`[refresh] Order ${yampiId}: track_code=${trackCode}`);
+          if (!d) continue;
+          const trackCode = d.track_code || null;
+          const trackUrl = d.track_url || null;
+          const trackCarrier = d.shipment_service || null;
+          const detailPayments = (d.payments?.data || []).map((p: any) => ({
+            method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+            status: p.status || "N/A",
+            value: p.value,
+            installments: p.installments || 1,
+          }));
+
+          const updateData: any = {};
           if (trackCode) {
-            await supabase.from("orders").update({
-              tracking_code: trackCode,
-              tracking_url: trackUrl,
-              carrier: trackCarrier,
-            }).eq("id", order.id);
+            updateData.tracking_code = trackCode;
+            updateData.tracking_url = trackUrl;
+            updateData.carrier = trackCarrier;
+          }
+          if (detailPayments.length > 0) {
+            updateData.payment_summary = detailPayments;
+          }
+
+          console.log(`[refresh] Order ${yampiId}: track_code=${trackCode}, payments=${detailPayments.length}`);
+          if (Object.keys(updateData).length > 0) {
+            await supabase.from("orders").update(updateData).eq("id", order.id);
             updated++;
           }
         } catch (e) {

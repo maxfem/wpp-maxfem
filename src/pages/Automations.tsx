@@ -27,6 +27,7 @@ import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fn
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
+import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },

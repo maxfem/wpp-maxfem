@@ -278,21 +278,61 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     return !hasTracking && ["shipped", "on_carriage", "in_transit", "invoiced"].includes(status);
   });
 
-  for (const o of shippedWithoutTracking.slice(0, 10)) {
+  for (const o of shippedWithoutTracking.slice(0, 20)) {
     try {
-      const detailRes = await yampiGet(alias, `orders/${o.id}`, user_token, user_secret_key, { include: "shipments" });
+      // Try multiple endpoints to find tracking
+      const detailRes = await yampiGet(alias, `orders/${o.id}?include=shipments,shipping`, user_token, user_secret_key);
       const d = detailRes?.data;
-      const s = d?.shipments?.data?.[0] || d?.shipping?.data?.[0];
-      if (s?.tracking_code || s?.tracking_number) {
+      console.log(`[sync] Order ${o.id} detail shipments:`, JSON.stringify(d?.shipments || d?.shipping || "none"));
+      
+      let trackCode: string | null = null;
+      let trackUrl: string | null = null;
+      let trackCarrier: string | null = null;
+
+      // Check shipments in detail response
+      const shipDetail = d?.shipments?.data?.[0] || d?.shipping?.data?.[0] || d?.shipments?.[0] || d?.shipping?.[0];
+      if (shipDetail) {
+        trackCode = shipDetail.tracking_code || shipDetail.tracking_number || shipDetail.code || null;
+        trackUrl = shipDetail.tracking_url || shipDetail.tracking_link || shipDetail.url || null;
+        trackCarrier = shipDetail.carrier || shipDetail.shipping_company || shipDetail.service || null;
+      }
+
+      // If still no tracking, try dedicated shipments endpoint
+      if (!trackCode) {
+        const shipmentsRes = await yampiGet(alias, `orders/${o.id}/shipments`, user_token, user_secret_key);
+        console.log(`[sync] Order ${o.id} /shipments endpoint:`, JSON.stringify(shipmentsRes?.data || "none"));
+        const s2 = shipmentsRes?.data?.[0];
+        if (s2) {
+          trackCode = s2.tracking_code || s2.tracking_number || s2.code || null;
+          trackUrl = s2.tracking_url || s2.tracking_link || s2.url || null;
+          trackCarrier = s2.carrier || s2.shipping_company || s2.service || null;
+        }
+      }
+
+      // Try /tracking endpoint as last resort
+      if (!trackCode) {
+        const trackingRes = await yampiGet(alias, `orders/${o.id}/tracking`, user_token, user_secret_key);
+        console.log(`[sync] Order ${o.id} /tracking endpoint:`, JSON.stringify(trackingRes?.data || "none"));
+        const t = trackingRes?.data;
+        if (t) {
+          trackCode = t.tracking_code || t.code || t.tracking_number || null;
+          trackUrl = t.tracking_url || t.url || t.tracking_link || null;
+          trackCarrier = t.carrier || t.shipping_company || null;
+        }
+      }
+
+      if (trackCode) {
         const extId = existingOrderMap.get(`yampi_${o.id}`);
         if (extId) {
           await supabase.from("orders").update({
-            tracking_code: s.tracking_code || s.tracking_number,
-            tracking_url: s.tracking_url || s.tracking_link || null,
-            carrier: s.carrier || s.shipping_company || null,
+            tracking_code: trackCode,
+            tracking_url: trackUrl,
+            carrier: trackCarrier,
           }).eq("id", extId);
-          console.log(`[sync] Updated tracking for order yampi_${o.id}: ${s.tracking_code || s.tracking_number}`);
+          console.log(`[sync] Updated tracking for order yampi_${o.id}: ${trackCode}`);
         }
+      } else {
+        console.log(`[sync] No tracking found for order ${o.id} after all attempts`);
       }
     } catch (e) {
       console.error(`[sync] Error fetching order detail ${o.id}:`, e);

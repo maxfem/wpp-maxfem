@@ -31,7 +31,7 @@ function buildTemplateComponents(customer: any, bodyVarCount: number, hasHeaderV
   return components;
 }
 
-
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

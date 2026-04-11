@@ -104,7 +104,7 @@ function CopilotTab({
   // Load per-conversation settings from customer attributes
   useEffect(() => {
     const attrs = customer?.custom_attributes || {};
-    setAiEnabled(attrs.ai_enabled !== false);
+    setAiEnabled(attrs.ai_enabled === true);
     setToneOverride(attrs.ai_tone || "default");
     setExtraContext(attrs.ai_context || "");
   }, [customer?.id]);

@@ -192,6 +192,7 @@ export default function Campaigns() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      toast.success("Status atualizado!");
     },
     onError: (e) => toast.error(e.message),
   });

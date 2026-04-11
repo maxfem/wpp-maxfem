@@ -263,10 +263,7 @@ function CopilotTab({
               </label>
               <Select
                 value={toneOverride}
-                onValueChange={(v) => {
-                  setToneOverride(v);
-                  savePerConversationSettings({ ai_tone: v });
-                }}
+                onValueChange={(v) => setToneOverride(v)}
               >
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />

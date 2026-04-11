@@ -53,6 +53,8 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      let lastError = "";
+
       try {
         // Get WhatsApp account for this tenant
         const { data: waAccount } = await supabase
@@ -67,9 +69,10 @@ Deno.serve(async (req) => {
         const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
 
         if (!phoneNumberId || !accessToken) {
-          console.error(`Missing WhatsApp credentials for campaign ${campaign.id}`);
-          await supabase.from("campaigns").update({ status: "draft" }).eq("id", campaign.id);
-          results.push({ campaign_id: campaign.id, error: "Missing WhatsApp credentials" });
+          const errMsg = "Credenciais do WhatsApp não encontradas (phone_number_id ou access_token)";
+          console.error(`Campaign ${campaign.id}: ${errMsg}`);
+          await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
+          results.push({ campaign_id: campaign.id, error: errMsg });
           continue;
         }
 
@@ -90,9 +93,10 @@ Deno.serve(async (req) => {
         }
 
         if (!templateName) {
-          console.error(`No template found in flow_data for campaign ${campaign.id}`);
-          await supabase.from("campaigns").update({ status: "draft" }).eq("id", campaign.id);
-          results.push({ campaign_id: campaign.id, error: "No template in flow" });
+          const errMsg = "Nenhum template de WhatsApp encontrado no fluxo da campanha";
+          console.error(`Campaign ${campaign.id}: ${errMsg}`);
+          await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
+          results.push({ campaign_id: campaign.id, error: errMsg });
           continue;
         }
 
@@ -119,9 +123,10 @@ Deno.serve(async (req) => {
 
         if (customers.length === 0) {
           console.warn(`Campaign ${campaign.id} has no valid recipients`);
+          const errMsg = "Nenhum contato válido com telefone encontrado na lista selecionada";
           await supabase
             .from("campaigns")
-            .update({ status: "failed" })
+            .update({ status: "failed", last_error: errMsg })
             .eq("id", campaign.id);
 
           results.push({
@@ -130,7 +135,7 @@ Deno.serve(async (req) => {
             failed: 0,
             total: 0,
             status: "failed",
-            error: "No valid recipients",
+            error: errMsg,
           });
           continue;
         }
@@ -195,7 +200,9 @@ Deno.serve(async (req) => {
 
               sentCount++;
             } else {
-              console.error(`Failed to send to ${phone}:`, JSON.stringify(waData));
+              const apiErr = waData?.error?.message || JSON.stringify(waData);
+              console.error(`Failed to send to ${phone}: ${apiErr}`);
+              lastError = apiErr;
               failedCount++;
             }
 
@@ -208,11 +215,14 @@ Deno.serve(async (req) => {
         }
 
         const finalStatus = sentCount > 0 ? "sent" : "failed";
+        const errorMsg = finalStatus === "failed"
+          ? `Todos os ${failedCount} envios falharam. Último erro: ${lastError}`
+          : null;
 
         // Mark campaign with the real sending outcome
         await supabase
           .from("campaigns")
-          .update({ status: finalStatus })
+          .update({ status: finalStatus, last_error: errorMsg })
           .eq("id", campaign.id);
 
         results.push({
@@ -225,8 +235,9 @@ Deno.serve(async (req) => {
 
         console.log(`Campaign ${campaign.id} completed with status ${finalStatus}: ${sentCount} sent, ${failedCount} failed`);
       } catch (err) {
-        console.error(`Error processing campaign ${campaign.id}:`, err);
-        await supabase.from("campaigns").update({ status: "draft" }).eq("id", campaign.id);
+        const errMsg = `Erro interno: ${String(err)}`;
+        console.error(`Error processing campaign ${campaign.id}:`, errMsg);
+        await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
         results.push({ campaign_id: campaign.id, error: String(err) });
       }
     }

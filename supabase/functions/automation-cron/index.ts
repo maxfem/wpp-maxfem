@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
       birthday: 0,
       first_purchase_anniversary: 0,
       inactivity: 0,
-      nps_post_delivery: 0,
+      "7 dias após entrega": 0,
     };
 
     // Get all tenants with active yampi integrations
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     const tenantIds = integrations.map((i: any) => i.tenant_id);
 
     // Get all active automations for time-based triggers
-    const timeTriggers = ["birthday", "first_purchase_anniversary", "inactivity", "nps_post_delivery"];
+    const timeTriggers = ["birthday", "first_purchase_anniversary", "inactivity", "7 dias após entrega"];
     const { data: automations } = await supabase
       .from("campaigns")
       .select("id, trigger_type, tenant_id, name")
@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (trigger_type === "nps_post_delivery") {
+        if (trigger_type === "7 dias após entrega") {
           // Orders delivered exactly 7 days ago
           const sevenDaysAgo = new Date(today);
           sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -192,11 +192,11 @@ Deno.serve(async (req) => {
               tenant_id,
               campaign_id: campaignId,
               customer_id: o.customer_id,
-              trigger_type: "nps_post_delivery",
+              trigger_type: "7 dias após entrega",
               trigger_data: { order_id: o.id, order_number: o.order_number },
               status: "pending",
             });
-            if (!error) results.nps_post_delivery++;
+            if (!error) results["7 dias após entrega"]++;
           }
         }
       } catch (err) {

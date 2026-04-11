@@ -50,11 +50,34 @@ export default function Chat() {
       if (!tenantId) return [];
       const { data } = await supabase
         .from("customers")
-        .select("id, name, phone, email, tags, total_orders, total_spent, last_order_at, created_at")
+        .select("id, name, phone, email, tags, total_orders, total_spent, last_order_at, created_at, custom_attributes")
         .eq("tenant_id", tenantId);
       return data || [];
     },
     enabled: !!tenantId,
+  });
+
+  // Fetch orders for selected customer
+  const selectedCustomerId = useMemo(() => {
+    if (!selectedPhoneKey) return null;
+    const conv = allMessages.find((m) => normalizePhone(m.phone) === selectedPhoneKey);
+    return conv?.customer_id || null;
+  }, [selectedPhoneKey, allMessages]);
+
+  const { data: customerOrders = [] } = useQuery({
+    queryKey: ["customer-orders", selectedCustomerId],
+    queryFn: async () => {
+      if (!selectedCustomerId || !tenantId) return [];
+      const { data } = await supabase
+        .from("orders")
+        .select("id, external_id, total, status, mapped_status, created_at")
+        .eq("tenant_id", tenantId)
+        .eq("customer_id", selectedCustomerId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return data || [];
+    },
+    enabled: !!selectedCustomerId && !!tenantId,
   });
 
   // Build conversations

@@ -21,26 +21,29 @@ async function yampiGet(alias: string, path: string, token: string, secret: stri
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Yampi API ${res.status}: ${body}`);
+    console.error(`Yampi API error ${res.status} on ${path}: ${body}`);
+    return null; // Return null instead of throwing to allow partial sync
   }
 
   return res.json();
 }
 
-async function yampiGetAll(alias: string, path: string, token: string, secret: string, limit = 50) {
+async function yampiGetAll(alias: string, path: string, token: string, secret: string, limit = 250) {
   const allData: any[] = [];
   let page = 1;
   let totalPages = 1;
+  const maxPages = 40; // Safety cap: 40 pages * 250 = 10,000 max records
 
-  while (page <= totalPages) {
+  while (page <= totalPages && page <= maxPages) {
     const res = await yampiGet(alias, path, token, secret, { page: String(page), limit: String(limit) });
+    if (!res) break; // API error, stop pagination
     allData.push(...(res.data || []));
     totalPages = res.meta?.pagination?.total_pages || 1;
     page++;
-    // Rate limit
     if (page <= totalPages) await new Promise(r => setTimeout(r, 200));
   }
 
+  console.log(`Fetched ${allData.length} records from ${path} (${page - 1} pages)`);
   return allData;
 }
 

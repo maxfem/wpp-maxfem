@@ -192,6 +192,13 @@ Deno.serve(async (req) => {
       console.error("Meta API error:", metaResult);
       const subcode = metaResult?.error?.error_subcode;
 
+      if (subcode === 2388023) {
+        return jsonResponse({
+          error: "Não é possível adicionar novo conteúdo em Portuguese (BR) enquanto o conteúdo existente está sendo excluído. Tente novamente em 4 semanas ou crie outro modelo com nome diferente.",
+          language_deleting: true,
+        }, 409);
+      }
+
       if (subcode === 2388024) {
         return jsonResponse({
           error: "Template já existe na Meta com este nome e idioma. Renomeie o template ou altere o idioma.",

@@ -147,10 +147,10 @@ async function tryAutoRespondWithAI(
   customerAttrs: Record<string, any> | null,
 ) {
   try {
-    // Check if AI is enabled for this customer
+    // Check if AI is explicitly enabled for this customer
     const attrs = customerAttrs || {};
-    if (attrs.ai_enabled === false) {
-      console.log(`[webhook] AI disabled for customer ${customerId}`);
+    if (attrs.ai_enabled !== true) {
+      console.log(`[webhook] AI not enabled for customer ${customerId}`);
       return;
     }
 

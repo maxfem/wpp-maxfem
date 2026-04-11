@@ -223,15 +223,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       p.payment_method?.alias === "pix" && p.status !== "paid"
     );
 
-    // Extract tracking/shipping data
-    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
-    if (orderStatus === "on_carriage" || orderStatus === "shipped" || orderStatus === "in_transit") {
-      console.log(`[sync] Order ${o.id} status=${orderStatus} shipment_keys=${JSON.stringify(Object.keys(shipment || {}))} shipment=${JSON.stringify(shipment || "none").substring(0, 500)}`);
-      console.log(`[sync] Order ${o.id} top-level keys: ${JSON.stringify(Object.keys(o))}`);
-    }
-    const trackingCode = shipment?.tracking_code || shipment?.tracking_number || shipment?.code || o.tracking_code || o.tracking_number || null;
-    const trackingUrl = shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null;
-    const carrier = shipment?.carrier || shipment?.shipping_company || o.carrier || null;
+    // Extract tracking/shipping data — Yampi uses track_code/track_url at top level
+    const trackingCode = o.track_code || o.tracking_code || null;
+    const trackingUrl = o.track_url || o.tracking_url || null;
+    const carrier = o.shipment_service || o.carrier || null;
+    const deliveryEstimate = o.date_delivery || null;
     const deliveryEstimate = shipment?.delivery_estimate || shipment?.estimated_delivery || null;
 
     // Extract payment summary

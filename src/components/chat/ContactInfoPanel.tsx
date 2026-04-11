@@ -108,10 +108,37 @@ function CopilotTab({
   // Load per-conversation settings from customer attributes
   useEffect(() => {
     const attrs = customer?.custom_attributes || {};
-    setAiEnabled(attrs.ai_enabled !== false);
-    setToneOverride(attrs.ai_tone || "default");
-    setExtraContext(attrs.ai_context || "");
+    const enabled = attrs.ai_enabled !== false;
+    const tone = attrs.ai_tone || "default";
+    const context = attrs.ai_context || "";
+    setAiEnabled(enabled);
+    setToneOverride(tone);
+    setExtraContext(context);
+    setSavedAiEnabled(enabled);
+    setSavedTone(tone);
+    setSavedContext(context);
   }, [customer?.id, customer?.custom_attributes]);
+
+  const isDirty = aiEnabled !== savedAiEnabled || toneOverride !== savedTone || extraContext !== savedContext;
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      await savePerConversationSettings({
+        ai_enabled: aiEnabled,
+        ai_tone: toneOverride,
+        ai_context: extraContext,
+      });
+      setSavedAiEnabled(aiEnabled);
+      setSavedTone(toneOverride);
+      setSavedContext(extraContext);
+      toast.success("Configurações salvas!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar configurações");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const savePerConversationSettings = async (updates: Record<string, any>) => {
     if (!currentTenant?.id || !conversation?.phone) {

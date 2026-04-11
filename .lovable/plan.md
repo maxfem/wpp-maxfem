@@ -1,71 +1,50 @@
 
 
-## Agendamento e envio automático de campanhas por WhatsApp
+## Problema
 
-### Objetivo
-Adicionar campos de data e horário de envio na campanha, e criar um job automático que dispara as mensagens via WhatsApp no momento programado.
+A sincronização Yampi está travada em "syncing" porque Edge Functions têm timeout de ~60 segundos. O padrão "fire-and-forget" (`runSync` em background) não funciona — o runtime Deno mata o processo após enviar a resposta HTTP.
 
-### Arquitetura
+## Solução: Sincronização em Fases
+
+Dividir o sync em 3 chamadas sequenciais, cada uma dentro do limite de timeout. O **frontend** orquestra a sequência.
 
 ```text
-┌─────────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  FlowSidebar    │────▶│  campaigns   │────▶│  pg_cron (1min)  │
-│  (data + hora)  │     │  scheduled_at│     │  chama edge fn   │
-└─────────────────┘     │  status      │     └────────┬─────────┘
-                        └──────────────┘              │
-                                                      ▼
-                                              ┌──────────────────┐
-                                              │ campaign-executor│
-                                              │  (edge function) │
-                                              │  - busca lista   │
-                                              │  - busca template│
-                                              │  - envia WhatsApp│
-                                              └──────────────────┘
+Frontend                    Edge Function
+   |                             |
+   |-- POST {phase:"customers"} ->|  (busca e salva clientes)
+   |<-- {ok, next:"orders"}  ----|
+   |                             |
+   |-- POST {phase:"orders"}   ->|  (busca e salva pedidos)
+   |<-- {ok, next:"carts"}   ----|
+   |                             |
+   |-- POST {phase:"carts"}    ->|  (busca e salva carrinhos)
+   |<-- {ok, done:true}      ----|
 ```
 
-### 1. Migração: coluna `scheduled_at` na tabela `campaigns`
+## Mudanças
 
-Adicionar coluna `scheduled_at TIMESTAMPTZ` para armazenar data/hora de envio. A coluna `start_date` já existe mas não está sendo usada — vamos usar `scheduled_at` para clareza.
+### 1. Edge Function `yampi-sync/index.ts`
+- Aceitar parâmetro `phase` (default: `"customers"`)
+- Cada fase executa de forma **síncrona** e retorna o resultado + próxima fase
+- Fase `customers`: busca clientes da Yampi, insere/atualiza no banco, retorna `{next: "orders", synced: N}`
+- Fase `orders`: busca pedidos, faz match com clientes, insere no banco, retorna `{next: "carts", synced: N}`
+- Fase `carts`: busca carrinhos abandonados, atualiza customers, marca `sync_status: "success"`, retorna `{done: true}`
+- Se qualquer fase falhar, marca `sync_status: "failed"` com a mensagem de erro
+- Reduzir `yampiGetAll` para `limit=50, maxPages=20` (1000 registros por fase) para ficar dentro do timeout
 
-### 2. UI: campos de data e hora no FlowSidebar
+### 2. Frontend `SettingsYampi.tsx`
+- `syncMutation` agora executa as 3 fases em sequência
+- Mostra progresso: "Sincronizando clientes...", "Sincronizando pedidos...", "Sincronizando carrinhos..."
+- Se uma fase falhar, para e mostra o erro
+- Remove o polling de 5s (não é mais necessário, sync é síncrono por fase)
+- Badge de status mostra contadores parciais durante o sync
 
-No `FlowSidebar.tsx`, adicionar abaixo do campo "Lista":
-- **Data de envio**: input tipo `date`
-- **Horário de envio**: input tipo `time`
+### 3. Resetar status travado
+- Antes de iniciar, se `sync_status === "syncing"`, resetar para `"pending"` via update direto
 
-Ao salvar a campanha (`handleSave` no `CampaignFlowEditor.tsx`), persistir o valor combinado em `scheduled_at` e setar status como `scheduled` quando uma data futura for definida.
-
-### 3. Edge Function: `campaign-executor`
-
-Nova edge function que:
-1. Busca campanhas com `status = 'scheduled'` e `scheduled_at <= now()`
-2. Para cada campanha:
-   - Busca a lista de contatos associada (ou todos os customers do tenant)
-   - Identifica o template WhatsApp do primeiro nó `sendWhatsApp` no `flow_data`
-   - Busca o `phone_number_id` e token do tenant via `whatsapp_accounts`
-   - Envia mensagem para cada contato via Graph API
-   - Registra em `campaign_activities` e `whatsapp_messages`
-   - Atualiza status da campanha para `sent`
-
-### 4. Cron job: disparar a cada minuto
-
-Usar `pg_cron` + `pg_net` para chamar `campaign-executor` a cada minuto via HTTP POST. O executor só processa campanhas cujo `scheduled_at` já passou.
-
-### 5. Atualizar `CampaignFlowEditor.tsx`
-
-- Passar `scheduledAt` e `onScheduledAtChange` para o `FlowSidebar`
-- Carregar `scheduled_at` do banco ao abrir a campanha
-- Salvar `scheduled_at` junto com os outros campos
-
-### 6. Feedback visual
-
-- Na lista de campanhas (`Campaigns.tsx`), mostrar a data/hora agendada no card quando status = `scheduled`
-- Badge "Agendado" já existe no `statusConfig`
-
-### Detalhes técnicos
-
-- **Fuso horário**: salvar em UTC, exibir no horário local do navegador
-- **Proteção contra duplicidade**: o executor marca a campanha como `sending` antes de processar, evitando execuções paralelas pelo cron
-- **Rate limiting**: enviar com delay de 100ms entre mensagens para respeitar limites da Meta
-- **Fallback de lista**: se nenhuma lista for selecionada, enviar para todos os customers do tenant que tenham phone
+## Detalhes Técnicos
+- Cada fase levará ~10-30s dependendo do volume de dados
+- A paginação da Yampi fica com `limit=50` e `maxPages=40` (até 2000 registros por recurso)
+- Upserts em batch de 50 registros mantidos
+- Service role key usada no Edge Function (já implementado)
 

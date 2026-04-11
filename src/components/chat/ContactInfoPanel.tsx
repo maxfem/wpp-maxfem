@@ -68,6 +68,219 @@ function getStatusInfo(status: string, mappedStatus: string | null) {
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
+function CopilotTab({
+  conversation,
+  messages,
+  customer,
+}: {
+  conversation: Conversation | undefined;
+  messages: Message[];
+  customer: ContactInfoPanelProps["customer"];
+}) {
+  const { currentTenant } = useAuth();
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [toneOverride, setToneOverride] = useState("default");
+  const [extraContext, setExtraContext] = useState("");
+  const [suggestion, setSuggestion] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const { data: openaiIntegration } = useQuery({
+    queryKey: ["integration-openai", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return null;
+      const { data } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .eq("provider", "openai")
+        .eq("is_active", true)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  // Load per-conversation settings from customer attributes
+  useEffect(() => {
+    const attrs = customer?.custom_attributes || {};
+    setAiEnabled(attrs.ai_enabled !== false);
+    setToneOverride(attrs.ai_tone || "default");
+    setExtraContext(attrs.ai_context || "");
+  }, [customer?.id]);
+
+  const savePerConversationSettings = async (updates: Record<string, any>) => {
+    if (!customer?.id) return;
+    const attrs = customer.custom_attributes || {};
+    await supabase
+      .from("customers")
+      .update({ custom_attributes: { ...attrs, ...updates } })
+      .eq("id", customer.id);
+  };
+
+  const handleSuggest = async () => {
+    if (!currentTenant || !messages.length) return;
+    setLoading(true);
+    setSuggestion("");
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-copilot", {
+        body: {
+          tenant_id: currentTenant.id,
+          messages: messages.slice(-20).map((m) => ({
+            direction: m.direction,
+            content: m.content,
+            message_type: m.message_type,
+          })),
+          conversation_context: extraContext || undefined,
+          tone_override: toneOverride !== "default" ? toneOverride : undefined,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setSuggestion(data.suggestion || "Sem sugestão disponível.");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao gerar sugestão");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isConfigured = !!openaiIntegration;
+
+  if (!isConfigured) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+            <AlertCircle className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h3 className="text-sm font-semibold text-foreground mb-1">OpenAI não configurada</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Configure a integração OpenAI para usar o assistente de IA.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            onClick={() => window.location.href = "/settings/integrations/openai"}
+          >
+            Configurar OpenAI
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="p-4 space-y-4">
+        {/* Toggle AI for this conversation */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-primary" />
+            <span className="text-xs font-medium text-foreground">IA nesta conversa</span>
+          </div>
+          <Switch
+            checked={aiEnabled}
+            onCheckedChange={(v) => {
+              setAiEnabled(v);
+              savePerConversationSettings({ ai_enabled: v });
+            }}
+          />
+        </div>
+
+        <Separator />
+
+        {aiEnabled && (
+          <>
+            {/* Tone override */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Tom nesta conversa
+              </label>
+              <Select
+                value={toneOverride}
+                onValueChange={(v) => {
+                  setToneOverride(v);
+                  savePerConversationSettings({ ai_tone: v });
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Padrão (configuração global)</SelectItem>
+                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="friendly">Amigável</SelectItem>
+                  <SelectItem value="informal">Informal</SelectItem>
+                  <SelectItem value="technical">Técnico</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Extra context */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Contexto da conversa
+              </label>
+              <Textarea
+                value={extraContext}
+                onChange={(e) => setExtraContext(e.target.value)}
+                onBlur={() => savePerConversationSettings({ ai_context: extraContext })}
+                placeholder="Ex: Cliente VIP, priorizar atendimento..."
+                className="text-xs min-h-[60px] resize-none"
+              />
+            </div>
+
+            <Separator />
+
+            {/* Suggest button */}
+            <Button
+              className="w-full text-xs"
+              onClick={handleSuggest}
+              disabled={loading || !messages.length}
+            >
+              {loading ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {loading ? "Gerando sugestão..." : "Sugerir resposta"}
+            </Button>
+
+            {/* Suggestion result */}
+            {suggestion && (
+              <div className="space-y-2">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <p className="text-xs text-foreground whitespace-pre-wrap">{suggestion}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs h-7"
+                  onClick={() => {
+                    navigator.clipboard.writeText(suggestion);
+                    toast.success("Sugestão copiada!");
+                  }}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copiar sugestão
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+
+        {!aiEnabled && (
+          <div className="text-center py-4">
+            <Bot className="h-6 w-6 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-[11px] text-muted-foreground">IA desativada nesta conversa</p>
+          </div>
+        )}
+      </div>
+    </ScrollArea>
+  );
+}
+
 export function ContactInfoPanel({ conversation, messages, customer, orders = [] }: ContactInfoPanelProps) {
   const navigate = useNavigate();
   const [notes, setNotes] = useState("");

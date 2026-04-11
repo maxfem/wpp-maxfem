@@ -193,7 +193,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
   const orders = await yampiGetAll(alias, "orders?include=shipments,payments,status,items", user_token, user_secret_key);
 
-  const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
+  const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes, total_orders", { tenant_id });
 
   const yampiIdToCustomer = new Map<number, string>();
   for (const c of (allCustomers || [])) {
@@ -331,7 +331,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
 
   // ===== Enqueue order-based automation triggers =====
   // Fetch active automations for order triggers
-  const orderTriggerTypes = ["order_created", "order_created_pix", "order_created_boleto", "order_paid", "order_rejected_card"];
+  const orderTriggerTypes = [
+    "order_created", "order_created_pix", "order_created_boleto", "order_paid",
+    "order_rejected_card", "order_approved", "order_delivered", "invoice_issued",
+    "return_approved", "first_purchase",
+  ];
   const { data: orderAutomations } = await supabase
     .from("campaigns")
     .select("id, trigger_type")
@@ -375,6 +379,35 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       // order_rejected_card — card rejected
       if (paymentMethod === "credit_card" && (paymentStatus === "refused" || paymentStatus === "rejected" || paymentStatus === "cancelled")) {
         matchedTriggers.push("order_rejected_card");
+      }
+
+      // order_approved — order approved/invoiced
+      if (["approved", "invoiced", "paid"].includes(orderStatus)) {
+        matchedTriggers.push("order_approved");
+      }
+
+      // order_delivered — order delivered
+      if (["delivered", "entregue"].includes(orderStatus)) {
+        matchedTriggers.push("order_delivered");
+      }
+
+      // invoice_issued — NF emitida
+      if (orderStatus === "invoiced") {
+        matchedTriggers.push("invoice_issued");
+      }
+
+      // return_approved — devolução/troca aprovada
+      if (["returned", "exchanged", "refunded"].includes(orderStatus)) {
+        matchedTriggers.push("return_approved");
+      }
+
+      // first_purchase — first order paid
+      if ((orderStatus === "paid" || paymentStatus === "paid") && customerId) {
+        const cust = allCustomers.find((c: any) => c.id === customerId);
+        const totalOrders = (cust as any)?.total_orders ?? 0;
+        if (totalOrders <= 1) {
+          matchedTriggers.push("first_purchase");
+        }
       }
 
       for (const automation of orderAutomations) {

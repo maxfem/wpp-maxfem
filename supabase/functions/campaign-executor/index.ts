@@ -270,7 +270,14 @@ Deno.serve(async (req) => {
         // Get variable mappings from sample_values (e.g. ["customer.name", "order.total"])
         const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
 
-        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}, mappings=${JSON.stringify(variableMappings)}`);
+        // Detect if any URL button has a dynamic {{1}} variable
+        const templateButtons = (templateRecord?.buttons as any[]) || [];
+        const dynamicUrlBtnIndex = templateButtons.findIndex(
+          (b: any) => b.type === "URL" && b.url?.includes("{{1}}")
+        );
+        const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+
+        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}, dynamicUrlBtn=${hasDynamicUrlButton}, mappings=${JSON.stringify(variableMappings)}`);
 
         // Extract campaign-level variables from actions/flow
         const campaignVars: any = {};

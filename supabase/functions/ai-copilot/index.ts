@@ -307,16 +307,22 @@ serve(async (req) => {
       });
     }
 
-    // Check if Yampi integration exists (for order lookup tool)
-    const { data: yampiIntegration } = await adminClient
+    // Check which integrations exist for order lookup tools
+    const { data: orderIntegrations } = await adminClient
       .from("integrations")
-      .select("id")
+      .select("provider")
       .eq("tenant_id", tenant_id)
-      .eq("provider", "yampi")
-      .eq("is_active", true)
-      .maybeSingle();
+      .in("provider", ["yampi", "bling"])
+      .eq("is_active", true);
 
-    const hasYampi = !!yampiIntegration;
+    const hasYampi = orderIntegrations?.some((i: any) => i.provider === "yampi");
+    const hasBling = orderIntegrations?.some((i: any) => i.provider === "bling");
+    const hasOrderTools = hasYampi || hasBling;
+
+    // Build available tools based on active integrations
+    const activeTools: any[] = [];
+    if (hasYampi) activeTools.push(tools[0]); // lookup_orders_by_cpf (local DB)
+    if (hasBling) activeTools.push(tools[1]); // lookup_orders_bling (real-time API)
 
     const tone = tone_override || config.tone || "friendly";
     const model = config.model || "gpt-4o-mini";
@@ -329,16 +335,24 @@ serve(async (req) => {
       technical: "Seja preciso, objetivo e técnico.",
     };
 
-    const orderInstructions = hasYampi
-      ? `\n\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados. Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou qualquer assunto relacionado a compras, solicite o CPF para fazer a consulta. Se o cliente já informou o CPF na conversa, use-o diretamente chamando a função.
+    let orderInstructions = "";
+    if (hasOrderTools) {
+      const toolNames = [];
+      if (hasYampi) toolNames.push("lookup_orders_by_cpf (consulta no banco local)");
+      if (hasBling) toolNames.push("lookup_orders_bling (consulta em tempo real no ERP Bling)");
+
+      orderInstructions = `\n\nVocê tem acesso às seguintes funções para consultar pedidos: ${toolNames.join(", ")}.
+Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras, solicite o CPF.
+${hasBling ? "PRIORIZE a função lookup_orders_bling para obter dados mais atualizados (rastreio em tempo real)." : ""}
+${hasYampi ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
 - Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio de forma clara e direta.
 - Se houver dados de pagamento (payments), informe o método e status do pagamento.
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
-- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio. Se o tracking_code TEM um valor, informe-o obrigatoriamente.
-- Nunca invente informações. Use apenas os dados retornados pela função.`
-      : "";
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
+- Nunca invente informações. Use apenas os dados retornados pela função.`;
+    }
 
     const fullSystemPrompt = `${systemPrompt}
 
@@ -363,8 +377,8 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       temperature: 0.7,
     };
 
-    if (hasYampi) {
-      openaiBody.tools = tools;
+    if (hasOrderTools) {
+      openaiBody.tools = activeTools;
       openaiBody.tool_choice = "auto";
     }
 
@@ -396,21 +410,27 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
     let assistantMessage = result.choices?.[0]?.message;
 
     let iterations = 0;
-    while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
+    while (assistantMessage?.tool_calls?.length > 0 && iterations < 5) {
       iterations++;
       chatMessages.push(assistantMessage);
 
       for (const toolCall of assistantMessage.tool_calls) {
+        const args = JSON.parse(toolCall.function.arguments);
+        let toolResult = "";
+
         if (toolCall.function.name === "lookup_orders_by_cpf") {
-          const args = JSON.parse(toolCall.function.arguments);
           console.log(`[copilot] Tool call: lookup_orders_by_cpf(${args.cpf})`);
-          const toolResult = await lookupOrdersByCpf(tenant_id, args.cpf, adminClient);
-          chatMessages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: toolResult,
-          });
+          toolResult = await lookupOrdersByCpf(tenant_id, args.cpf, adminClient);
+        } else if (toolCall.function.name === "lookup_orders_bling") {
+          console.log(`[copilot] Tool call: lookup_orders_bling(${args.cpf})`);
+          toolResult = await lookupOrdersBling(tenant_id, args.cpf, adminClient);
         }
+
+        chatMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: toolResult,
+        });
       }
 
       openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {

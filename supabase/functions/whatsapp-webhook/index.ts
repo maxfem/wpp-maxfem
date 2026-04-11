@@ -41,29 +41,77 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
   const yampiCustomer = searchRes.data.find((c: any) => (c.cpf || "").replace(/\D/g, "") === cleanCpf) || searchRes.data[0];
   const customerName = yampiCustomer.name || `${yampiCustomer.first_name || ""} ${yampiCustomer.last_name || ""}`.trim();
 
-  const ordersRes = await yampiGet(alias, `customers/${yampiCustomer.id}/orders`, user_token, user_secret_key, { limit: "10", sort: "-created_at" });
-  if (!ordersRes?.data?.length) return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders: [], message: "Cliente encontrado, mas sem pedidos." });
-
-  const statusLabels: Record<string, string> = {
-    waiting_payment: "Aguardando pagamento", paid: "Pago", invoiced: "Faturado",
-    shipped: "Enviado", delivered: "Entregue", cancelled: "Cancelado", refunded: "Reembolsado",
-  };
+  const ordersRes = await yampiGet(alias, `customers/${yampiCustomer.id}/orders`, user_token, user_secret_key, {
+    limit: "10",
+    sort: "-created_at",
+    include: "shipments,items,payments,status",
+  });
+  if (!ordersRes?.data?.length) {
+    return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders: [], message: "Cliente encontrado, mas sem pedidos." });
+  }
 
   const orders = ordersRes.data.map((o: any) => {
     const status = o.status?.data?.alias || "pending";
+    const shipment = o.shipments?.data?.[0] || o.shipping?.data?.[0] || o.shipments?.[0] || o.shipping?.[0];
+
     return {
+      order_id: o.id,
       order_number: o.number || o.id,
-      status: statusLabels[status] || status,
+      status_alias: status,
       total: o.value_total,
       created_at: o.created_at?.date || o.created_at,
-      tracking_code: o.shipments?.data?.[0]?.tracking_code || null,
-      tracking_url: o.shipments?.data?.[0]?.tracking_url || null,
-      carrier: o.shipments?.data?.[0]?.carrier || null,
-      payments: (o.payments?.data || []).map((p: any) => ({ method: p.payment_method?.name || "N/A", status: p.status })),
+      tracking_code: shipment?.tracking_code || shipment?.tracking_number || o.tracking_code || o.tracking_number || null,
+      tracking_url: shipment?.tracking_url || shipment?.tracking_link || o.tracking_url || o.tracking_link || null,
+      carrier: shipment?.carrier || shipment?.shipping_company || o.carrier || null,
+      payments: (o.payments?.data || []).map((p: any) => ({
+        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+        status: p.status || "N/A",
+        value: p.value,
+      })),
     };
   });
 
-  return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders_count: orders.length, orders });
+  for (let i = 0; i < orders.length && i < 3; i++) {
+    if (orders[i].tracking_code) continue;
+
+    try {
+      const detailRes = await yampiGet(alias, `orders/${orders[i].order_id}`, user_token, user_secret_key, {
+        include: "shipments,status,payments,items",
+      });
+
+      const detailOrder = detailRes?.data;
+      const shipment = detailOrder?.shipments?.data?.[0] || detailOrder?.shipping?.data?.[0] || detailOrder?.shipments?.[0] || detailOrder?.shipping?.[0];
+
+      if (shipment) {
+        orders[i].tracking_code = shipment.tracking_code || shipment.tracking_number || orders[i].tracking_code;
+        orders[i].tracking_url = shipment.tracking_url || shipment.tracking_link || orders[i].tracking_url;
+        orders[i].carrier = shipment.carrier || shipment.shipping_company || orders[i].carrier;
+        console.log(`[webhook] Tracking found on order detail ${orders[i].order_number}:`, JSON.stringify(shipment));
+      }
+    } catch (error) {
+      console.error(`[webhook] Error fetching order detail ${orders[i].order_number}:`, error);
+    }
+  }
+
+  const statusLabels: Record<string, string> = {
+    waiting_payment: "Aguardando pagamento",
+    paid: "Pago",
+    invoiced: "Faturado",
+    shipped: "Enviado",
+    in_transit: "Em transporte",
+    delivered: "Entregue",
+    cancelled: "Cancelado",
+    refunded: "Reembolsado",
+  };
+
+  const formattedOrders = orders.map((order: any) => ({
+    ...order,
+    status: statusLabels[order.status_alias] || order.status_alias,
+  }));
+
+  console.log("[webhook] Orders lookup result:", JSON.stringify(formattedOrders));
+
+  return JSON.stringify({ customer_name: customerName, cpf: cleanCpf, orders_count: formattedOrders.length, orders: formattedOrders });
 }
 
 const aiTools = [

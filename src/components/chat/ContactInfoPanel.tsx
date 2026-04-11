@@ -117,7 +117,7 @@ function CopilotTab({
     setSavedAiEnabled(enabled);
     setSavedTone(tone);
     setSavedContext(context);
-  }, [customer?.id, customer?.custom_attributes]);
+  }, [customer?.id, customer?.custom_attributes, conversation?.phoneKey]);
 
   const isDirty = aiEnabled !== savedAiEnabled || toneOverride !== savedTone || extraContext !== savedContext;
 

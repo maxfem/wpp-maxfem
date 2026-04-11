@@ -24,6 +24,10 @@ export interface Conversation {
   lastMessageAt: string;
   unread: number;
   lastDirection?: string;
+  isFavorite?: boolean;
+  isMuted?: boolean;
+  isArchived?: boolean;
+  conversationStatus?: "open" | "resolved" | "pending";
 }
 
 export type DateFilter = "all" | "today" | "7days" | "30days";

@@ -807,7 +807,32 @@ export default function MessageTemplates() {
           </Card>
         ) : (
           <Card>
-            {/* Bulk action bar */}
+            {/* Status filter bar */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+              <span className="text-sm text-muted-foreground mr-1">Filtrar:</span>
+              {[
+                { value: "all", label: "Todos" },
+                { value: "draft", label: "Rascunho" },
+                { value: "pending", label: "Pendente" },
+                { value: "approved", label: "Aprovado" },
+                { value: "rejected", label: "Rejeitado" },
+              ].map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={statusFilter === opt.value ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => { setStatusFilter(opt.value); setSelectedIds(new Set()); }}
+                >
+                  {opt.label}
+                  {opt.value !== "all" && (
+                    <span className="ml-1 opacity-70">
+                      ({templates.filter((t) => t.status === opt.value).length})
+                    </span>
+                  )}
+                </Button>
+              ))}
+            </div>
             {selectedIds.size > 0 && (
               <div className="flex items-center justify-between px-4 py-2.5 bg-primary/5 border-b border-border">
                 <span className="text-sm text-foreground">

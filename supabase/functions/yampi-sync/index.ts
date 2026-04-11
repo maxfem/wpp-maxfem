@@ -183,8 +183,13 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   if (toInsertOrders.length > 0) {
     for (let i = 0; i < toInsertOrders.length; i += 50) {
       const batch = toInsertOrders.slice(i, i + 50);
-      const { error } = await supabase.from("orders").insert(batch);
-      if (error) console.error("Order batch insert error:", error.message);
+      const { data: inserted, error } = await supabase.from("orders").insert(batch).select("id, customer_id, total");
+      if (error) {
+        console.error("Order batch insert error:", error.message);
+      } else if (inserted) {
+        // Attribution: link new orders to recent campaign activities
+        await attributeConversions(supabase, tenant_id, inserted);
+      }
     }
   }
 

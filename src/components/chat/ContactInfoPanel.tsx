@@ -84,6 +84,10 @@ function CopilotTab({
   const [extraContext, setExtraContext] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAiEnabled, setSavedAiEnabled] = useState(true);
+  const [savedTone, setSavedTone] = useState("default");
+  const [savedContext, setSavedContext] = useState("");
 
   const { data: openaiIntegration } = useQuery({
     queryKey: ["integration-openai", currentTenant?.id],
@@ -104,10 +108,37 @@ function CopilotTab({
   // Load per-conversation settings from customer attributes
   useEffect(() => {
     const attrs = customer?.custom_attributes || {};
-    setAiEnabled(attrs.ai_enabled !== false);
-    setToneOverride(attrs.ai_tone || "default");
-    setExtraContext(attrs.ai_context || "");
+    const enabled = attrs.ai_enabled !== false;
+    const tone = attrs.ai_tone || "default";
+    const context = attrs.ai_context || "";
+    setAiEnabled(enabled);
+    setToneOverride(tone);
+    setExtraContext(context);
+    setSavedAiEnabled(enabled);
+    setSavedTone(tone);
+    setSavedContext(context);
   }, [customer?.id, customer?.custom_attributes]);
+
+  const isDirty = aiEnabled !== savedAiEnabled || toneOverride !== savedTone || extraContext !== savedContext;
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      await savePerConversationSettings({
+        ai_enabled: aiEnabled,
+        ai_tone: toneOverride,
+        ai_context: extraContext,
+      });
+      setSavedAiEnabled(aiEnabled);
+      setSavedTone(toneOverride);
+      setSavedContext(extraContext);
+      toast.success("Configurações salvas!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar configurações");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const savePerConversationSettings = async (updates: Record<string, any>) => {
     if (!currentTenant?.id || !conversation?.phone) {
@@ -217,16 +248,7 @@ function CopilotTab({
           </div>
           <Switch
             checked={aiEnabled}
-            onCheckedChange={async (v) => {
-              const previousValue = aiEnabled;
-              setAiEnabled(v);
-              try {
-                await savePerConversationSettings({ ai_enabled: v });
-              } catch (error) {
-                setAiEnabled(previousValue);
-                toast.error(error instanceof Error ? error.message : "Erro ao salvar configuração da IA");
-              }
-            }}
+            onCheckedChange={(v) => setAiEnabled(v)}
           />
         </div>
 
@@ -241,10 +263,7 @@ function CopilotTab({
               </label>
               <Select
                 value={toneOverride}
-                onValueChange={(v) => {
-                  setToneOverride(v);
-                  savePerConversationSettings({ ai_tone: v });
-                }}
+                onValueChange={(v) => setToneOverride(v)}
               >
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -267,11 +286,25 @@ function CopilotTab({
               <Textarea
                 value={extraContext}
                 onChange={(e) => setExtraContext(e.target.value)}
-                onBlur={() => savePerConversationSettings({ ai_context: extraContext })}
                 placeholder="Ex: Cliente VIP, priorizar atendimento..."
                 className="text-xs min-h-[60px] resize-none"
               />
             </div>
+
+            {/* Save button */}
+            <Button
+              variant={isDirty ? "default" : "outline"}
+              className="w-full text-xs"
+              onClick={handleSaveSettings}
+              disabled={!isDirty || saving}
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {saving ? "Salvando..." : isDirty ? "Salvar configurações" : "Configurações salvas"}
+            </Button>
 
             <Separator />
 

@@ -22,6 +22,7 @@ import Lists from "./pages/Lists";
 import SettingsWhatsApp from "./pages/SettingsWhatsApp";
 import SettingsIntegrations from "./pages/SettingsIntegrations";
 import SettingsYampi from "./pages/SettingsYampi";
+import SettingsOpenAI from "./pages/SettingsOpenAI";
 
 const queryClient = new QueryClient();
 
@@ -71,6 +72,7 @@ const App = () => (
             <Route path="/settings/whatsapp" element={<ProtectedRoute><SettingsWhatsApp /></ProtectedRoute>} />
             <Route path="/settings/integrations" element={<ProtectedRoute><SettingsIntegrations /></ProtectedRoute>} />
             <Route path="/settings/integrations/yampi" element={<ProtectedRoute><SettingsYampi /></ProtectedRoute>} />
+            <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfUse />} />
             <Route path="*" element={<NotFound />} />

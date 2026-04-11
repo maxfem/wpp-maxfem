@@ -183,7 +183,14 @@ Deno.serve(async (req) => {
     }
 
     if (!campaigns || campaigns.length === 0) {
-      return new Response(JSON.stringify({ message: "No campaigns to process" }), {
+      console.log("No scheduled campaigns, checking automation queue...");
+    }
+
+    // ===== PROCESS AUTOMATION QUEUE =====
+    const automationResults = await processAutomationQueue(supabase);
+    
+    if ((!campaigns || campaigns.length === 0) && automationResults.length === 0) {
+      return new Response(JSON.stringify({ message: "No campaigns or automations to process" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

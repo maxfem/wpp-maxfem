@@ -249,6 +249,16 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
       if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, { id: c.id, custom_attributes: attrs });
     }
 
+    // Fetch active cart_abandoned automations for this tenant
+    const { data: automations } = await supabase
+      .from("campaigns")
+      .select("id")
+      .eq("tenant_id", tenant_id)
+      .eq("trigger_type", "cart_abandoned")
+      .eq("status", "running");
+
+    const activeAutomationIds = (automations || []).map((a: any) => a.id);
+
     for (const cart of carts) {
       if (!cart.customer_id) continue;
       const customer = yampiIdToCustomer.get(cart.customer_id);
@@ -269,13 +279,31 @@ async function syncCarts(supabase: any, tenant_id: string, config: any) {
           },
         },
       }).eq("id", customer.id);
+
+      // Enqueue into automation_queue for each active automation
+      for (const campaignId of activeAutomationIds) {
+        if (!customer.id) continue;
+        const { error: qErr } = await supabase.from("automation_queue").insert({
+          tenant_id,
+          campaign_id: campaignId,
+          customer_id: customer.id,
+          trigger_type: "cart_abandoned",
+          trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl },
+          status: "pending",
+        });
+        // Unique index will silently reject duplicates (conflict = already queued)
+        if (qErr && !qErr.message?.includes("duplicate")) {
+          console.error("Queue insert error:", qErr.message);
+        }
+      }
+
       synced++;
     }
   } catch (cartErr) {
     console.warn("Erro ao sincronizar carrinhos:", cartErr);
   }
 
-  console.log(`Phase carts: synced ${synced}`);
+  console.log(`Phase carts: synced ${synced}, automations enqueued`);
   return synced;
 }
 

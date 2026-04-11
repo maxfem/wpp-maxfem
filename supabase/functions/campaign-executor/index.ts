@@ -5,6 +5,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Build template components with parameters filled from customer data
+function buildTemplateComponents(customer: any, bodyVarCount: number, hasHeaderVar: boolean) {
+  const components: any[] = [];
+  const customerName = customer.name || "Cliente";
+
+  // Header parameters (if template header has {{1}})
+  if (hasHeaderVar) {
+    components.push({
+      type: "header",
+      parameters: [{ type: "text", text: customerName }],
+    });
+  }
+
+  // Body parameters - fill {{1}} with name, rest with empty/default
+  if (bodyVarCount > 0) {
+    const params: any[] = [];
+    for (let i = 0; i < bodyVarCount; i++) {
+      // First variable is typically the customer name
+      params.push({ type: "text", text: i === 0 ? customerName : "-" });
+    }
+    components.push({ type: "body", parameters: params });
+  }
+
+  return components;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -100,6 +126,23 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Fetch template from DB to detect variables
+        const { data: templateRecord } = await supabase
+          .from("message_templates")
+          .select("body, header_type, header_content")
+          .eq("name", templateName)
+          .eq("tenant_id", campaign.tenant_id)
+          .limit(1)
+          .single();
+
+        // Count body variables like {{1}}, {{2}}, etc.
+        const bodyVarCount = templateRecord?.body
+          ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length
+          : 0;
+        const hasHeaderVar = templateRecord?.header_type === "text" &&
+          templateRecord?.header_content?.includes("{{");
+
+        console.log(`Campaign ${campaign.id}: template ${templateName} has ${bodyVarCount} body vars, headerVar=${hasHeaderVar}`);
         // Get contacts
         let customers: any[] = [];
         if (campaign.list_id) {
@@ -167,6 +210,7 @@ Deno.serve(async (req) => {
                   template: {
                     name: templateName,
                     language: { code: templateLanguage },
+                    components: buildTemplateComponents(customer, bodyVarCount, hasHeaderVar),
                   },
                 }),
               }

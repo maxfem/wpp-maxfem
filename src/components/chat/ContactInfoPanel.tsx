@@ -33,8 +33,8 @@ interface Order {
   tracking_code?: string | null;
   tracking_url?: string | null;
   carrier?: string | null;
-  payment_summary?: any[] | null;
-  items_summary?: any[] | null;
+  payment_summary?: any;
+  items_summary?: any;
 }
 
 interface ContactInfoPanelProps {

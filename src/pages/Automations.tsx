@@ -47,7 +47,7 @@ const datePresets = [
   { label: "Todos", days: -1 },
 ];
 
-const campaignTypes = [
+const automationTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
   { value: "birthday", label: "Aniversariante do Dia" },
   { value: "birthday_month", label: "Aniversariante do Mês" },
@@ -66,7 +66,7 @@ export default function Automations() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
+  const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom", trigger: "" });
   const [datePreset, setDatePreset] = useState(-1);
   const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
   const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
@@ -129,19 +129,23 @@ export default function Automations() {
   const createCampaign = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("No tenant");
-      const { error } = await supabase.from("campaigns").insert({
+      if (!newCampaign.trigger) throw new Error("Selecione um gatilho");
+      const { data, error } = await supabase.from("campaigns").insert({
         tenant_id: currentTenant.id,
         name: newCampaign.name,
         type: newCampaign.type,
         status: "draft",
-      });
+        trigger_type: newCampaign.trigger,
+      }).select("id").single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["automations"] });
       setDialogOpen(false);
-      setNewCampaign({ name: "", type: "custom" });
-      toast.success("Campanha criada!");
+      setNewCampaign({ name: "", type: "custom", trigger: "" });
+      toast.success("Automação criada!");
+      navigate(`/automations/flow/${data.id}`);
     },
     onError: (e) => toast.error(e.message),
   });

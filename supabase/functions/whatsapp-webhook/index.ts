@@ -15,12 +15,11 @@ function normalizePhone(phone: string): string {
 async function findCustomerByPhone(phone: string, tenantId?: string) {
   const clean = normalizePhone(phone);
   
-  // Build variations: raw, +raw, with 55 prefix, without 55 prefix
   const variations = new Set<string>();
   variations.add(clean);
   variations.add(`+${clean}`);
   if (clean.startsWith("55") && clean.length >= 12) {
-    variations.add(clean.slice(2)); // without country code
+    variations.add(clean.slice(2));
     variations.add(`+${clean.slice(2)}`);
   } else {
     variations.add(`55${clean}`);
@@ -58,11 +57,77 @@ async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<stri
 
   if (error || !data) {
     console.warn(`[webhook] No whatsapp_account found for phone_number_id=${phoneNumberId}, falling back to first tenant`);
-    // Fallback: first tenant (backward compat)
     const { data: tenants } = await supabase.from("tenants").select("id").limit(1);
     return tenants?.[0]?.id || null;
   }
   return data.tenant_id;
+}
+
+/** Propagate status updates to campaign_activities via wamid lookup */
+async function propagateStatusToActivity(wamid: string, status: string) {
+  // Find the message to get customer_id and tenant_id
+  const { data: msg } = await supabase
+    .from("whatsapp_messages")
+    .select("customer_id, tenant_id")
+    .eq("wamid", wamid)
+    .limit(1)
+    .single();
+
+  if (!msg?.customer_id) return;
+
+  const now = new Date().toISOString();
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  if (status === "delivered") {
+    await supabase
+      .from("campaign_activities")
+      .update({ delivered_at: now })
+      .eq("customer_id", msg.customer_id)
+      .eq("tenant_id", msg.tenant_id)
+      .is("delivered_at", null)
+      .gte("sent_at", cutoff);
+    console.log("[webhook] Propagated delivered_at for customer", msg.customer_id);
+  } else if (status === "read") {
+    await supabase
+      .from("campaign_activities")
+      .update({ read_at: now })
+      .eq("customer_id", msg.customer_id)
+      .eq("tenant_id", msg.tenant_id)
+      .is("read_at", null)
+      .gte("sent_at", cutoff);
+    console.log("[webhook] Propagated read_at for customer", msg.customer_id);
+  } else if (status === "failed") {
+    await supabase
+      .from("campaign_activities")
+      .update({ status: "failed" })
+      .eq("customer_id", msg.customer_id)
+      .eq("tenant_id", msg.tenant_id)
+      .eq("status", "pending")
+      .gte("sent_at", cutoff);
+    console.log("[webhook] Propagated failed status for customer", msg.customer_id);
+  }
+}
+
+/** Mark replied_at on recent campaign_activities for inbound messages */
+async function markRepliedActivity(customerId: string, tenantId: string) {
+  const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("campaign_activities")
+    .update({ replied_at: now })
+    .eq("customer_id", customerId)
+    .eq("tenant_id", tenantId)
+    .is("replied_at", null)
+    .gte("sent_at", cutoff)
+    .select("id");
+
+  if (data?.length) {
+    console.log(`[webhook] Marked replied_at on ${data.length} activities for customer ${customerId}`);
+  }
+  if (error) {
+    console.error("[webhook] markRepliedActivity error:", error);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -125,6 +190,9 @@ Deno.serve(async (req) => {
               if (updateError) {
                 console.error("[webhook] Status update error:", updateError);
               }
+
+              // Propagate to campaign_activities
+              await propagateStatusToActivity(wamid, msgStatus);
             }
           }
 
@@ -210,6 +278,9 @@ Deno.serve(async (req) => {
               } else {
                 console.log("[webhook] Message saved successfully from", phone, "content:", content.substring(0, 80));
               }
+
+              // Mark replied_at on recent campaign_activities
+              await markRepliedActivity(customer!.id, tenantId);
             }
           }
         }

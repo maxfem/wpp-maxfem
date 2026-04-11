@@ -136,9 +136,11 @@ export default function Chat() {
       }
     }
 
-    let convs = Array.from(map.values()).sort(
-      (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-    );
+    let convs = Array.from(map.values())
+      .filter((c) => !c.isArchived)
+      .sort(
+        (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+      );
 
     if (dateFilter !== "all") {
       const now = new Date();
@@ -162,7 +164,7 @@ export default function Chat() {
     }
 
     return convs;
-  }, [allMessages, customers, searchTerm, dateFilter, statusFilter]);
+  }, [allMessages, customers, customerAttrMap, searchTerm, dateFilter, statusFilter]);
 
   const selectedMessages = useMemo(
     () =>

@@ -117,6 +117,39 @@ async function syncCustomers(supabase: any, tenant_id: string, config: any) {
   return synced;
 }
 
+// ===== ATTRIBUTION: Link new orders to campaign activities =====
+async function attributeConversions(supabase: any, tenant_id: string, orders: { id: string; customer_id: string; total: number }[]) {
+  const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  for (const order of orders) {
+    // Find recent activity without conversion, prioritize clicked
+    const { data: activity } = await supabase
+      .from("campaign_activities")
+      .select("id")
+      .eq("customer_id", order.customer_id)
+      .eq("tenant_id", tenant_id)
+      .is("converted_at", null)
+      .gte("sent_at", cutoff)
+      .order("clicked_at", { ascending: false, nullsFirst: false })
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (activity) {
+      await supabase
+        .from("campaign_activities")
+        .update({
+          converted_at: now,
+          conversion_value: order.total,
+          attribution_order_id: order.id,
+        })
+        .eq("id", activity.id);
+      console.log(`Attribution: order ${order.id} -> activity ${activity.id} (R$${order.total})`);
+    }
+  }
+}
+
 // ===== PHASE: ORDERS =====
 async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;

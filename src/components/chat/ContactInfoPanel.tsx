@@ -78,7 +78,8 @@ function CopilotTab({
   customer: ContactInfoPanelProps["customer"];
 }) {
   const { currentTenant } = useAuth();
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const queryClient = useQueryClient();
+  const [aiEnabled, setAiEnabled] = useState(false);
   const [toneOverride, setToneOverride] = useState("default");
   const [extraContext, setExtraContext] = useState("");
   const [suggestion, setSuggestion] = useState("");

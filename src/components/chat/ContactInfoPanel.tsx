@@ -252,6 +252,22 @@ function CopilotTab({
           />
         </div>
 
+        {/* Save button - always visible */}
+        {isDirty && (
+          <Button
+            className="w-full text-xs"
+            onClick={handleSaveSettings}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {saving ? "Salvando..." : "Salvar configurações"}
+          </Button>
+        )}
+
         <Separator />
 
         {aiEnabled && (
@@ -290,21 +306,6 @@ function CopilotTab({
                 className="text-xs min-h-[60px] resize-none"
               />
             </div>
-
-            {/* Save button */}
-            <Button
-              variant={isDirty ? "default" : "outline"}
-              className="w-full text-xs"
-              onClick={handleSaveSettings}
-              disabled={!isDirty || saving}
-            >
-              {saving ? (
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              {saving ? "Salvando..." : isDirty ? "Salvar configurações" : "Configurações salvas"}
-            </Button>
 
             <Separator />
 

@@ -79,13 +79,153 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   });
 }
 
+// ===== Bling V3 API lookup: query orders in real-time by CPF =====
+async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any): Promise<string> {
+  const cleanCpf = cpf.replace(/\D/g, "");
+  if (cleanCpf.length < 11) {
+    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+  }
+
+  try {
+    const { data: blingIntegration } = await adminClient
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "bling")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!blingIntegration) {
+      return JSON.stringify({ error: "Integração Bling não configurada." });
+    }
+
+    const cfg = blingIntegration.config as any;
+    const accessToken = cfg?.access_token;
+    if (!accessToken) {
+      return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
+    }
+
+    // Format CPF for Bling search
+    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+    // Search contact by CPF
+    const contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (!contactRes.ok) {
+      console.error("[copilot] Bling contact search error:", contactRes.status);
+      return JSON.stringify({ error: "Erro ao consultar Bling. Tente novamente." });
+    }
+
+    const contactData = await contactRes.json();
+    const contacts = contactData?.data || [];
+
+    if (contacts.length === 0) {
+      return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
+    }
+
+    const contactId = contacts[0].id;
+    const contactName = contacts[0].nome;
+
+    // Search orders for this contact
+    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (!ordersRes.ok) {
+      console.error("[copilot] Bling orders search error:", ordersRes.status);
+      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
+    }
+
+    const ordersData = await ordersRes.json();
+    const ordersList = ordersData?.data || [];
+
+    if (ordersList.length === 0) {
+      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
+    }
+
+    // Fetch details for each order to get tracking
+    const detailedOrders = [];
+    for (const order of ordersList.slice(0, 5)) {
+      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+
+      if (!detailRes.ok) continue;
+
+      const detail = await detailRes.json();
+      const d = detail?.data;
+      if (!d) continue;
+
+      const volumes = d.transporte?.volumes || [];
+      const trackingCode = volumes[0]?.codigoRastreamento || null;
+      const carrier = d.transporte?.contato?.nome || null;
+
+      const payments = (d.parcelas || []).map((p: any) => ({
+        value: p.valor,
+        due_date: p.dataVencimento,
+        method: p.observacoes || "",
+      }));
+
+      const items = (d.itens || []).map((i: any) => ({
+        name: i.descricao,
+        quantity: i.quantidade,
+        value: i.valor,
+      }));
+
+      detailedOrders.push({
+        order_number: d.numero,
+        total: d.total,
+        date: d.data,
+        tracking_code: trackingCode,
+        tracking_url: trackingCode ? `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}` : null,
+        carrier,
+        payments,
+        items,
+      });
+    }
+
+    console.log("[copilot] Bling orders lookup result:", JSON.stringify(detailedOrders));
+
+    return JSON.stringify({
+      source: "bling",
+      customer_name: contactName,
+      cpf: formattedCpf,
+      orders_count: detailedOrders.length,
+      orders: detailedOrders,
+    });
+  } catch (err) {
+    console.error("[copilot] Bling lookup error:", err);
+    return JSON.stringify({ error: "Erro interno ao consultar o Bling." });
+  }
+}
+
 const tools = [
   {
     type: "function" as const,
     function: {
       name: "lookup_orders_by_cpf",
       description:
-        "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento, nota fiscal ou qualquer informação relacionada a compras. Solicite o CPF ao cliente antes de chamar esta função.",
+        "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema local. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras.",
+      parameters: {
+        type: "object",
+        properties: {
+          cpf: {
+            type: "string",
+            description: "CPF do cliente (apenas números ou com pontuação)",
+          },
+        },
+        required: ["cpf"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_orders_bling",
+      description:
+        "Consulta pedidos e código de rastreio em tempo real na API do Bling pelo CPF do cliente. Use esta função quando lookup_orders_by_cpf não retornar rastreio ou quando quiser dados mais atualizados do ERP.",
       parameters: {
         type: "object",
         properties: {
@@ -167,16 +307,22 @@ serve(async (req) => {
       });
     }
 
-    // Check if Yampi integration exists (for order lookup tool)
-    const { data: yampiIntegration } = await adminClient
+    // Check which integrations exist for order lookup tools
+    const { data: orderIntegrations } = await adminClient
       .from("integrations")
-      .select("id")
+      .select("provider")
       .eq("tenant_id", tenant_id)
-      .eq("provider", "yampi")
-      .eq("is_active", true)
-      .maybeSingle();
+      .in("provider", ["yampi", "bling"])
+      .eq("is_active", true);
 
-    const hasYampi = !!yampiIntegration;
+    const hasYampi = orderIntegrations?.some((i: any) => i.provider === "yampi");
+    const hasBling = orderIntegrations?.some((i: any) => i.provider === "bling");
+    const hasOrderTools = hasYampi || hasBling;
+
+    // Build available tools based on active integrations
+    const activeTools: any[] = [];
+    if (hasYampi) activeTools.push(tools[0]); // lookup_orders_by_cpf (local DB)
+    if (hasBling) activeTools.push(tools[1]); // lookup_orders_bling (real-time API)
 
     const tone = tone_override || config.tone || "friendly";
     const model = config.model || "gpt-4o-mini";
@@ -189,16 +335,24 @@ serve(async (req) => {
       technical: "Seja preciso, objetivo e técnico.",
     };
 
-    const orderInstructions = hasYampi
-      ? `\n\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados. Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou qualquer assunto relacionado a compras, solicite o CPF para fazer a consulta. Se o cliente já informou o CPF na conversa, use-o diretamente chamando a função.
+    let orderInstructions = "";
+    if (hasOrderTools) {
+      const toolNames = [];
+      if (hasYampi) toolNames.push("lookup_orders_by_cpf (consulta no banco local)");
+      if (hasBling) toolNames.push("lookup_orders_bling (consulta em tempo real no ERP Bling)");
+
+      orderInstructions = `\n\nVocê tem acesso às seguintes funções para consultar pedidos: ${toolNames.join(", ")}.
+Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras, solicite o CPF.
+${hasBling ? "PRIORIZE a função lookup_orders_bling para obter dados mais atualizados (rastreio em tempo real)." : ""}
+${hasYampi ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
 - Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio de forma clara e direta.
 - Se houver dados de pagamento (payments), informe o método e status do pagamento.
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
-- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio. Se o tracking_code TEM um valor, informe-o obrigatoriamente.
-- Nunca invente informações. Use apenas os dados retornados pela função.`
-      : "";
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
+- Nunca invente informações. Use apenas os dados retornados pela função.`;
+    }
 
     const fullSystemPrompt = `${systemPrompt}
 
@@ -223,8 +377,8 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       temperature: 0.7,
     };
 
-    if (hasYampi) {
-      openaiBody.tools = tools;
+    if (hasOrderTools) {
+      openaiBody.tools = activeTools;
       openaiBody.tool_choice = "auto";
     }
 
@@ -256,21 +410,27 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
     let assistantMessage = result.choices?.[0]?.message;
 
     let iterations = 0;
-    while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
+    while (assistantMessage?.tool_calls?.length > 0 && iterations < 5) {
       iterations++;
       chatMessages.push(assistantMessage);
 
       for (const toolCall of assistantMessage.tool_calls) {
+        const args = JSON.parse(toolCall.function.arguments);
+        let toolResult = "";
+
         if (toolCall.function.name === "lookup_orders_by_cpf") {
-          const args = JSON.parse(toolCall.function.arguments);
           console.log(`[copilot] Tool call: lookup_orders_by_cpf(${args.cpf})`);
-          const toolResult = await lookupOrdersByCpf(tenant_id, args.cpf, adminClient);
-          chatMessages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: toolResult,
-          });
+          toolResult = await lookupOrdersByCpf(tenant_id, args.cpf, adminClient);
+        } else if (toolCall.function.name === "lookup_orders_bling") {
+          console.log(`[copilot] Tool call: lookup_orders_bling(${args.cpf})`);
+          toolResult = await lookupOrdersBling(tenant_id, args.cpf, adminClient);
         }
+
+        chatMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: toolResult,
+        });
       }
 
       openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {

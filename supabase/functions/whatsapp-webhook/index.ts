@@ -81,12 +81,128 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
   });
 }
 
+// ===== Bling V3 API lookup: query orders in real-time by CPF =====
+async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string> {
+  const cleanCpf = cpf.replace(/\D/g, "");
+  if (cleanCpf.length < 11) {
+    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+  }
+
+  try {
+    const { data: blingIntegration } = await supabase
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "bling")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!blingIntegration) {
+      return JSON.stringify({ error: "Integração Bling não configurada." });
+    }
+
+    const cfg = blingIntegration.config as any;
+    const accessToken = cfg?.access_token;
+    if (!accessToken) {
+      return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
+    }
+
+    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+    const contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (!contactRes.ok) {
+      console.error("[webhook] Bling contact search error:", contactRes.status);
+      return JSON.stringify({ error: "Erro ao consultar Bling." });
+    }
+
+    const contactData = await contactRes.json();
+    const contacts = contactData?.data || [];
+
+    if (contacts.length === 0) {
+      return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
+    }
+
+    const contactId = contacts[0].id;
+    const contactName = contacts[0].nome;
+
+    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (!ordersRes.ok) {
+      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
+    }
+
+    const ordersData = await ordersRes.json();
+    const ordersList = ordersData?.data || [];
+
+    if (ordersList.length === 0) {
+      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
+    }
+
+    const detailedOrders = [];
+    for (const order of ordersList.slice(0, 5)) {
+      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+      if (!detailRes.ok) continue;
+
+      const detail = await detailRes.json();
+      const d = detail?.data;
+      if (!d) continue;
+
+      const volumes = d.transporte?.volumes || [];
+      const trackingCode = volumes[0]?.codigoRastreamento || null;
+      const carrier = d.transporte?.contato?.nome || null;
+
+      detailedOrders.push({
+        order_number: d.numero,
+        total: d.total,
+        date: d.data,
+        tracking_code: trackingCode,
+        tracking_url: trackingCode ? `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}` : null,
+        carrier,
+        payments: (d.parcelas || []).map((p: any) => ({ value: p.valor, due_date: p.dataVencimento, method: p.observacoes || "" })),
+        items: (d.itens || []).map((i: any) => ({ name: i.descricao, quantity: i.quantidade, value: i.valor })),
+      });
+    }
+
+    console.log("[webhook] Bling orders lookup result:", JSON.stringify(detailedOrders));
+
+    return JSON.stringify({
+      source: "bling",
+      customer_name: contactName,
+      cpf: formattedCpf,
+      orders_count: detailedOrders.length,
+      orders: detailedOrders,
+    });
+  } catch (err) {
+    console.error("[webhook] Bling lookup error:", err);
+    return JSON.stringify({ error: "Erro interno ao consultar o Bling." });
+  }
+}
+
 const aiTools = [
   {
     type: "function" as const,
     function: {
       name: "lookup_orders_by_cpf",
-      description: "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema. Use quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras.",
+      description: "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema local.",
+      parameters: {
+        type: "object",
+        properties: { cpf: { type: "string", description: "CPF do cliente" } },
+        required: ["cpf"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_orders_bling",
+      description: "Consulta pedidos e código de rastreio em tempo real na API do Bling pelo CPF do cliente. Priorize esta função para dados mais atualizados.",
       parameters: {
         type: "object",
         properties: { cpf: { type: "string", description: "CPF do cliente" } },
@@ -282,26 +398,35 @@ async function tryAutoRespondWithAI(
       technical: "Seja preciso, objetivo e técnico.",
     };
 
-    // Check if Yampi integration exists (for order lookup tool)
-    const { data: yampiInt } = await supabase
+    // Check which integrations exist for order lookup tools
+    const { data: orderIntegrations } = await supabase
       .from("integrations")
-      .select("id")
+      .select("provider")
       .eq("tenant_id", tenantId)
-      .eq("provider", "yampi")
-      .eq("is_active", true)
-      .maybeSingle();
-    const hasYampi = !!yampiInt;
+      .in("provider", ["yampi", "bling"])
+      .eq("is_active", true);
 
-    const orderInstructions = hasYampi
-      ? `\nVocê tem acesso à função lookup_orders_by_cpf para consultar pedidos do cliente nos dados sincronizados do sistema. Quando o cliente perguntar sobre rastreio, entrega, status do pedido ou pagamento, solicite o CPF. Se o CPF já foi informado na conversa, use-o diretamente.
+    const hasYampi = orderIntegrations?.some((i: any) => i.provider === "yampi");
+    const hasBling = orderIntegrations?.some((i: any) => i.provider === "bling");
+    const hasOrderTools = hasYampi || hasBling;
+
+    // Build available tools based on active integrations
+    const activeTools: any[] = [];
+    if (hasYampi) activeTools.push(aiTools[0]);
+    if (hasBling) activeTools.push(aiTools[1]);
+
+    let orderInstructions = "";
+    if (hasOrderTools) {
+      orderInstructions = `\nVocê tem acesso a funções para consultar pedidos do cliente pelo CPF.
+${hasBling ? "PRIORIZE lookup_orders_bling para dados em tempo real do ERP (rastreio atualizado)." : ""}
+${hasYampi ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio ao cliente de forma clara e direta.
-- Se houver dados de pagamento (payments), informe o método e status do pagamento.
-- Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
-- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio. Se o tracking_code TEM um valor, informe-o obrigatoriamente.
-- Nunca invente informações. Use apenas os dados retornados pela função.`
-      : "";
+- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio ao cliente.
+- Formate: número do pedido, status, rastreio (se houver), transportadora, valor.
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
+- Nunca invente informações.`;
+    }
 
     const fullSystemPrompt = `${systemPrompt}
 
@@ -325,8 +450,8 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       max_tokens: 500,
       temperature: 0.7,
     };
-    if (hasYampi) {
-      openaiBody.tools = aiTools;
+    if (hasOrderTools) {
+      openaiBody.tools = activeTools;
       openaiBody.tool_choice = "auto";
     }
 
@@ -346,17 +471,23 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
     let assistantMessage = result.choices?.[0]?.message;
 
     let iterations = 0;
-    while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
+    while (assistantMessage?.tool_calls?.length > 0 && iterations < 5) {
       iterations++;
       chatMessages.push(assistantMessage);
 
       for (const toolCall of assistantMessage.tool_calls) {
+        const args = JSON.parse(toolCall.function.arguments);
+        let toolResult = "";
+
         if (toolCall.function.name === "lookup_orders_by_cpf") {
-          const args = JSON.parse(toolCall.function.arguments);
           console.log(`[webhook] Tool call: lookup_orders_by_cpf(${args.cpf})`);
-          const toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
-          chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
+          toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
+        } else if (toolCall.function.name === "lookup_orders_bling") {
+          console.log(`[webhook] Tool call: lookup_orders_bling(${args.cpf})`);
+          toolResult = await lookupOrdersBling(tenantId, args.cpf);
         }
+
+        chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
       }
 
       openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {

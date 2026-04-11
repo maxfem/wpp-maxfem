@@ -450,8 +450,8 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       max_tokens: 500,
       temperature: 0.7,
     };
-    if (hasYampi) {
-      openaiBody.tools = aiTools;
+    if (hasOrderTools) {
+      openaiBody.tools = activeTools;
       openaiBody.tool_choice = "auto";
     }
 
@@ -471,17 +471,23 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
     let assistantMessage = result.choices?.[0]?.message;
 
     let iterations = 0;
-    while (assistantMessage?.tool_calls?.length > 0 && iterations < 3) {
+    while (assistantMessage?.tool_calls?.length > 0 && iterations < 5) {
       iterations++;
       chatMessages.push(assistantMessage);
 
       for (const toolCall of assistantMessage.tool_calls) {
+        const args = JSON.parse(toolCall.function.arguments);
+        let toolResult = "";
+
         if (toolCall.function.name === "lookup_orders_by_cpf") {
-          const args = JSON.parse(toolCall.function.arguments);
           console.log(`[webhook] Tool call: lookup_orders_by_cpf(${args.cpf})`);
-          const toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
-          chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
+          toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
+        } else if (toolCall.function.name === "lookup_orders_bling") {
+          console.log(`[webhook] Tool call: lookup_orders_bling(${args.cpf})`);
+          toolResult = await lookupOrdersBling(tenantId, args.cpf);
         }
+
+        chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
       }
 
       openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {

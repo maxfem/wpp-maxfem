@@ -161,11 +161,16 @@ function buildTemplateComponents(
 async function processAutomationQueue(supabase: any) {
   const results: any[] = [];
 
-  // Fetch pending items (limit 50 per run to avoid timeout)
+  // Only process items created from today onwards (ignore historical backfill)
+  const todayCutoff = new Date();
+  todayCutoff.setUTCHours(0, 0, 0, 0);
+
+  // Fetch pending items created today or later (limit 50 per run)
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
     .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data")
     .eq("status", "pending")
+    .gte("created_at", todayCutoff.toISOString())
     .order("created_at", { ascending: true })
     .limit(50);
 

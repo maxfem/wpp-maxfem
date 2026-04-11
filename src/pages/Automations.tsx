@@ -27,6 +27,7 @@ import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fn
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
+import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
@@ -46,7 +47,7 @@ const datePresets = [
   { label: "Todos", days: -1 },
 ];
 
-const campaignTypes = [
+const automationTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
   { value: "birthday", label: "Aniversariante do Dia" },
   { value: "birthday_month", label: "Aniversariante do Mês" },
@@ -65,7 +66,7 @@ export default function Automations() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
+  const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom", trigger: "" });
   const [datePreset, setDatePreset] = useState(-1);
   const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
   const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
@@ -128,19 +129,23 @@ export default function Automations() {
   const createCampaign = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("No tenant");
-      const { error } = await supabase.from("campaigns").insert({
+      if (!newCampaign.trigger) throw new Error("Selecione um gatilho");
+      const { data, error } = await supabase.from("campaigns").insert({
         tenant_id: currentTenant.id,
         name: newCampaign.name,
         type: newCampaign.type,
         status: "draft",
-      });
+        trigger_type: newCampaign.trigger,
+      }).select("id").single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["automations"] });
       setDialogOpen(false);
-      setNewCampaign({ name: "", type: "custom" });
-      toast.success("Campanha criada!");
+      setNewCampaign({ name: "", type: "custom", trigger: "" });
+      toast.success("Automação criada!");
+      navigate(`/automations/flow/${data.id}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -297,7 +302,7 @@ export default function Automations() {
             {filtered.map((c) => {
               const st = statusConfig[c.status] || statusConfig.draft;
               const StIcon = st.icon;
-              const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
+              const typeLabel = c.trigger_type ? getTriggerLabel(c.trigger_type) : (automationTypes.find((t) => t.value === c.type)?.label || c.type);
               const metrics = metricsMap[c.id];
 
               return (
@@ -321,7 +326,10 @@ export default function Automations() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                    <CardDescription className="text-xs">{typeLabel}</CardDescription>
+                    <CardDescription className="text-xs flex items-center gap-1">
+                      <Zap className="h-3 w-3 text-primary" />
+                      {typeLabel}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {/* Metrics */}
@@ -371,17 +379,40 @@ export default function Automations() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Gatilho *</Label>
+              <Select value={newCampaign.trigger} onValueChange={(v) => setNewCampaign({ ...newCampaign, trigger: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecionar gatilho" /></SelectTrigger>
+                <SelectContent>
+                  {AUTOMATION_TRIGGERS.map((group) => (
+                    <div key={group.group}>
+                      <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {group.group}
+                      </div>
+                      {group.items.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                      ))}
+                    </div>
+                  ))}
+                </SelectContent>
+              </Select>
+              {newCampaign.trigger && (
+                <p className="text-xs text-muted-foreground">
+                  ⚡ {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === newCampaign.trigger)?.description}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label>Tipo</Label>
               <Select value={newCampaign.type} onValueChange={(v) => setNewCampaign({ ...newCampaign, type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {campaignTypes.map((t) => (
+                  {automationTypes.map((t) => (
                     <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <Button type="submit" className="w-full" disabled={createCampaign.isPending}>
+            <Button type="submit" className="w-full" disabled={createCampaign.isPending || !newCampaign.trigger}>
               {createCampaign.isPending ? "Criando..." : "Criar Automação"}
             </Button>
           </form>

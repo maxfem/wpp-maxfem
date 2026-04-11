@@ -184,6 +184,7 @@ Deno.serve(async (req) => {
                   template: {
                     name: templateName,
                     language: { code: templateLanguage },
+                    components: buildTemplateComponents(customer, bodyVarCount, hasHeaderVar),
                   },
                 }),
               }

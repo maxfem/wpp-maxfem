@@ -60,9 +60,16 @@ export default function Chat() {
   // Fetch orders for selected customer
   const selectedCustomerId = useMemo(() => {
     if (!selectedPhoneKey) return null;
+
     const conv = allMessages.find((m) => normalizePhone(m.phone) === selectedPhoneKey);
-    return conv?.customer_id || null;
-  }, [selectedPhoneKey, allMessages]);
+    if (conv?.customer_id) return conv.customer_id;
+
+    const matchedCustomer = customers.find(
+      (customer) => customer.phone && normalizePhone(customer.phone) === selectedPhoneKey
+    );
+
+    return matchedCustomer?.id || null;
+  }, [selectedPhoneKey, allMessages, customers]);
 
   const { data: customerOrders = [] } = useQuery({
     queryKey: ["customer-orders", selectedCustomerId],
@@ -92,23 +99,29 @@ export default function Chat() {
 
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
-    const customerMap = new Map<string, string>();
+    const customerMap = new Map<string, { id: string; name: string }>();
 
     customers.forEach((c) => {
-      if (c.phone) customerMap.set(normalizePhone(c.phone), c.name);
+      if (c.phone) {
+        customerMap.set(normalizePhone(c.phone), {
+          id: c.id,
+          name: c.name,
+        });
+      }
     });
 
     for (const msg of allMessages) {
       const phoneKey = normalizePhone(msg.phone);
       const existing = map.get(phoneKey);
       const attrs = customerAttrMap.get(phoneKey) || {};
+      const matchedCustomer = customerMap.get(phoneKey);
 
       if (!existing) {
         map.set(phoneKey, {
           phone: msg.phone,
           phoneKey,
-          customerName: customerMap.get(phoneKey) || msg.phone,
-          customerId: msg.customer_id,
+          customerName: matchedCustomer?.name || msg.phone,
+          customerId: msg.customer_id || matchedCustomer?.id || null,
           lastMessage: msg.content || `[${msg.message_type}]`,
           lastMessageAt: msg.created_at,
           unread: msg.direction === "inbound" && msg.status === "received" ? 1 : 0,
@@ -121,9 +134,11 @@ export default function Chat() {
         continue;
       }
 
-      if (!existing.customerId && msg.customer_id) existing.customerId = msg.customer_id;
-      if (existing.customerName === existing.phone && customerMap.get(phoneKey)) {
-        existing.customerName = customerMap.get(phoneKey)!;
+      if (!existing.customerId) {
+        existing.customerId = msg.customer_id || matchedCustomer?.id || null;
+      }
+      if (existing.customerName === existing.phone && matchedCustomer?.name) {
+        existing.customerName = matchedCustomer.name;
       }
       if (new Date(msg.created_at).getTime() > new Date(existing.lastMessageAt).getTime()) {
         existing.phone = msg.phone;
@@ -178,8 +193,15 @@ export default function Chat() {
 
   // Get selected customer details for the contact panel
   const selectedCustomer = useMemo(() => {
-    if (!selectedConv?.customerId) return null;
-    return customers.find((c) => c.id === selectedConv.customerId) || null;
+    if (selectedConv?.customerId) {
+      return customers.find((c) => c.id === selectedConv.customerId) || null;
+    }
+
+    if (!selectedConv?.phoneKey) return null;
+
+    return (
+      customers.find((c) => c.phone && normalizePhone(c.phone) === selectedConv.phoneKey) || null
+    );
   }, [selectedConv, customers]);
 
   // Realtime

@@ -77,7 +77,7 @@ export default function Chat() {
       if (!selectedCustomerId || !tenantId) return [];
       const { data } = await supabase
         .from("orders")
-        .select("id, external_id, total, status, mapped_status, created_at")
+        .select("id, external_id, order_number, total, status, mapped_status, status_alias, tracking_code, tracking_url, carrier, payment_summary, items_summary, created_at")
         .eq("tenant_id", tenantId)
         .eq("customer_id", selectedCustomerId)
         .order("created_at", { ascending: false })

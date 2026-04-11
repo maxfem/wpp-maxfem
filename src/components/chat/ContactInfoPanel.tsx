@@ -28,6 +28,13 @@ interface Order {
   status: string;
   mapped_status: string | null;
   created_at: string;
+  order_number?: string | null;
+  status_alias?: string | null;
+  tracking_code?: string | null;
+  tracking_url?: string | null;
+  carrier?: string | null;
+  payment_summary?: any;
+  items_summary?: any;
 }
 
 interface ContactInfoPanelProps {
@@ -56,6 +63,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
   pix_pending: { label: "Pix Pendente", color: "bg-orange-500/10 text-orange-600 border-orange-200", icon: CreditCard },
   invoiced: { label: "Faturado", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Package },
   shipped: { label: "Enviado", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Truck },
+  on_carriage: { label: "Em transporte", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Truck },
+  in_transit: { label: "Em transporte", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Truck },
   cancelled: { label: "Cancelado", color: "bg-red-500/10 text-red-600 border-red-200", icon: XCircle },
   refunded: { label: "Reembolsado", color: "bg-red-500/10 text-red-600 border-red-200", icon: RotateCcw },
 };
@@ -594,13 +603,13 @@ export function ContactInfoPanel({ conversation, messages, customer, orders = []
               ) : (
                 <div className="space-y-2">
                   {orders.map((order) => {
-                    const info = getStatusInfo(order.status, order.mapped_status);
+                    const info = getStatusInfo(order.status_alias || order.status, order.mapped_status);
                     const Icon = info.icon;
                     return (
                       <div key={order.id} className="rounded-lg border border-border p-2.5 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-medium text-foreground">
-                            #{order.external_id?.replace("yampi_", "") || order.id.slice(0, 8)}
+                            #{order.order_number || order.external_id?.replace("yampi_", "") || order.id.slice(0, 8)}
                           </span>
                           <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-5 gap-1 ${info.color}`}>
                             <Icon className="h-2.5 w-2.5" />
@@ -615,6 +624,40 @@ export function ContactInfoPanel({ conversation, messages, customer, orders = []
                             {formatCurrency(order.total)}
                           </span>
                         </div>
+                        {/* Tracking info */}
+                        {order.tracking_code && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Truck className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="text-[10px] text-muted-foreground truncate">
+                              {order.carrier ? `${order.carrier}: ` : ""}{order.tracking_code}
+                            </span>
+                            {order.tracking_url && (
+                              <a
+                                href={order.tracking_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:text-primary/80 shrink-0"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                            <button
+                              onClick={() => copyToClipboard(order.tracking_code!)}
+                              className="text-muted-foreground hover:text-foreground shrink-0"
+                            >
+                              <Copy className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
+                        )}
+                        {/* Payment info */}
+                        {order.payment_summary && Array.isArray(order.payment_summary) && order.payment_summary.length > 0 && (
+                          <div className="flex items-center gap-1.5">
+                            <CreditCard className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span className="text-[10px] text-muted-foreground truncate">
+                              {order.payment_summary.map((p: any) => p.method).join(", ")}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

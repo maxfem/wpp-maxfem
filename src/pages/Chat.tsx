@@ -182,7 +182,7 @@ export default function Chat() {
     return () => { supabase.removeChannel(channel); };
   }, [tenantId, queryClient]);
 
-  // Send message
+  // Send text message
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
       if (!selectedPhoneKey || !tenantId) throw new Error("No conversation selected");
@@ -203,6 +203,34 @@ export default function Chat() {
     },
     onError: (err) => {
       toast.error("Erro ao enviar mensagem: " + (err as Error).message);
+    },
+  });
+
+  // Send media message
+  const sendMediaMutation = useMutation({
+    mutationFn: async ({ mediaType, mediaUrl, caption, filename }: { mediaType: string; mediaUrl: string; caption: string; filename?: string }) => {
+      if (!selectedPhoneKey || !tenantId) throw new Error("No conversation selected");
+      const conv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
+      const { data, error } = await supabase.functions.invoke("whatsapp-send", {
+        body: {
+          phone: conv?.phone || "",
+          message: caption || undefined,
+          tenant_id: tenantId,
+          customer_id: conv?.customerId || null,
+          media_type: mediaType,
+          media_url: mediaUrl,
+          filename,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", tenantId] });
+      toast.success("Mídia enviada!");
+    },
+    onError: (err) => {
+      toast.error("Erro ao enviar mídia: " + (err as Error).message);
     },
   });
 

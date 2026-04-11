@@ -349,17 +349,7 @@ export function ContactInfoPanel({ conversation, messages, customer, orders = []
         </TabsContent>
 
         <TabsContent value="copilot" className="flex-1 mt-0 overflow-hidden">
-          <div className="flex-1 flex items-center justify-center p-6">
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                <Bot className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="text-sm font-semibold text-foreground mb-1">Copilot</h3>
-              <p className="text-xs text-muted-foreground">
-                Assistente de IA para ajudar nas respostas. Em breve.
-              </p>
-            </div>
-          </div>
+          <CopilotTab conversation={conversation} messages={messages} customer={customer} />
         </TabsContent>
       </Tabs>
     </div>

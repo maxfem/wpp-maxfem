@@ -248,16 +248,7 @@ function CopilotTab({
           </div>
           <Switch
             checked={aiEnabled}
-            onCheckedChange={async (v) => {
-              const previousValue = aiEnabled;
-              setAiEnabled(v);
-              try {
-                await savePerConversationSettings({ ai_enabled: v });
-              } catch (error) {
-                setAiEnabled(previousValue);
-                toast.error(error instanceof Error ? error.message : "Erro ao salvar configuração da IA");
-              }
-            }}
+            onCheckedChange={(v) => setAiEnabled(v)}
           />
         </div>
 

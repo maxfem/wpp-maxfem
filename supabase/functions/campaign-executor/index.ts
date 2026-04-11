@@ -734,7 +734,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ processed: results }), {
+    return new Response(JSON.stringify({ processed: results, automations: automationResults }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

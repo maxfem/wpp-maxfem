@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 const sections = [
-  { title: "Integrações", desc: "Conectores com e-commerces, ERPs e canais", icon: Plug, path: null },
+  { title: "Integrações", desc: "Conectores com e-commerces, ERPs e canais", icon: Plug, path: "/settings/integrations" },
   { title: "WhatsApp", desc: "Números e modelos de mensagem HSM", icon: MessageCircle, path: "/settings/whatsapp" },
   { title: "WhatsApp", desc: "Números e modelos de mensagem HSM", icon: MessageCircle },
   { title: "Atendimento", desc: "Configurações do inbox de suporte", icon: Headphones, path: null },

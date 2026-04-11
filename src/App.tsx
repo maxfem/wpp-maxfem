@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
 import Automations from "./pages/Automations";
+import AutomationDetails from "./pages/AutomationDetails";
 import CampaignFlowEditor from "./pages/CampaignFlowEditor";
 import CampaignDetails from "./pages/CampaignDetails";
 import Activities from "./pages/Activities";
@@ -63,6 +64,7 @@ const App = () => (
             <Route path="/campaigns/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
             <Route path="/campaigns/:id" element={<ProtectedRoute><CampaignDetails /></ProtectedRoute>} />
             <Route path="/automations" element={<ProtectedRoute><Automations /></ProtectedRoute>} />
+            <Route path="/automations/:id" element={<ProtectedRoute><AutomationDetails /></ProtectedRoute>} />
             <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
             <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
             <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />

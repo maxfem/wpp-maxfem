@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       campaign_activities: {
         Row: {
+          attribution_order_id: string | null
           campaign_id: string
           channel: string | null
           clicked_at: string | null
@@ -32,6 +33,7 @@ export type Database = {
           tenant_id: string
         }
         Insert: {
+          attribution_order_id?: string | null
           campaign_id: string
           channel?: string | null
           clicked_at?: string | null
@@ -48,6 +50,7 @@ export type Database = {
           tenant_id: string
         }
         Update: {
+          attribution_order_id?: string | null
           campaign_id?: string
           channel?: string | null
           clicked_at?: string | null
@@ -64,6 +67,13 @@ export type Database = {
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaign_activities_attribution_order_id_fkey"
+            columns: ["attribution_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaign_activities_campaign_id_fkey"
             columns: ["campaign_id"]

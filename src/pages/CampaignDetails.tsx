@@ -17,6 +17,7 @@ import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Clock, Users, TrendingUp,
 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
@@ -145,6 +146,19 @@ export default function CampaignDetails() {
             </p>
           </div>
         </div>
+
+          {/* Error banner */}
+          {campaign.status === "failed" && (campaign as any).last_error && (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent className="flex items-start gap-3 p-4">
+                <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-destructive">Falha no envio</p>
+                  <p className="text-sm text-muted-foreground mt-1">{(campaign as any).last_error}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">

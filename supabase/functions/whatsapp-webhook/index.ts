@@ -25,7 +25,7 @@ async function findCustomerByPhone(phone: string, tenantId?: string) {
   }
 
   const orFilter = Array.from(variations).map(v => `phone.eq.${v}`).join(",");
-  let query = supabase.from("customers").select("id, tenant_id, name, phone").or(orFilter).limit(1);
+  let query = supabase.from("customers").select("id, tenant_id, name, phone, custom_attributes").or(orFilter).limit(1);
   if (tenantId) query = query.eq("tenant_id", tenantId);
 
   const { data, error } = await query;
@@ -53,7 +53,6 @@ async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<stri
 /** Download media from Meta Graph API and upload to Supabase Storage */
 async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId: string): Promise<string | null> {
   try {
-    // Step 1: Get the media URL from Meta
     const metaRes = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
       headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
     });
@@ -65,7 +64,6 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
     const downloadUrl = metaData.url;
     if (!downloadUrl) return null;
 
-    // Step 2: Download the actual media
     const mediaRes = await fetch(downloadUrl, {
       headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
     });
@@ -75,7 +73,6 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
     }
     const mediaBlob = await mediaRes.blob();
 
-    // Determine file extension from mime type
     const extMap: Record<string, string> = {
       "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
       "video/mp4": "mp4", "video/3gpp": "3gp",
@@ -87,7 +84,6 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
     const ext = extMap[mimeType] || "bin";
     const filePath = `${tenantId}/${mediaId}.${ext}`;
 
-    // Step 3: Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from("whatsapp-media")
       .upload(filePath, mediaBlob, { contentType: mimeType, upsert: true });
@@ -97,7 +93,6 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
       return null;
     }
 
-    // Step 4: Get public URL
     const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(filePath);
     console.log(`[webhook] Media stored: ${urlData.publicUrl}`);
     return urlData.publicUrl;
@@ -142,6 +137,163 @@ async function markRepliedActivity(customerId: string, tenantId: string) {
   await supabase.from("campaign_activities").update({ replied_at: now })
     .eq("customer_id", customerId).eq("tenant_id", tenantId)
     .is("replied_at", null).gte("sent_at", cutoff);
+}
+
+/** Auto-respond using AI if copilot is enabled for this customer */
+async function tryAutoRespondWithAI(
+  tenantId: string,
+  customerId: string,
+  phone: string,
+  customerAttrs: Record<string, any> | null,
+) {
+  try {
+    // Check if AI is enabled for this customer
+    const attrs = customerAttrs || {};
+    if (attrs.ai_enabled === false) {
+      console.log(`[webhook] AI disabled for customer ${customerId}`);
+      return;
+    }
+
+    // Check if OpenAI integration is configured
+    const { data: integration } = await supabase
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "openai")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!integration) {
+      console.log(`[webhook] No OpenAI integration for tenant ${tenantId}`);
+      return;
+    }
+
+    const config = integration.config as any;
+    const apiKey = config?.openai_api_key;
+    if (!apiKey) {
+      console.log(`[webhook] No OpenAI API key configured`);
+      return;
+    }
+
+    // Fetch recent conversation history
+    const { data: recentMsgs } = await supabase
+      .from("whatsapp_messages")
+      .select("direction, content, message_type, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (!recentMsgs || recentMsgs.length === 0) return;
+
+    const tone = attrs.ai_tone && attrs.ai_tone !== "default" ? attrs.ai_tone : (config.tone || "friendly");
+    const model = config.model || "gpt-4o-mini";
+    const systemPrompt = config.system_prompt || "Você é um assistente de atendimento ao cliente.";
+    const extraContext = attrs.ai_context || "";
+
+    const toneInstructions: Record<string, string> = {
+      formal: "Use linguagem formal e profissional.",
+      friendly: "Use um tom caloroso e acolhedor.",
+      informal: "Use linguagem descontraída e casual.",
+      technical: "Seja preciso, objetivo e técnico.",
+    };
+
+    const fullSystemPrompt = `${systemPrompt}
+
+Tom de voz: ${toneInstructions[tone] || toneInstructions.friendly}
+${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}
+
+Você está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
+
+    // Build messages for OpenAI (reverse since we fetched desc)
+    const chatMessages = [
+      { role: "system", content: fullSystemPrompt },
+      ...recentMsgs.reverse().map((m: any) => ({
+        role: m.direction === "inbound" ? "user" : "assistant",
+        content: m.content || `[${m.message_type}]`,
+      })),
+    ];
+
+    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: chatMessages,
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!openaiResponse.ok) {
+      const errText = await openaiResponse.text();
+      console.error(`[webhook] OpenAI error: ${openaiResponse.status} ${errText}`);
+      return;
+    }
+
+    const result = await openaiResponse.json();
+    const aiReply = result.choices?.[0]?.message?.content?.trim();
+
+    if (!aiReply) {
+      console.log(`[webhook] OpenAI returned empty response`);
+      return;
+    }
+
+    // Resolve phone_number_id for sending
+    let phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
+    const { data: waAccount } = await supabase
+      .from("whatsapp_accounts")
+      .select("phone_number_id")
+      .eq("tenant_id", tenantId)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+    if (waAccount?.phone_number_id) phoneNumberId = waAccount.phone_number_id;
+
+    // Send via WhatsApp
+    const GRAPH_API = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
+    const waResponse = await fetch(GRAPH_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: phone,
+        type: "text",
+        text: { body: aiReply },
+      }),
+    });
+
+    const waResult = await waResponse.json();
+    if (!waResponse.ok) {
+      console.error(`[webhook] Failed to send AI reply:`, waResult);
+      return;
+    }
+
+    const wamid = waResult.messages?.[0]?.id;
+
+    // Save the AI reply as outbound message
+    await supabase.from("whatsapp_messages").insert({
+      tenant_id: tenantId,
+      customer_id: customerId,
+      phone,
+      direction: "outbound",
+      message_type: "text",
+      content: aiReply,
+      wamid,
+      status: "sent",
+      metadata: { ai_generated: true },
+    });
+
+    console.log(`[webhook] AI auto-reply sent to ${phone}`);
+  } catch (err) {
+    console.error(`[webhook] AI auto-respond error:`, err);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -219,7 +371,6 @@ Deno.serve(async (req) => {
                   if (mediaId) {
                     mediaUrl = await downloadAndStoreMedia(mediaId, mimeType, tenantId);
                   }
-                  // Store filename for documents
                   if (msgType === "document" && mediaData?.filename) {
                     content = content || mediaData.filename;
                   }
@@ -251,7 +402,7 @@ Deno.serve(async (req) => {
                 const { data: newCustomer, error: createError } = await supabase
                   .from("customers")
                   .insert({ name: customerName, phone, tenant_id: tenantId, is_lead: true })
-                  .select("id, tenant_id, name, phone")
+                  .select("id, tenant_id, name, phone, custom_attributes")
                   .single();
                 if (createError) { console.error("[webhook] Create customer error:", createError); continue; }
                 customer = newCustomer;
@@ -273,6 +424,9 @@ Deno.serve(async (req) => {
 
               await markRepliedActivity(customer!.id, tenantId);
               console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
+
+              // Try AI auto-response (async, don't block webhook)
+              tryAutoRespondWithAI(tenantId, customer!.id, phone, customer!.custom_attributes || null);
             }
           }
         }

@@ -30,12 +30,10 @@ import { AutomationTemplatesList } from "@/components/automations/AutomationTemp
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
-  draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
-  sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
-  scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
-  running: { label: "Em execução", icon: Zap, className: "bg-blue-100 text-blue-700" },
+  draft: { label: "Inativa", icon: FileText, className: "bg-muted text-muted-foreground" },
+  running: { label: "Ativa", icon: Zap, className: "bg-green-100 text-green-700" },
+  paused: { label: "Pausada", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
   failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
-  finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
 
 const datePresets = [
@@ -80,6 +78,7 @@ export default function Automations() {
         .from("campaigns")
         .select("*")
         .eq("tenant_id", currentTenant.id)
+        .eq("kind", "automation")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -136,7 +135,8 @@ export default function Automations() {
         type: newCampaign.type,
         status: "draft",
         trigger_type: newCampaign.trigger,
-      }).select("id").single();
+        kind: "automation",
+      } as any).select("id").single();
       if (error) throw error;
       return data;
     },
@@ -164,8 +164,8 @@ export default function Automations() {
 
   const toggleAutomation = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
-      const newStatus = isActive ? "draft" : "scheduled";
+      const isActive = currentStatus === "running";
+      const newStatus = isActive ? "draft" : "running";
       const { error } = await supabase
         .from("campaigns")
         .update({ status: newStatus })
@@ -368,7 +368,7 @@ export default function Automations() {
                       </Badge>
                       <Switch
                         className="scale-75"
-                        checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                        checked={c.status === "running"}
                         onCheckedChange={() => toggleAutomation.mutate({ id: c.id, currentStatus: c.status })}
                       />
                     </div>

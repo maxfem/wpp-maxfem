@@ -413,6 +413,7 @@ Deno.serve(async (req) => {
     const { data: campaigns, error: campErr } = await supabase
       .from("campaigns")
       .select("*")
+      .eq("kind", "campaign")
       .eq("status", "scheduled")
       .lte("scheduled_at", new Date().toISOString());
 

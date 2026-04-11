@@ -35,9 +35,9 @@ import { cn } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
-  sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
   scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
-  running: { label: "Em execução", icon: Zap, className: "bg-blue-100 text-blue-700" },
+  sending: { label: "Enviando", icon: Zap, className: "bg-blue-100 text-blue-700" },
+  sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
   failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
   finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };
@@ -84,6 +84,7 @@ export default function Campaigns() {
         .from("campaigns")
         .select("*")
         .eq("tenant_id", currentTenant.id)
+        .eq("kind", "campaign")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -138,7 +139,8 @@ export default function Campaigns() {
         name: newCampaign.name,
         type: newCampaign.type,
         status: "draft",
-      });
+        kind: "campaign",
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -182,7 +184,7 @@ export default function Campaigns() {
 
   const toggleCampaign = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      const isActive = currentStatus === "scheduled" || currentStatus === "sent" || currentStatus === "running";
+      const isActive = currentStatus === "scheduled" || currentStatus === "sending" || currentStatus === "sent";
       const newStatus = isActive ? "draft" : "scheduled";
       const { error } = await supabase
         .from("campaigns")
@@ -417,7 +419,7 @@ export default function Campaigns() {
                       </Badge>
                       <Switch
                         className="scale-75"
-                        checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                        checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent"}
                         onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
                       />
                     </div>
@@ -475,7 +477,7 @@ export default function Campaigns() {
                       <TableCell className="text-right">
                         <Switch
                           className="scale-75"
-                          checked={c.status === "scheduled" || c.status === "sent" || c.status === "running"}
+                          checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent"}
                           onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
                         />
                       </TableCell>

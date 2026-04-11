@@ -79,7 +79,7 @@ function CopilotTab({
 }) {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
-  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
   const [toneOverride, setToneOverride] = useState("default");
   const [extraContext, setExtraContext] = useState("");
   const [suggestion, setSuggestion] = useState("");
@@ -104,7 +104,7 @@ function CopilotTab({
   // Load per-conversation settings from customer attributes
   useEffect(() => {
     const attrs = customer?.custom_attributes || {};
-    setAiEnabled(attrs.ai_enabled === true);
+    setAiEnabled(attrs.ai_enabled !== false);
     setToneOverride(attrs.ai_tone || "default");
     setExtraContext(attrs.ai_context || "");
   }, [customer?.id]);

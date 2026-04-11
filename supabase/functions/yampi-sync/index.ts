@@ -517,12 +517,23 @@ Deno.serve(async (req) => {
         const cfg = int.config as any;
         if (!cfg?.alias || !cfg?.user_token || !cfg?.user_secret_key) continue;
         const syncSettings = int.sync_settings as any;
-        if (syncSettings?.abandoned_carts === false) continue;
         try {
-          const synced = await syncCarts(supabase, int.tenant_id, cfg);
-          cronResults.push({ tenant_id: int.tenant_id, synced });
+          let ordersSynced = 0;
+          let cartsSynced = 0;
+
+          // Sync orders first (triggers pix, boleto, etc.)
+          if (syncSettings?.orders !== false) {
+            ordersSynced = await syncOrders(supabase, int.tenant_id, cfg);
+          }
+
+          // Then sync carts (triggers cart_abandoned)
+          if (syncSettings?.abandoned_carts !== false) {
+            cartsSynced = await syncCarts(supabase, int.tenant_id, cfg);
+          }
+
+          cronResults.push({ tenant_id: int.tenant_id, orders: ordersSynced, carts: cartsSynced });
         } catch (err) {
-          console.error(`Cron cart sync error for tenant ${int.tenant_id}:`, err);
+          console.error(`Cron sync error for tenant ${int.tenant_id}:`, err);
           cronResults.push({ tenant_id: int.tenant_id, error: String(err) });
         }
       }

@@ -354,6 +354,7 @@ export type Database = {
           avg_ticket: number | null
           created_at: string
           custom_attributes: Json | null
+          document: string | null
           email: string | null
           id: string
           is_lead: boolean | null
@@ -374,6 +375,7 @@ export type Database = {
           avg_ticket?: number | null
           created_at?: string
           custom_attributes?: Json | null
+          document?: string | null
           email?: string | null
           id?: string
           is_lead?: boolean | null
@@ -394,6 +396,7 @@ export type Database = {
           avg_ticket?: number | null
           created_at?: string
           custom_attributes?: Json | null
+          document?: string | null
           email?: string | null
           id?: string
           is_lead?: boolean | null
@@ -569,36 +572,60 @@ export type Database = {
       }
       orders: {
         Row: {
+          carrier: string | null
           created_at: string
           customer_id: string
+          delivery_estimate: string | null
           external_id: string | null
           id: string
+          items_summary: Json | null
           mapped_status: string | null
+          order_number: string | null
+          payment_summary: Json | null
           status: string
+          status_alias: string | null
           tenant_id: string
           total: number
+          tracking_code: string | null
+          tracking_url: string | null
           updated_at: string
         }
         Insert: {
+          carrier?: string | null
           created_at?: string
           customer_id: string
+          delivery_estimate?: string | null
           external_id?: string | null
           id?: string
+          items_summary?: Json | null
           mapped_status?: string | null
+          order_number?: string | null
+          payment_summary?: Json | null
           status?: string
+          status_alias?: string | null
           tenant_id: string
           total?: number
+          tracking_code?: string | null
+          tracking_url?: string | null
           updated_at?: string
         }
         Update: {
+          carrier?: string | null
           created_at?: string
           customer_id?: string
+          delivery_estimate?: string | null
           external_id?: string | null
           id?: string
+          items_summary?: Json | null
           mapped_status?: string | null
+          order_number?: string | null
+          payment_summary?: Json | null
           status?: string
+          status_alias?: string | null
           tenant_id?: string
           total?: number
+          tracking_code?: string | null
+          tracking_url?: string | null
           updated_at?: string
         }
         Relationships: [

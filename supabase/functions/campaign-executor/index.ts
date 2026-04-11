@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
         // Fetch template from DB to detect variables AND get sample_values mappings
         const { data: templateRecord } = await supabase
           .from("message_templates")
-          .select("body, header_type, header_content, sample_values")
+          .select("body, header_type, header_content, sample_values, buttons")
           .eq("name", templateName)
           .eq("tenant_id", campaign.tenant_id)
           .limit(1)

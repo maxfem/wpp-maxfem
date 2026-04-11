@@ -283,7 +283,11 @@ export default function Chat() {
               />
               <ChatInput
                 onSend={(msg) => sendMutation.mutate(msg)}
-                disabled={sendMutation.isPending}
+                onSendMedia={(mediaType, mediaUrl, caption, filename) =>
+                  sendMediaMutation.mutate({ mediaType, mediaUrl, caption, filename })
+                }
+                disabled={sendMutation.isPending || sendMediaMutation.isPending}
+                tenantId={tenantId}
               />
             </>
           )}

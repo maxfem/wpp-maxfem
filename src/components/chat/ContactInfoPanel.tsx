@@ -84,6 +84,10 @@ function CopilotTab({
   const [extraContext, setExtraContext] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAiEnabled, setSavedAiEnabled] = useState(true);
+  const [savedTone, setSavedTone] = useState("default");
+  const [savedContext, setSavedContext] = useState("");
 
   const { data: openaiIntegration } = useQuery({
     queryKey: ["integration-openai", currentTenant?.id],

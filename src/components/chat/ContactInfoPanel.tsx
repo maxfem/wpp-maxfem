@@ -638,7 +638,7 @@ export function ContactInfoPanel({ conversation, messages, customer, orders = []
         </TabsContent>
 
         <TabsContent value="copilot" className="flex-1 mt-0 overflow-hidden">
-          <CopilotTab conversation={conversation} messages={messages} customer={customer} />
+          <CopilotTab key={conversation.phoneKey} conversation={conversation} messages={messages} customer={customer} />
         </TabsContent>
       </Tabs>
     </div>

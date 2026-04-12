@@ -2,30 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 99%;
-    --foreground: 220 14% 10%;
+    --background: 0 0% 100%;
+    --foreground: 240 29% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 14% 10%;
+    --card-foreground: 240 29% 14%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 14% 10%;
+    --popover-foreground: 240 29% 14%;
 
-    --primary: 220 72% 50%;
+    --primary: 340 85% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 14% 30%;
+    --secondary: 335 88% 94%;
+    --secondary-foreground: 335 76% 27%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 50%;
+    --muted: 240 20% 96%;
+    --muted-foreground: 240 8% 59%;
 
-    --accent: 220 14% 94%;
-    --accent-foreground: 220 14% 10%;
+    --accent: 335 88% 94%;
+    --accent-foreground: 340 85% 55%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -39,27 +39,27 @@
     --info: 200 72% 50%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 220 72% 50%;
+    --border: 240 12% 91%;
+    --input: 240 12% 91%;
+    --ring: 340 85% 55%;
 
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 10% 40%;
-    --sidebar-primary: 220 72% 50%;
+    --sidebar-foreground: 240 10% 32%;
+    --sidebar-primary: 340 85% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 96%;
-    --sidebar-accent-foreground: 220 14% 10%;
-    --sidebar-border: 220 13% 93%;
-    --sidebar-ring: 220 72% 50%;
-    --sidebar-muted: 220 10% 60%;
+    --sidebar-accent: 335 88% 94%;
+    --sidebar-accent-foreground: 340 85% 55%;
+    --sidebar-border: 240 12% 93%;
+    --sidebar-ring: 340 85% 55%;
+    --sidebar-muted: 240 8% 59%;
 
-    --chart-1: 220 72% 50%;
-    --chart-2: 142 72% 40%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 280 65% 55%;
-    --chart-5: 0 72% 51%;
+    --chart-1: 340 85% 55%;
+    --chart-2: 335 87% 81%;
+    --chart-3: 340 73% 44%;
+    --chart-4: 335 76% 27%;
+    --chart-5: 270 40% 55%;
   }
 
   * {
@@ -69,6 +69,10 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Poppins', 'Inter', system-ui, sans-serif;
   }
 }
 

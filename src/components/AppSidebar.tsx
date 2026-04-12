@@ -9,10 +9,10 @@ import {
   Store,
   ChevronDown,
   LogOut,
-  Layers,
   Zap,
   List,
 } from "lucide-react";
+import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -95,12 +95,10 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Layers className="h-4 w-4 text-primary-foreground" />
-          </div>
+          <img src={logoMaxfem} alt="Maxfem" className="h-8" />
           {!collapsed && (
-            <span className="text-lg font-bold tracking-tight text-foreground">
-              Martz
+            <span className="text-lg font-heading font-bold tracking-tight text-foreground">
+              Maxfem
             </span>
           )}
         </div>

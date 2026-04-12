@@ -566,11 +566,11 @@ export default function Lists() {
           )}
         </div>
 
-        {/* CSV Import Dialog */}
+        {/* Import Dialog */}
         <Dialog open={csvOpen} onOpenChange={setCsvOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Importar CSV</DialogTitle>
+              <DialogTitle>Importar Contatos</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -584,12 +584,16 @@ export default function Lists() {
               <p className="text-sm text-muted-foreground">
                 O arquivo deve conter as colunas: <strong>nome</strong> (obrigatório), email, telefone.
               </p>
+              <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="w-full">
+                <Download className="h-4 w-4 mr-2" />
+                Baixar modelo Excel
+              </Button>
               <Input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) handleCsvUpload(file);
+                  if (file) handleFileUpload(file);
                 }}
               />
             </div>

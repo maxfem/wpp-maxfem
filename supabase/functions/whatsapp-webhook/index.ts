@@ -154,16 +154,59 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
       const d = detail?.data;
       if (!d) continue;
 
+      // Try tracking from order transport volumes
       const volumes = d.transporte?.volumes || [];
-      const trackingCode = volumes[0]?.codigoRastreamento || null;
-      const carrier = d.transporte?.contato?.nome || null;
+      let trackingCode = volumes[0]?.codigoRastreamento || null;
+      let carrier = d.transporte?.contato?.nome || null;
+      let trackingUrl: string | null = null;
+
+      // If no tracking on order, try fetching from linked NFe (nota fiscal)
+      if (!trackingCode && d.notaFiscal?.id) {
+        try {
+          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (nfeRes.ok) {
+            const nfeData = await nfeRes.json();
+            const nfe = nfeData?.data;
+            const nfeVolumes = nfe?.transporte?.volumes || [];
+            trackingCode = nfeVolumes[0]?.codigoRastreamento || trackingCode;
+            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
+          }
+        } catch (e) {
+          console.warn("[webhook] NFe tracking fetch error:", e);
+        }
+      }
+
+      // Also check linked logistic objects if available
+      if (!trackingCode) {
+        try {
+          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (logRes.ok) {
+            const logData = await logRes.json();
+            const logItems = logData?.data || [];
+            if (logItems.length > 0) {
+              trackingCode = logItems[0]?.codigoRastreamento || logItems[0]?.rastreamento?.codigo || trackingCode;
+              trackingUrl = logItems[0]?.linkRastreamento || logItems[0]?.rastreamento?.link || null;
+            }
+          }
+        } catch (e) {
+          console.warn("[webhook] Logistics tracking fetch error:", e);
+        }
+      }
+
+      if (trackingCode && !trackingUrl) {
+        trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      }
 
       detailedOrders.push({
         order_number: d.numero,
         total: d.total,
         date: d.data,
         tracking_code: trackingCode,
-        tracking_url: trackingCode ? `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}` : null,
+        tracking_url: trackingUrl,
         carrier,
         payments: (d.parcelas || []).map((p: any) => ({ value: p.valor, due_date: p.dataVencimento, method: p.observacoes || "" })),
         items: (d.itens || []).map((i: any) => ({ name: i.descricao, quantity: i.quantidade, value: i.valor })),
@@ -418,12 +461,12 @@ async function tryAutoRespondWithAI(
     let orderInstructions = "";
     if (hasOrderTools) {
       orderInstructions = `\nVocê tem acesso a funções para consultar pedidos do cliente pelo CPF.
-${hasBling ? "PRIORIZE lookup_orders_bling para dados em tempo real do ERP (rastreio atualizado)." : ""}
-${hasYampi ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
+${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling." : ""}
+${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio ao cliente.
-- Formate: número do pedido, status, rastreio (se houver), transportadora, valor.
+- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) ao cliente.
+- Formate: número do pedido, status, rastreio (se houver), link de rastreio, transportadora, valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações.`;
     }

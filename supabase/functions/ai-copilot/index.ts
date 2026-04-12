@@ -105,7 +105,6 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
     }
 
-    // Format CPF for Bling search
     const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 
     // Search contact by CPF
@@ -158,9 +157,52 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       const d = detail?.data;
       if (!d) continue;
 
+      // Try tracking from order transport volumes
       const volumes = d.transporte?.volumes || [];
-      const trackingCode = volumes[0]?.codigoRastreamento || null;
-      const carrier = d.transporte?.contato?.nome || null;
+      let trackingCode = volumes[0]?.codigoRastreamento || null;
+      let carrier = d.transporte?.contato?.nome || null;
+      let trackingUrl: string | null = null;
+
+      // If no tracking on order, try fetching from linked NFe (nota fiscal)
+      if (!trackingCode && d.notaFiscal?.id) {
+        try {
+          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (nfeRes.ok) {
+            const nfeData = await nfeRes.json();
+            const nfe = nfeData?.data;
+            const nfeVolumes = nfe?.transporte?.volumes || [];
+            trackingCode = nfeVolumes[0]?.codigoRastreamento || trackingCode;
+            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
+          }
+        } catch (e) {
+          console.warn("[copilot] NFe tracking fetch error:", e);
+        }
+      }
+
+      // Also check linked logistic objects if available
+      if (!trackingCode) {
+        try {
+          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (logRes.ok) {
+            const logData = await logRes.json();
+            const logItems = logData?.data || [];
+            if (logItems.length > 0) {
+              trackingCode = logItems[0]?.codigoRastreamento || logItems[0]?.rastreamento?.codigo || trackingCode;
+              trackingUrl = logItems[0]?.linkRastreamento || logItems[0]?.rastreamento?.link || null;
+            }
+          }
+        } catch (e) {
+          console.warn("[copilot] Logistics tracking fetch error:", e);
+        }
+      }
+
+      if (trackingCode && !trackingUrl) {
+        trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      }
 
       const payments = (d.parcelas || []).map((p: any) => ({
         value: p.valor,
@@ -179,7 +221,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
         total: d.total,
         date: d.data,
         tracking_code: trackingCode,
-        tracking_url: trackingCode ? `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}` : null,
+        tracking_url: trackingUrl,
         carrier,
         payments,
         items,
@@ -343,11 +385,11 @@ serve(async (req) => {
 
       orderInstructions = `\n\nVocê tem acesso às seguintes funções para consultar pedidos: ${toolNames.join(", ")}.
 Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras, solicite o CPF.
-${hasBling ? "PRIORIZE a função lookup_orders_bling para obter dados mais atualizados (rastreio em tempo real)." : ""}
-${hasYampi ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
+${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling. Nunca use lookup_orders_by_cpf para rastreio se o Bling estiver disponível." : ""}
+${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio de forma clara e direta.
+- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) de forma clara e direta.
 - Se houver dados de pagamento (payments), informe o método e status do pagamento.
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.

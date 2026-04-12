@@ -174,6 +174,20 @@ export default function Lists() {
     },
   });
 
+  const renameList = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase.from("contact_lists").update({ name }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+      setRenamingList(null);
+      setRenameValue("");
+      toast.success("Lista renomeada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const handleDownloadTemplate = useCallback(() => {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([

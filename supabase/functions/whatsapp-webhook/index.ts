@@ -81,6 +81,36 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
   });
 }
 
+// ===== Auto-refresh Bling token if expired =====
+async function refreshBlingToken(integrationId: string, cfg: any): Promise<string | null> {
+  const clientId = Deno.env.get("BLING_CLIENT_ID");
+  const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
+  if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
+
+  try {
+    const credentials = btoa(`${clientId}:${clientSecret}`);
+    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
+    });
+    const data = await res.json();
+    if (!res.ok) { console.error("[webhook] Bling refresh failed:", data); return null; }
+
+    const now = new Date();
+    const newConfig = {
+      ...cfg,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      access_expires_at: new Date(now.getTime() + (data.expires_in || 21600) * 1000).toISOString(),
+      refresh_expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    await supabase.from("integrations").update({ config: newConfig, sync_error: null, updated_at: now.toISOString() }).eq("id", integrationId);
+    console.log("[webhook] Bling token refreshed successfully");
+    return data.access_token;
+  } catch (e) { console.error("[webhook] Bling refresh error:", e); return null; }
+}
+
 // ===== Bling V3 API lookup: query orders in real-time by CPF =====
 async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string> {
   const cleanCpf = cpf.replace(/\D/g, "");
@@ -91,7 +121,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
   try {
     const { data: blingIntegration } = await supabase
       .from("integrations")
-      .select("config")
+      .select("id, config")
       .eq("tenant_id", tenantId)
       .eq("provider", "bling")
       .eq("is_active", true)
@@ -102,16 +132,36 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
     }
 
     const cfg = blingIntegration.config as any;
-    const accessToken = cfg?.access_token;
+    let accessToken = cfg?.access_token;
     if (!accessToken) {
       return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
     }
 
+    // Check if token is expired or about to expire
+    const expiresAt = cfg.access_expires_at ? new Date(cfg.access_expires_at).getTime() : 0;
+    if (expiresAt < Date.now() + 5 * 60 * 1000) {
+      console.log("[webhook] Bling token expired, refreshing...");
+      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
+      if (newToken) accessToken = newToken;
+    }
+
     const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 
-    const contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+    let contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
+
+    // Auto-retry with refresh on 401
+    if (contactRes.status === 401) {
+      console.log("[webhook] Bling 401, attempting token refresh...");
+      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
+      if (newToken) {
+        accessToken = newToken;
+        contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        });
+      }
+    }
 
     if (!contactRes.ok) {
       console.error("[webhook] Bling contact search error:", contactRes.status);

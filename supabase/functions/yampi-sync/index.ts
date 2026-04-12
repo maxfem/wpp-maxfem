@@ -191,7 +191,7 @@ const STATUS_MAP: Record<string, string> = {
 
 async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
-  const orders = await yampiGetAll(alias, "orders?include=shipments,payments,status,items", user_token, user_secret_key);
+  const orders = await yampiGetAll(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key);
 
   const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes, total_orders", { tenant_id });
 
@@ -219,25 +219,36 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
 
     const orderStatus = o.status?.data?.alias || "pending";
     const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;
-    const isPix = o.payments?.data?.some((p: any) =>
-      p.payment_method?.alias === "pix" && p.status !== "paid"
-    );
+    // Yampi uses "transactions" (not "payments") — transactions.data is a single object or array
+    const txData = o.transactions?.data;
+    const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+    const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && tx.status !== "captured");
 
-    // Extract tracking/shipping data — Yampi uses track_code/track_url at top level
+    // Extract payment summary from transactions
+    const paymentSummary = txList.map((tx: any) => ({
+      method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
+      alias: tx.payment?.data?.alias || "",
+      is_pix: tx.payment?.data?.is_pix || false,
+      is_billet: tx.payment?.data?.is_billet || false,
+      is_credit_card: tx.payment?.data?.is_credit_card || false,
+      status: tx.status || "N/A",
+      value: tx.amount || tx.buyer_amount || 0,
+      installments: tx.installments || 1,
+    }));
+
+    // Extract tracking/shipping data
     const trackingCode = o.track_code || o.tracking_code || null;
     const trackingUrl = o.track_url || o.tracking_url || null;
     const carrier = o.shipment_service || o.carrier || null;
-    const deliveryEstimate = o.date_delivery || null;
-    
+    let deliveryEstimate: string | null = null;
+    if (o.date_delivery) {
+      if (typeof o.date_delivery === "object" && o.date_delivery?.date) {
+        deliveryEstimate = String(o.date_delivery.date).substring(0, 19);
+      } else if (typeof o.date_delivery === "string") {
+        deliveryEstimate = o.date_delivery;
+      }
+    }
 
-    // Extract payment summary
-    const paymentSummary = (o.payments?.data || []).map((p: any) => ({
-      method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-      status: p.status || "N/A",
-      value: p.value,
-    }));
-
-    // Extract items summary
     const itemsSummary = (o.items?.data || []).slice(0, 10).map((i: any) => ({
       name: i.name || i.sku?.data?.title || "Produto",
       quantity: i.quantity,
@@ -271,16 +282,18 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   }
 
   // For orders missing tracking or payment, fetch individual details
+  // Include pending/waiting_payment to get payment method (needed for pix/boleto triggers)
   const needsEnrichment = orders.filter((o: any) => {
     const status = o.status?.data?.alias || "";
     const hasTracking = o.track_code;
-    const hasPayments = (o.payments?.data || []).length > 0 && o.payments.data.some((p: any) => p.value);
-    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid"].includes(status) && (!hasTracking || !hasPayments);
+    const txData = o.transactions?.data;
+    const hasTransactions = txData && (Array.isArray(txData) ? txData.length > 0 : !!txData.payment);
+    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasTransactions);
   });
 
-  for (const o of needsEnrichment.slice(0, 50)) {
+  for (const o of needsEnrichment.slice(0, 100)) {
     try {
-      const detailRes = await yampiGet(alias, `orders/${o.id}?include=payments`, user_token, user_secret_key);
+      const detailRes = await yampiGet(alias, `orders/${o.id}?include=transactions.payment`, user_token, user_secret_key);
       const d = detailRes?.data;
       if (!d) continue;
 
@@ -288,13 +301,24 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       const trackUrl = d.track_url || null;
       const trackCarrier = d.shipment_service || null;
 
-      // Extract payment from detail if missing
-      const detailPayments = (d.payments?.data || []).map((p: any) => ({
-        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-        status: p.status || "N/A",
-        value: p.value,
-        installments: p.installments || 1,
+      // Extract transaction/payment from detail (Yampi uses "transactions")
+      const txData = d.transactions?.data;
+      const txListDetail = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+      const detailPayments = txListDetail.map((tx: any) => ({
+        method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
+        alias: tx.payment?.data?.alias || "",
+        is_pix: tx.payment?.data?.is_pix || false,
+        is_billet: tx.payment?.data?.is_billet || false,
+        is_credit_card: tx.payment?.data?.is_credit_card || false,
+        status: tx.status || "N/A",
+        value: tx.amount || tx.buyer_amount || 0,
+        installments: tx.installments || 1,
       }));
+
+      // Write enriched transaction data back to the orders array for trigger matching
+      if (txListDetail.length > 0 && !o.transactions?.data) {
+        o.transactions = { data: txListDetail.length === 1 ? txListDetail[0] : txListDetail };
+      }
 
       const extId = existingOrderMap.get(`yampi_${o.id}`);
       if (extId) {
@@ -309,7 +333,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
         }
         if (Object.keys(updateData).length > 0) {
           await supabase.from("orders").update(updateData).eq("id", extId);
-          console.log(`[sync] Enriched order yampi_${o.id}: tracking=${trackCode}, payments=${detailPayments.length}`);
+          console.log(`[sync] Enriched order yampi_${o.id}: tracking=${trackCode}, payments=${detailPayments.length}, method=${detailPayments[0]?.alias || "?"}`);
         }
       }
     } catch (e) {
@@ -351,9 +375,15 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       if (!customerId) continue;
 
       const orderStatus = o.status?.data?.alias || "pending";
-      const payments = o.payments?.data || [];
-      const paymentMethod = payments[0]?.payment_method?.alias || "";
-      const paymentStatus = payments[0]?.status || "";
+      // Use transactions data (Yampi uses "transactions" not "payments")
+      const txData = o.transactions?.data;
+      const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+      const tx = txList[0];
+      const isPix = tx?.payment?.data?.is_pix || false;
+      const isBillet = tx?.payment?.data?.is_billet || false;
+      const isCreditCard = tx?.payment?.data?.is_credit_card || false;
+      const txStatus = tx?.status || "";
+      const paymentAlias = tx?.payment?.data?.alias || "";
 
       // Determine which triggers this order matches
       const matchedTriggers: string[] = [];
@@ -361,23 +391,23 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       // order_created — any new order
       matchedTriggers.push("order_created");
 
-      // order_created_pix — Pix payment pending
-      if (paymentMethod === "pix" && paymentStatus !== "paid") {
+      // order_created_pix — Pix payment pending (not yet captured/paid)
+      if (isPix && txStatus !== "captured" && orderStatus !== "paid") {
         matchedTriggers.push("order_created_pix");
       }
 
       // order_created_boleto — Boleto payment pending
-      if ((paymentMethod === "boleto" || paymentMethod === "bank_slip") && paymentStatus !== "paid") {
+      if (isBillet && txStatus !== "captured" && orderStatus !== "paid") {
         matchedTriggers.push("order_created_boleto");
       }
 
       // order_paid — paid orders
-      if (orderStatus === "paid" || paymentStatus === "paid") {
+      if (orderStatus === "paid" || txStatus === "captured") {
         matchedTriggers.push("order_paid");
       }
 
       // order_rejected_card — card rejected
-      if (paymentMethod === "credit_card" && (paymentStatus === "refused" || paymentStatus === "rejected" || paymentStatus === "cancelled")) {
+      if (isCreditCard && (txStatus === "refused" || txStatus === "rejected" || txStatus === "cancelled")) {
         matchedTriggers.push("order_rejected_card");
       }
 
@@ -402,7 +432,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       }
 
       // first_purchase — first order paid
-      if ((orderStatus === "paid" || paymentStatus === "paid") && customerId) {
+      if ((orderStatus === "paid" || txStatus === "captured") && customerId) {
         const cust = allCustomers.find((c: any) => c.id === customerId);
         const totalOrders = (cust as any)?.total_orders ?? 0;
         if (totalOrders <= 1) {
@@ -421,7 +451,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
             yampi_order_id: o.id,
             order_number: String(o.number || o.id),
             total: o.value_total || 0,
-            payment_method: paymentMethod,
+            payment_method: paymentAlias,
             status: orderStatus,
           },
           status: "pending",

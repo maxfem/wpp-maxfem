@@ -50,6 +50,8 @@ export default function Lists() {
   const [newList, setNewList] = useState({ name: "", description: "", type: "manual" });
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
+  const [renamingList, setRenamingList] = useState<ContactList | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const { data: lists = [], isLoading } = useQuery({
     queryKey: ["contact_lists", currentTenant?.id],
@@ -170,6 +172,20 @@ export default function Lists() {
       queryClient.invalidateQueries({ queryKey: ["list_members"] });
       toast.success("Contato removido!");
     },
+  });
+
+  const renameList = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase.from("contact_lists").update({ name }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+      setRenamingList(null);
+      setRenameValue("");
+      toast.success("Lista renomeada!");
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const handleDownloadTemplate = useCallback(() => {
@@ -539,6 +555,10 @@ export default function Lists() {
                           <Edit className="h-3.5 w-3.5 mr-2" />
                           Ver contatos
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
+                          <Edit className="h-3.5 w-3.5 mr-2" />
+                          Renomear
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}
@@ -596,6 +616,39 @@ export default function Lists() {
                   if (file) handleFileUpload(file);
                 }}
               />
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Rename Dialog */}
+        <Dialog open={!!renamingList} onOpenChange={(open) => { if (!open) setRenamingList(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Renomear lista</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Novo nome</Label>
+                <Input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder="Nome da lista"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && renameValue.trim() && renamingList) {
+                      renameList.mutate({ id: renamingList.id, name: renameValue.trim() });
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setRenamingList(null)}>Cancelar</Button>
+                <Button
+                  disabled={!renameValue.trim() || renameList.isPending}
+                  onClick={() => renamingList && renameList.mutate({ id: renamingList.id, name: renameValue.trim() })}
+                >
+                  Salvar
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

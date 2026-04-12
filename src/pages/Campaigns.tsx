@@ -185,7 +185,7 @@ export default function Campaigns() {
 
   const toggleCampaign = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      const isActive = currentStatus === "scheduled" || currentStatus === "sending" || currentStatus === "sent";
+      const isActive = currentStatus === "scheduled" || currentStatus === "sending" || currentStatus === "sent" || currentStatus === "running";
       const newStatus = isActive ? "draft" : "scheduled";
       const { error } = await supabase
         .from("campaigns")

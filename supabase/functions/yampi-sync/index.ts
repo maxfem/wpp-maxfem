@@ -280,7 +280,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
 
   for (const o of needsEnrichment.slice(0, 100)) {
     try {
-      const detailRes = await yampiGet(alias, `orders/${o.id}?include=payments`, user_token, user_secret_key);
+      const detailRes = await yampiGet(alias, `orders/${o.id}?include=transactions.payment`, user_token, user_secret_key);
       const d = detailRes?.data;
       if (!d) continue;
 
@@ -288,19 +288,23 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       const trackUrl = d.track_url || null;
       const trackCarrier = d.shipment_service || null;
 
-      // Extract payment from detail
-      const rawPayments = d.payments?.data || [];
-      const detailPayments = rawPayments.map((p: any) => ({
-        method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-        alias: p.payment_method?.alias || "",
-        status: p.status || "N/A",
-        value: p.value,
-        installments: p.installments || 1,
+      // Extract transaction/payment from detail (Yampi uses "transactions")
+      const txData = d.transactions?.data;
+      const txListDetail = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+      const detailPayments = txListDetail.map((tx: any) => ({
+        method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
+        alias: tx.payment?.data?.alias || "",
+        is_pix: tx.payment?.data?.is_pix || false,
+        is_billet: tx.payment?.data?.is_billet || false,
+        is_credit_card: tx.payment?.data?.is_credit_card || false,
+        status: tx.status || "N/A",
+        value: tx.amount || tx.buyer_amount || 0,
+        installments: tx.installments || 1,
       }));
 
-      // Write enriched payment data back to the orders array for trigger matching
-      if (rawPayments.length > 0 && (!o.payments?.data || o.payments.data.length === 0)) {
-        o.payments = { data: rawPayments };
+      // Write enriched transaction data back to the orders array for trigger matching
+      if (txListDetail.length > 0 && !o.transactions?.data) {
+        o.transactions = { data: txListDetail.length === 1 ? txListDetail[0] : txListDetail };
       }
 
       const extId = existingOrderMap.get(`yampi_${o.id}`);

@@ -358,9 +358,15 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       if (!customerId) continue;
 
       const orderStatus = o.status?.data?.alias || "pending";
-      const payments = o.payments?.data || [];
-      const paymentMethod = payments[0]?.payment_method?.alias || "";
-      const paymentStatus = payments[0]?.status || "";
+      // Use transactions data (Yampi uses "transactions" not "payments")
+      const txData = o.transactions?.data;
+      const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+      const tx = txList[0];
+      const isPix = tx?.payment?.data?.is_pix || false;
+      const isBillet = tx?.payment?.data?.is_billet || false;
+      const isCreditCard = tx?.payment?.data?.is_credit_card || false;
+      const txStatus = tx?.status || "";
+      const paymentAlias = tx?.payment?.data?.alias || "";
 
       // Determine which triggers this order matches
       const matchedTriggers: string[] = [];
@@ -368,23 +374,23 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       // order_created — any new order
       matchedTriggers.push("order_created");
 
-      // order_created_pix — Pix payment pending
-      if (paymentMethod === "pix" && paymentStatus !== "paid") {
+      // order_created_pix — Pix payment pending (not yet captured/paid)
+      if (isPix && txStatus !== "captured" && orderStatus !== "paid") {
         matchedTriggers.push("order_created_pix");
       }
 
       // order_created_boleto — Boleto payment pending
-      if ((paymentMethod === "boleto" || paymentMethod === "bank_slip") && paymentStatus !== "paid") {
+      if (isBillet && txStatus !== "captured" && orderStatus !== "paid") {
         matchedTriggers.push("order_created_boleto");
       }
 
       // order_paid — paid orders
-      if (orderStatus === "paid" || paymentStatus === "paid") {
+      if (orderStatus === "paid" || txStatus === "captured") {
         matchedTriggers.push("order_paid");
       }
 
       // order_rejected_card — card rejected
-      if (paymentMethod === "credit_card" && (paymentStatus === "refused" || paymentStatus === "rejected" || paymentStatus === "cancelled")) {
+      if (isCreditCard && (txStatus === "refused" || txStatus === "rejected" || txStatus === "cancelled")) {
         matchedTriggers.push("order_rejected_card");
       }
 
@@ -409,7 +415,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       }
 
       // first_purchase — first order paid
-      if ((orderStatus === "paid" || paymentStatus === "paid") && customerId) {
+      if ((orderStatus === "paid" || txStatus === "captured") && customerId) {
         const cust = allCustomers.find((c: any) => c.id === customerId);
         const totalOrders = (cust as any)?.total_orders ?? 0;
         if (totalOrders <= 1) {

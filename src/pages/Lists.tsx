@@ -619,6 +619,39 @@ export default function Lists() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Rename Dialog */}
+        <Dialog open={!!renamingList} onOpenChange={(open) => { if (!open) setRenamingList(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Renomear lista</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Novo nome</Label>
+                <Input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder="Nome da lista"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && renameValue.trim() && renamingList) {
+                      renameList.mutate({ id: renamingList.id, name: renameValue.trim() });
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setRenamingList(null)}>Cancelar</Button>
+                <Button
+                  disabled={!renameValue.trim() || renameList.isPending}
+                  onClick={() => renamingList && renameList.mutate({ id: renamingList.id, name: renameValue.trim() })}
+                >
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

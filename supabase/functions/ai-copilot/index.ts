@@ -105,7 +105,6 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
     }
 
-    // Format CPF for Bling search
     const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 
     // Search contact by CPF
@@ -158,9 +157,52 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       const d = detail?.data;
       if (!d) continue;
 
+      // Try tracking from order transport volumes
       const volumes = d.transporte?.volumes || [];
-      const trackingCode = volumes[0]?.codigoRastreamento || null;
-      const carrier = d.transporte?.contato?.nome || null;
+      let trackingCode = volumes[0]?.codigoRastreamento || null;
+      let carrier = d.transporte?.contato?.nome || null;
+      let trackingUrl: string | null = null;
+
+      // If no tracking on order, try fetching from linked NFe (nota fiscal)
+      if (!trackingCode && d.notaFiscal?.id) {
+        try {
+          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (nfeRes.ok) {
+            const nfeData = await nfeRes.json();
+            const nfe = nfeData?.data;
+            const nfeVolumes = nfe?.transporte?.volumes || [];
+            trackingCode = nfeVolumes[0]?.codigoRastreamento || trackingCode;
+            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
+          }
+        } catch (e) {
+          console.warn("[copilot] NFe tracking fetch error:", e);
+        }
+      }
+
+      // Also check linked logistic objects if available
+      if (!trackingCode) {
+        try {
+          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (logRes.ok) {
+            const logData = await logRes.json();
+            const logItems = logData?.data || [];
+            if (logItems.length > 0) {
+              trackingCode = logItems[0]?.codigoRastreamento || logItems[0]?.rastreamento?.codigo || trackingCode;
+              trackingUrl = logItems[0]?.linkRastreamento || logItems[0]?.rastreamento?.link || null;
+            }
+          }
+        } catch (e) {
+          console.warn("[copilot] Logistics tracking fetch error:", e);
+        }
+      }
+
+      if (trackingCode && !trackingUrl) {
+        trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      }
 
       const payments = (d.parcelas || []).map((p: any) => ({
         value: p.valor,
@@ -179,7 +221,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
         total: d.total,
         date: d.data,
         tracking_code: trackingCode,
-        tracking_url: trackingCode ? `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}` : null,
+        tracking_url: trackingUrl,
         carrier,
         payments,
         items,

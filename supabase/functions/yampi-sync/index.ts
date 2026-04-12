@@ -434,7 +434,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
             yampi_order_id: o.id,
             order_number: String(o.number || o.id),
             total: o.value_total || 0,
-            payment_method: paymentMethod,
+            payment_method: paymentAlias,
             status: orderStatus,
           },
           status: "pending",

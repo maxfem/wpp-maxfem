@@ -96,11 +96,6 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <img src={logoMaxfem} alt="Maxfem" className="h-8" />
-          {!collapsed && (
-            <span className="text-lg font-heading font-bold tracking-tight text-foreground">
-              Maxfem
-            </span>
-          )}
         </div>
         {!collapsed && currentTenant && (
           <DropdownMenu>

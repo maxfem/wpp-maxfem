@@ -248,7 +248,13 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
       }
 
       if (trackingCode && !trackingUrl) {
-        trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+        if (/^BLI[_-]/i.test(trackingCode)) {
+          trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
+        } else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) {
+          trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
+        } else {
+          trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+        }
       }
 
       detailedOrders.push({

@@ -205,6 +205,7 @@ function CopilotTab({
             direction: m.direction,
             content: m.content,
             message_type: m.message_type,
+            media_url: m.media_url || undefined,
           })),
           conversation_context: extraContext || undefined,
           tone_override: toneOverride !== "default" ? toneOverride : undefined,

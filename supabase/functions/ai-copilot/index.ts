@@ -360,14 +360,51 @@ Tom de voz: ${toneInstructions[tone] || toneInstructions.friendly}
 ${conversation_context ? `\nContexto adicional desta conversa: ${conversation_context}` : ""}
 ${orderInstructions}
 
+Quando o cliente enviar uma imagem, analise o conteúdo da imagem e use-o para contextualizar sua resposta. Descreva o que vê na imagem se for relevante para o atendimento.
+Quando o cliente enviar vídeo ou áudio, reconheça que recebeu a mídia e peça mais detalhes se necessário.
+
 Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente enviar ao cliente. Responda apenas com o texto da sugestão, sem explicações adicionais.`;
 
     const chatMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
-      ...messages.slice(-20).map((m: any) => ({
-        role: m.direction === "inbound" ? "user" : "assistant",
-        content: m.content || `[${m.message_type}]`,
-      })),
+      ...messages.slice(-20).map((m: any) => {
+        const role = m.direction === "inbound" ? "user" : "assistant";
+
+        // Image: use OpenAI vision multimodal format
+        if (m.media_url && m.message_type === "image") {
+          const content: any[] = [
+            { type: "image_url", image_url: { url: m.media_url, detail: "low" } },
+          ];
+          if (m.content) content.push({ type: "text", text: m.content });
+          return { role, content };
+        }
+
+        // Video: include URL as text context
+        if (m.media_url && m.message_type === "video") {
+          return {
+            role,
+            content: `[Vídeo enviado pelo cliente — URL: ${m.media_url}]${m.content ? `\n${m.content}` : ""}`,
+          };
+        }
+
+        // Audio: include URL as text context
+        if (m.media_url && (m.message_type === "audio" || m.message_type === "ptt")) {
+          return {
+            role,
+            content: `[Áudio enviado pelo cliente — URL: ${m.media_url}]${m.content ? `\n${m.content}` : ""}`,
+          };
+        }
+
+        // Document with media
+        if (m.media_url && m.message_type === "document") {
+          return {
+            role,
+            content: `[Documento enviado — URL: ${m.media_url}]${m.content ? `\n${m.content}` : ""}`,
+          };
+        }
+
+        return { role, content: m.content || `[${m.message_type}]` };
+      }),
     ];
 
     const openaiBody: any = {

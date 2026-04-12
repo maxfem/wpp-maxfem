@@ -461,12 +461,12 @@ async function tryAutoRespondWithAI(
     let orderInstructions = "";
     if (hasOrderTools) {
       orderInstructions = `\nVocê tem acesso a funções para consultar pedidos do cliente pelo CPF.
-${hasBling ? "PRIORIZE lookup_orders_bling para dados em tempo real do ERP (rastreio atualizado)." : ""}
-${hasYampi ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
+${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling." : ""}
+${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio ao cliente.
-- Formate: número do pedido, status, rastreio (se houver), transportadora, valor.
+- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) ao cliente.
+- Formate: número do pedido, status, rastreio (se houver), link de rastreio, transportadora, valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações.`;
     }

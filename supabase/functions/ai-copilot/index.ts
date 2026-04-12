@@ -385,11 +385,11 @@ serve(async (req) => {
 
       orderInstructions = `\n\nVocê tem acesso às seguintes funções para consultar pedidos: ${toolNames.join(", ")}.
 Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras, solicite o CPF.
-${hasBling ? "PRIORIZE a função lookup_orders_bling para obter dados mais atualizados (rastreio em tempo real)." : ""}
-${hasYampi ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
+${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling. Nunca use lookup_orders_by_cpf para rastreio se o Bling estiver disponível." : ""}
+${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio de forma clara e direta.
+- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) de forma clara e direta.
 - Se houver dados de pagamento (payments), informe o método e status do pagamento.
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.

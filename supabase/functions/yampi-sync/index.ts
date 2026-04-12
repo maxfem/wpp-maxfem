@@ -278,11 +278,12 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   }
 
   // For orders missing tracking or payment, fetch individual details
+  // Include pending/waiting_payment to get payment method (needed for pix/boleto triggers)
   const needsEnrichment = orders.filter((o: any) => {
     const status = o.status?.data?.alias || "";
     const hasTracking = o.track_code;
     const hasPayments = (o.payments?.data || []).length > 0 && o.payments.data.some((p: any) => p.value);
-    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid"].includes(status) && (!hasTracking || !hasPayments);
+    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasPayments);
   });
 
   for (const o of needsEnrichment.slice(0, 50)) {

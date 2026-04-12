@@ -50,6 +50,8 @@ export default function Lists() {
   const [newList, setNewList] = useState({ name: "", description: "", type: "manual" });
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
+  const [renamingList, setRenamingList] = useState<ContactList | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const { data: lists = [], isLoading } = useQuery({
     queryKey: ["contact_lists", currentTenant?.id],

@@ -286,7 +286,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasPayments);
   });
 
-  for (const o of needsEnrichment.slice(0, 50)) {
+  for (const o of needsEnrichment.slice(0, 100)) {
     try {
       const detailRes = await yampiGet(alias, `orders/${o.id}?include=payments`, user_token, user_secret_key);
       const d = detailRes?.data;
@@ -296,13 +296,20 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       const trackUrl = d.track_url || null;
       const trackCarrier = d.shipment_service || null;
 
-      // Extract payment from detail if missing
-      const detailPayments = (d.payments?.data || []).map((p: any) => ({
+      // Extract payment from detail
+      const rawPayments = d.payments?.data || [];
+      const detailPayments = rawPayments.map((p: any) => ({
         method: p.payment_method?.name || p.payment_method?.alias || "N/A",
+        alias: p.payment_method?.alias || "",
         status: p.status || "N/A",
         value: p.value,
         installments: p.installments || 1,
       }));
+
+      // Write enriched payment data back to the orders array for trigger matching
+      if (rawPayments.length > 0 && (!o.payments?.data || o.payments.data.length === 0)) {
+        o.payments = { data: rawPayments };
+      }
 
       const extId = existingOrderMap.get(`yampi_${o.id}`);
       if (extId) {
@@ -317,7 +324,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
         }
         if (Object.keys(updateData).length > 0) {
           await supabase.from("orders").update(updateData).eq("id", extId);
-          console.log(`[sync] Enriched order yampi_${o.id}: tracking=${trackCode}, payments=${detailPayments.length}`);
+          console.log(`[sync] Enriched order yampi_${o.id}: tracking=${trackCode}, payments=${detailPayments.length}, method=${detailPayments[0]?.alias || "?"}`);
         }
       }
     } catch (e) {

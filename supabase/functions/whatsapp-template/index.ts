@@ -158,9 +158,11 @@ Deno.serve(async (req) => {
         type: "BUTTONS",
         buttons: buttons.map((btn) => {
           if (btn.type === "URL") {
-            const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: btn.url };
-            // If URL contains {{1}}, Meta requires an example value for the dynamic suffix
-            if (btn.url?.includes("{{1}}")) {
+            // Meta requires URL variables to be {{1}} — normalize any {{N}} to {{1}}
+            const normalizedUrl = btn.url?.replace(/\{\{\d+\}\}/g, "{{1}}");
+            const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: normalizedUrl };
+            // If URL contains a variable, Meta requires an example value
+            if (normalizedUrl?.includes("{{1}}")) {
               urlObj.example = ["https://example.com/checkout"];
             }
             return urlObj;

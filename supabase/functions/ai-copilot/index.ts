@@ -449,7 +449,8 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
 - Se houver dados de pagamento (payments), informe o método e status do pagamento.
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
-- Nunca invente informações. Use apenas os dados retornados pela função.`;
+- Nunca invente informações. Use apenas os dados retornados pela função.
+- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. Exemplo correto: "Acompanhe pelo link: https://exemplo.com/rastreio". Exemplo ERRADO: "[clique aqui](https://exemplo.com/rastreio)".`;
     }
 
     const fullSystemPrompt = `${systemPrompt}

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet,
+  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -171,25 +172,49 @@ export default function Lists() {
     },
   });
 
-  const handleCsvUpload = async (file: File) => {
-    if (!currentTenant) return;
+  const handleDownloadTemplate = useCallback(() => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["nome", "email", "telefone"],
+      ["Maria Silva", "maria@email.com", "5511999999999"],
+      ["João Santos", "joao@email.com", "5521988888888"],
+    ]);
+    ws["!cols"] = [{ wch: 25 }, { wch: 30 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Contatos");
+    XLSX.writeFile(wb, "modelo_importacao_contatos.xlsx");
+  }, []);
+
+  const parseFileToRows = async (file: File): Promise<string[][]> => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext === "xlsx" || ext === "xls") {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      return rows.map((r) => r.map((c) => String(c).trim()));
+    }
     const text = await file.text();
-    const lines = text.split("\n").filter(Boolean);
-    if (lines.length < 2) {
-      toast.error("CSV vazio ou sem dados");
+    return text.split("\n").filter(Boolean).map((line) => line.split(",").map((c) => c.trim()));
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!currentTenant) return;
+    const rows = await parseFileToRows(file);
+    if (rows.length < 2) {
+      toast.error("Arquivo vazio ou sem dados");
       return;
     }
-    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const headers = rows[0].map((h) => h.toLowerCase());
     const nameIdx = headers.findIndex((h) => h === "nome" || h === "name");
     const emailIdx = headers.findIndex((h) => h === "email" || h === "e-mail");
     const phoneIdx = headers.findIndex((h) => h === "telefone" || h === "phone" || h === "celular" || h === "whatsapp");
 
     if (nameIdx === -1) {
-      toast.error("Coluna 'nome' não encontrada no CSV");
+      toast.error("Coluna 'nome' não encontrada no arquivo");
       return;
     }
 
-    const listName = csvListName.trim() || file.name.replace(/\.csv$/i, "");
+    const listName = csvListName.trim() || file.name.replace(/\.(csv|xlsx|xls)$/i, "");
     const { data: newListData, error: listError } = await supabase
       .from("contact_lists")
       .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
@@ -198,8 +223,8 @@ export default function Lists() {
     if (listError) { toast.error(listError.message); return; }
 
     let count = 0;
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",").map((c) => c.trim());
+    for (let i = 1; i < rows.length; i++) {
+      const cols = rows[i];
       const name = cols[nameIdx];
       if (!name) continue;
 
@@ -541,11 +566,11 @@ export default function Lists() {
           )}
         </div>
 
-        {/* CSV Import Dialog */}
+        {/* Import Dialog */}
         <Dialog open={csvOpen} onOpenChange={setCsvOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Importar CSV</DialogTitle>
+              <DialogTitle>Importar Contatos</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -559,12 +584,16 @@ export default function Lists() {
               <p className="text-sm text-muted-foreground">
                 O arquivo deve conter as colunas: <strong>nome</strong> (obrigatório), email, telefone.
               </p>
+              <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="w-full">
+                <Download className="h-4 w-4 mr-2" />
+                Baixar modelo Excel
+              </Button>
               <Input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) handleCsvUpload(file);
+                  if (file) handleFileUpload(file);
                 }}
               />
             </div>

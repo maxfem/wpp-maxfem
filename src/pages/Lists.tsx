@@ -555,6 +555,10 @@ export default function Lists() {
                           <Edit className="h-3.5 w-3.5 mr-2" />
                           Ver contatos
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
+                          <Edit className="h-3.5 w-3.5 mr-2" />
+                          Renomear
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}

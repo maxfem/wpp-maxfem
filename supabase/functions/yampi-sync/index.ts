@@ -219,29 +219,21 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
 
     const orderStatus = o.status?.data?.alias || "pending";
     const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;
-    const isPix = o.payments?.data?.some((p: any) =>
-      p.payment_method?.alias === "pix" && p.status !== "paid"
-    );
+    // Yampi uses "transactions" (not "payments") — transactions.data is a single object or array
+    const txData = o.transactions?.data;
+    const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+    const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && tx.status !== "captured");
 
-    // Extract tracking/shipping data — Yampi uses track_code/track_url at top level
-    const trackingCode = o.track_code || o.tracking_code || null;
-    const trackingUrl = o.track_url || o.tracking_url || null;
-    const carrier = o.shipment_service || o.carrier || null;
-    // delivery_estimate can be a JSON object { date: "...", timezone: "...", timezone_type: 3 }
-    let deliveryEstimate: string | null = null;
-    if (o.date_delivery) {
-      if (typeof o.date_delivery === "object" && o.date_delivery?.date) {
-        deliveryEstimate = String(o.date_delivery.date).substring(0, 19);
-      } else if (typeof o.date_delivery === "string") {
-        deliveryEstimate = o.date_delivery;
-      }
-    }
-
-    // Extract payment summary
-    const paymentSummary = (o.payments?.data || []).map((p: any) => ({
-      method: p.payment_method?.name || p.payment_method?.alias || "N/A",
-      status: p.status || "N/A",
-      value: p.value,
+    // Extract payment summary from transactions
+    const paymentSummary = txList.map((tx: any) => ({
+      method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
+      alias: tx.payment?.data?.alias || "",
+      is_pix: tx.payment?.data?.is_pix || false,
+      is_billet: tx.payment?.data?.is_billet || false,
+      is_credit_card: tx.payment?.data?.is_credit_card || false,
+      status: tx.status || "N/A",
+      value: tx.amount || tx.buyer_amount || 0,
+      installments: tx.installments || 1,
     }));
 
     // Extract items summary

@@ -274,8 +274,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const needsEnrichment = orders.filter((o: any) => {
     const status = o.status?.data?.alias || "";
     const hasTracking = o.track_code;
-    const hasPayments = (o.payments?.data || []).length > 0 && o.payments.data.some((p: any) => p.value);
-    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasPayments);
+    const txData = o.transactions?.data;
+    const hasTransactions = txData && (Array.isArray(txData) ? txData.length > 0 : !!txData.payment);
+    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasTransactions);
   });
 
   for (const o of needsEnrichment.slice(0, 100)) {

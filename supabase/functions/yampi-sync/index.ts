@@ -28,7 +28,7 @@ async function yampiGet(alias: string, path: string, token: string, secret: stri
   return res.json();
 }
 
-async function yampiGetAll(alias: string, path: string, token: string, secret: string, limit = 50, maxPages = 40) {
+async function yampiGetAll(alias: string, path: string, token: string, secret: string, limit = 50, maxPages = 200) {
   const allData: any[] = [];
   let page = 1;
   let totalPages = 1;

@@ -191,7 +191,7 @@ const STATUS_MAP: Record<string, string> = {
 
 async function syncOrders(supabase: any, tenant_id: string, config: any) {
   const { alias, user_token, user_secret_key } = config;
-  const orders = await yampiGetAll(alias, "orders?include=shipments,payments,status,items", user_token, user_secret_key);
+  const orders = await yampiGetAll(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key);
 
   const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes, total_orders", { tenant_id });
 

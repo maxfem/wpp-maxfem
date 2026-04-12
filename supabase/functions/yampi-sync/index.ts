@@ -236,7 +236,19 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
       installments: tx.installments || 1,
     }));
 
-    // Extract items summary
+    // Extract tracking/shipping data
+    const trackingCode = o.track_code || o.tracking_code || null;
+    const trackingUrl = o.track_url || o.tracking_url || null;
+    const carrier = o.shipment_service || o.carrier || null;
+    let deliveryEstimate: string | null = null;
+    if (o.date_delivery) {
+      if (typeof o.date_delivery === "object" && o.date_delivery?.date) {
+        deliveryEstimate = String(o.date_delivery.date).substring(0, 19);
+      } else if (typeof o.date_delivery === "string") {
+        deliveryEstimate = o.date_delivery;
+      }
+    }
+
     const itemsSummary = (o.items?.data || []).slice(0, 10).map((i: any) => ({
       name: i.name || i.sku?.data?.title || "Produto",
       quantity: i.quantity,

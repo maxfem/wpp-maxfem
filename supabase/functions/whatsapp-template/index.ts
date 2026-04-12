@@ -31,7 +31,8 @@ function sanitizeForMeta(input: string): string {
 
 function hasVariableAtBodyEdges(input: string): boolean {
   const trimmed = input.trim();
-  return /^\{\{\d+\}\}/.test(trimmed) || /\{\{\d+\}\}$/.test(trimmed);
+  // Meta rejects variables at start/end even if followed/preceded by only punctuation
+  return /^[^a-zA-Z0-9]*\{\{\d+\}\}/.test(trimmed) || /\{\{\d+\}\}[^a-zA-Z0-9]*$/.test(trimmed);
 }
 
 Deno.serve(async (req) => {

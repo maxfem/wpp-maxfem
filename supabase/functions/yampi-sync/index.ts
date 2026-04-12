@@ -227,8 +227,15 @@ async function syncOrders(supabase: any, tenant_id: string, config: any) {
     const trackingCode = o.track_code || o.tracking_code || null;
     const trackingUrl = o.track_url || o.tracking_url || null;
     const carrier = o.shipment_service || o.carrier || null;
-    const deliveryEstimate = o.date_delivery || null;
-    
+    // delivery_estimate can be a JSON object { date: "...", timezone: "...", timezone_type: 3 }
+    let deliveryEstimate: string | null = null;
+    if (o.date_delivery) {
+      if (typeof o.date_delivery === "object" && o.date_delivery?.date) {
+        deliveryEstimate = String(o.date_delivery.date).substring(0, 19);
+      } else if (typeof o.date_delivery === "string") {
+        deliveryEstimate = o.date_delivery;
+      }
+    }
 
     // Extract payment summary
     const paymentSummary = (o.payments?.data || []).map((p: any) => ({

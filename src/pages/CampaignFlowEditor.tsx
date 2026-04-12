@@ -233,7 +233,13 @@ function FlowEditorInner() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{isAutomation ? "Ativa" : "Ativo"}</span>
-            <Switch checked={isActive} onCheckedChange={setIsActive} />
+            <Switch checked={isActive} onCheckedChange={async (checked) => {
+              setIsActive(checked);
+              if (id && id !== "new") {
+                const newStatus = checked ? "running" : "draft";
+                await supabase.from("campaigns").update({ status: newStatus }).eq("id", id);
+              }
+            }} />
           </div>
           <Button variant="outline" size="sm" onClick={handleSave}>
             <Save className="h-3.5 w-3.5 mr-1.5" />

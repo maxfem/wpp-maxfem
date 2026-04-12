@@ -260,8 +260,8 @@ export default function MessageTemplates() {
     return null;
   };
 
-  const getTemplateMetaErrorMessage = (result: unknown) => {
-    if (!result || typeof result !== "object") return "Erro desconhecido";
+  const getTemplateMetaErrorMessage = (result: unknown): { title: string; detail?: string } => {
+    if (!result || typeof result !== "object") return { title: "Erro desconhecido" };
 
     const payload = result as {
       error?: string;
@@ -269,11 +269,25 @@ export default function MessageTemplates() {
         error?: {
           message?: string;
           error_user_msg?: string;
+          error_user_title?: string;
+          code?: number;
+          error_subcode?: number;
         };
       };
+      field?: string;
+      code?: string;
     };
 
-    return payload.error || payload.details?.error?.error_user_msg || payload.details?.error?.message || "Erro desconhecido";
+    const metaError = payload.details?.error;
+    const title = payload.error || metaError?.error_user_msg || metaError?.message || "Erro desconhecido";
+    
+    const detailParts: string[] = [];
+    if (metaError?.error_user_title) detailParts.push(metaError.error_user_title);
+    if (metaError?.error_user_msg && metaError.error_user_msg !== title) detailParts.push(metaError.error_user_msg);
+    if (payload.field) detailParts.push(`Campo: ${payload.field}`);
+    if (metaError?.error_subcode) detailParts.push(`Código Meta: ${metaError.error_subcode}`);
+
+    return { title, detail: detailParts.length > 0 ? detailParts.join(" · ") : undefined };
   };
 
   const submitToMetaMutation = useMutation({

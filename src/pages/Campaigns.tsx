@@ -38,6 +38,7 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; cla
   scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
   sending: { label: "Enviando", icon: Zap, className: "bg-blue-100 text-blue-700" },
   sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
+  running: { label: "Ativa", icon: Zap, className: "bg-green-100 text-green-700" },
   failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
   finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
 };

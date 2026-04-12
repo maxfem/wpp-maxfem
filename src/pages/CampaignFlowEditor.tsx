@@ -236,7 +236,7 @@ function FlowEditorInner() {
             <Switch checked={isActive} onCheckedChange={async (checked) => {
               setIsActive(checked);
               if (id && id !== "new") {
-                const newStatus = checked ? "running" : "draft";
+                const newStatus = checked ? (isAutomation ? "running" : "scheduled") : "draft";
                 await supabase.from("campaigns").update({ status: newStatus }).eq("id", id);
               }
             }} />

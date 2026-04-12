@@ -420,7 +420,7 @@ export default function Campaigns() {
                       </Badge>
                       <Switch
                         className="scale-75"
-                        checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent"}
+                        checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
                         onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
                       />
                     </div>
@@ -478,7 +478,7 @@ export default function Campaigns() {
                       <TableCell className="text-right">
                         <Switch
                           className="scale-75"
-                          checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent"}
+                          checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
                           onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
                         />
                       </TableCell>

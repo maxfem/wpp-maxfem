@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Layers } from "lucide-react";
 import { toast } from "sonner";
+import logoMaxfem from "@/assets/logo-maxfem.png";
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -50,15 +50,15 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-secondary p-4">
       <Card className="w-full max-w-md animate-fade-in">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <Layers className="h-6 w-6 text-primary-foreground" />
+          <div className="mx-auto">
+            <img src={logoMaxfem} alt="Maxfem" className="h-12 mx-auto" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Martz CRM</CardTitle>
-            <CardDescription>Plataforma de retenção para e-commerce</CardDescription>
+            <CardTitle className="text-2xl font-heading font-bold">Maxfem</CardTitle>
+            <CardDescription>Saúde íntima de dentro para fora</CardDescription>
           </div>
         </CardHeader>
         <CardContent>

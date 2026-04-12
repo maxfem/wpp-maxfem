@@ -320,7 +320,10 @@ export default function MessageTemplates() {
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(getTemplateMetaErrorMessage(result));
+        const metaErr = getTemplateMetaErrorMessage(result);
+        const err = new Error(metaErr.title);
+        (err as any).detail = metaErr.detail;
+        throw err;
       }
       return result;
     },
@@ -329,7 +332,8 @@ export default function MessageTemplates() {
       toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
     },
     onError: (err: Error) => {
-      toast.error("Erro ao enviar à Meta: " + err.message);
+      const detail = (err as any).detail;
+      toast.error(err.message, { description: detail, duration: 10000 });
     },
   });
 
@@ -387,7 +391,8 @@ export default function MessageTemplates() {
           success++;
         } else {
           failed++;
-          failedTemplates.push(`${tpl.name}: ${getTemplateMetaErrorMessage(result)}`);
+          const metaErr = getTemplateMetaErrorMessage(result);
+          failedTemplates.push(`${tpl.name}: ${metaErr.title}`);
           console.error(`Failed ${tpl.name}:`, result);
         }
       } catch {

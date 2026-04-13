@@ -590,7 +590,11 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    const suggestion = assistantMessage?.content || "";
+    // Sanitize: remove trailing punctuation from URLs (e.g. `)`, `).`, `),`)
+    const rawSuggestion = assistantMessage?.content || "";
+    const suggestion = rawSuggestion.replace(/(https?:\/\/[^\s]+)/g, (url: string) => {
+      return url.replace(/[)}\].,;:!?]+$/, "");
+    });
 
     return new Response(JSON.stringify({ suggestion }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

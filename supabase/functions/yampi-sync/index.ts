@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 const YAMPI_BASE = "https://api.dooki.com.br/v2";
-const PAGES_PER_BATCH = 5; // Max pages fetched per invocation to stay under CPU limit
-const ENRICHMENT_BATCH = 10; // Max orders enriched per invocation
+const PAGES_PER_BATCH = 3; // Max pages fetched per invocation to stay under CPU limit
+const ENRICHMENT_BATCH = 5; // Max orders enriched per invocation
 
 async function yampiGet(alias: string, path: string, token: string, secret: string, params: Record<string, string> = {}) {
   const url = new URL(`${YAMPI_BASE}/${alias}/${path}`);
@@ -30,15 +30,15 @@ async function yampiGet(alias: string, path: string, token: string, secret: stri
   return res.json();
 }
 
-/** Fetch pages from Yampi starting at `startPage`, up to `maxPages` pages. Returns { data, nextPage, totalPages } */
-async function yampiGetBatch(alias: string, path: string, token: string, secret: string, startPage = 1, maxPages = PAGES_PER_BATCH, limit = 50) {
+/** Fetch pages from Yampi starting at `startPage`, up to `maxPages` pages. Extra params merged in. */
+async function yampiGetBatch(alias: string, path: string, token: string, secret: string, startPage = 1, maxPages = PAGES_PER_BATCH, limit = 50, extraParams: Record<string, string> = {}) {
   const allData: any[] = [];
   let page = startPage;
   let totalPages = startPage;
 
   let fetched = 0;
   while (page <= totalPages && fetched < maxPages) {
-    const res = await yampiGet(alias, path, token, secret, { page: String(page), limit: String(limit) });
+    const res = await yampiGet(alias, path, token, secret, { page: String(page), limit: String(limit), ...extraParams });
     if (!res) break;
     allData.push(...(res.data || []));
     totalPages = res.meta?.pagination?.total_pages || 1;
@@ -196,16 +196,36 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // ===== PHASE: ORDERS =====
-async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number) {
+async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null) {
   const { alias, user_token, user_secret_key } = config;
-  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage);
+  
+  // Use date filter for incremental sync (only fetch orders updated since last sync)
+  const extraParams: Record<string, string> = {};
+  if (lastSyncedAt && startPage === 1) {
+    // Yampi supports date filters - fetch orders updated in last 48h for safety margin
+    const sinceDate = new Date(new Date(lastSyncedAt).getTime() - 48 * 60 * 60 * 1000);
+    extraParams["updated_at_min"] = sinceDate.toISOString().split("T")[0];
+    console.log(`Incremental sync: orders since ${extraParams["updated_at_min"]}`);
+  }
+  
+  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
 
-  // Load customer mapping
-  const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes, total_orders", { tenant_id });
-  const yampiIdToCustomer = new Map<number, string>();
-  for (const c of (allCustomers || [])) {
-    const attrs = c.custom_attributes as any;
-    if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, c.id);
+  // Build customer lookup: load all customers in single paginated query (minimal columns)
+  const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
+  let from = 0;
+  while (true) {
+    const { data: custs } = await supabase
+      .from("customers")
+      .select("id, custom_attributes, total_orders")
+      .eq("tenant_id", tenant_id)
+      .range(from, from + 999);
+    if (!custs || custs.length === 0) break;
+    for (const c of custs) {
+      const yid = (c.custom_attributes as any)?.yampi_id;
+      if (yid) yampiIdToCustomer.set(yid, { id: c.id, total_orders: c.total_orders || 0 });
+    }
+    if (custs.length < 1000) break;
+    from += 1000;
   }
 
   // Check existing orders
@@ -222,8 +242,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   let synced = 0;
 
   for (const o of orders) {
-    const customerId = yampiIdToCustomer.get(o.customer_id);
-    if (!customerId) continue;
+    const customerEntry = yampiIdToCustomer.get(o.customer_id);
+    if (!customerEntry) continue;
+    const customerId = customerEntry.id;
 
     const orderStatus = o.status?.data?.alias || "pending";
     const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;
@@ -372,8 +393,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   if (orderAutomations && orderAutomations.length > 0) {
     let enqueued = 0;
     for (const o of orders) {
-      const customerId = yampiIdToCustomer.get(o.customer_id);
-      if (!customerId) continue;
+      const customerEntry = yampiIdToCustomer.get(o.customer_id);
+      if (!customerEntry) continue;
+      const customerId = customerEntry.id;
 
       const orderStatus = o.status?.data?.alias || "pending";
       const txData = o.transactions?.data;
@@ -396,8 +418,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       if (orderStatus === "invoiced") matchedTriggers.push("invoice_issued");
       if (["returned", "exchanged", "refunded"].includes(orderStatus)) matchedTriggers.push("return_approved");
       if ((orderStatus === "paid" || txStatus === "captured") && customerId) {
-        const cust = allCustomers.find((c: any) => c.id === customerId);
-        if ((cust as any)?.total_orders <= 1) matchedTriggers.push("first_purchase");
+        if (customerEntry.total_orders <= 1) matchedTriggers.push("first_purchase");
       }
 
       for (const automation of orderAutomations) {
@@ -438,11 +459,22 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
   try {
     const { data: carts, nextPage } = await yampiGetBatch(alias, "checkout/carts", user_token, user_secret_key, startPage);
 
-    const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
+    // Load customer map in paginated query
     const yampiIdToCustomer = new Map<number, { id: string; custom_attributes: any }>();
-    for (const c of (allCustomers || [])) {
-      const attrs = c.custom_attributes as any;
-      if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, { id: c.id, custom_attributes: attrs });
+    let from = 0;
+    while (true) {
+      const { data: custs } = await supabase
+        .from("customers")
+        .select("id, custom_attributes")
+        .eq("tenant_id", tenant_id)
+        .range(from, from + 999);
+      if (!custs || custs.length === 0) break;
+      for (const c of custs) {
+        const yid = (c.custom_attributes as any)?.yampi_id;
+        if (yid) yampiIdToCustomer.set(yid, { id: c.id, custom_attributes: c.custom_attributes });
+      }
+      if (custs.length < 1000) break;
+      from += 1000;
     }
 
     const { data: automations } = await supabase
@@ -548,7 +580,7 @@ Deno.serve(async (req) => {
             // Process all order pages in cron
             let orderPage = 1;
             while (orderPage) {
-              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage);
+              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
               ordersSynced += result.synced;
               orderPage = result.nextPage;
             }
@@ -689,7 +721,7 @@ Deno.serve(async (req) => {
       }
     } else if (phase === "orders") {
       if (syncSettings?.orders !== false) {
-        const result = await syncOrders(supabase, tenant_id, config, page_offset);
+        const result = await syncOrders(supabase, tenant_id, config, page_offset, integration.last_synced_at);
         synced = result.synced;
         nextPage = result.nextPage;
       }

@@ -97,6 +97,21 @@ export default function Customers() {
     enabled: !!currentTenant,
   });
 
+  const { data: rfmLists = [] } = useQuery({
+    queryKey: ["rfm_lists", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("contact_lists")
+        .select("name, customer_count")
+        .eq("tenant_id", currentTenant.id)
+        .eq("type", "rfm");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
   const addCustomer = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("No tenant");
@@ -327,18 +342,25 @@ export default function Customers() {
 
           <TabsContent value="rfm" className="mt-4">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {rfmSegments.map((seg) => (
-                <Card key={seg.name} className="border border-border">
-                  <CardContent className="p-4 text-center">
-                    <Badge className={`${seg.color} mb-2`}>{seg.name}</Badge>
-                    <p className="text-2xl font-bold">
-                      {customers.filter((c) => c.rfm_segment === seg.name).length}
-                    </p>
-                    <p className="text-xs text-muted-foreground">clientes</p>
-                  </CardContent>
-                </Card>
-              ))}
+              {rfmSegments.map((seg) => {
+                const rfmList = rfmLists.find((l) => l.name === `RFM — ${seg.name}`);
+                const count = rfmList?.customer_count || 0;
+                return (
+                  <Card key={seg.name} className="border border-border">
+                    <CardContent className="p-4 text-center">
+                      <Badge className={`${seg.color} mb-2`}>{seg.name}</Badge>
+                      <p className="text-2xl font-bold">{count}</p>
+                      <p className="text-xs text-muted-foreground">clientes</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
+            {rfmLists.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center mt-4">
+                Os segmentos RFM serão calculados automaticamente após a próxima sincronização do e-commerce.
+              </p>
+            )}
           </TabsContent>
 
           <TabsContent value="leads" className="mt-4">

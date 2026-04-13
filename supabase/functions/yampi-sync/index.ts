@@ -459,18 +459,22 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
   try {
     const { data: carts, nextPage } = await yampiGetBatch(alias, "checkout/carts", user_token, user_secret_key, startPage);
 
-    // Targeted customer lookup for this batch only
-    const yampiCustomerIds = [...new Set(carts.map((c: any) => c.customer_id).filter(Boolean))];
+    // Load customer map in paginated query
     const yampiIdToCustomer = new Map<number, { id: string; custom_attributes: any }>();
-    for (const yid of yampiCustomerIds) {
-      const { data } = await supabase
+    let from = 0;
+    while (true) {
+      const { data: custs } = await supabase
         .from("customers")
         .select("id, custom_attributes")
         .eq("tenant_id", tenant_id)
-        .eq("custom_attributes->>yampi_id", String(yid))
-        .limit(1)
-        .maybeSingle();
-      if (data) yampiIdToCustomer.set(yid, { id: data.id, custom_attributes: data.custom_attributes });
+        .range(from, from + 999);
+      if (!custs || custs.length === 0) break;
+      for (const c of custs) {
+        const yid = (c.custom_attributes as any)?.yampi_id;
+        if (yid) yampiIdToCustomer.set(yid, { id: c.id, custom_attributes: c.custom_attributes });
+      }
+      if (custs.length < 1000) break;
+      from += 1000;
     }
 
     const { data: automations } = await supabase

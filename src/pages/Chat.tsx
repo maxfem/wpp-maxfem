@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { MessageSquare } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
@@ -24,6 +25,7 @@ export default function Chat() {
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [searchInChat, setSearchInChat] = useState(false);
 
+  const isMobile = useIsMobile();
   const tenantId = currentTenant?.id;
 
   // Fetch messages
@@ -312,21 +314,27 @@ export default function Chat() {
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-4rem)] animate-fade-in">
-        <ChatSidebar
-          conversations={conversations}
-          selectedPhoneKey={selectedPhoneKey}
-          onSelectConversation={(key) => {
-            setSelectedPhoneKey(key);
-            setSearchInChat(false);
-          }}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          dateFilter={dateFilter}
-          onDateFilterChange={setDateFilter}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-        />
+        {/* Sidebar: hide on mobile when a conversation is selected */}
+        {(!isMobile || !selectedPhoneKey) && (
+          <ChatSidebar
+            conversations={conversations}
+            selectedPhoneKey={selectedPhoneKey}
+            onSelectConversation={(key) => {
+              setSelectedPhoneKey(key);
+              setSearchInChat(false);
+            }}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            dateFilter={dateFilter}
+            onDateFilterChange={setDateFilter}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            isMobile={isMobile}
+          />
+        )}
 
+        {/* Chat area: on mobile only show when conversation selected */}
+        {(!isMobile || selectedPhoneKey) && (
         <div className="flex-1 flex flex-col bg-background min-w-0">
           {!selectedPhoneKey ? (
             <div className="flex-1 flex items-center justify-center bg-accent/20">
@@ -354,6 +362,7 @@ export default function Chat() {
                 onToggleMute={handleToggleMute}
                 onArchive={handleArchive}
                 onSetStatus={handleSetStatus}
+                onBack={isMobile ? () => setSelectedPhoneKey(null) : undefined}
               />
               <ChatMessageArea
                 messages={selectedMessages}
@@ -371,6 +380,7 @@ export default function Chat() {
             </>
           )}
         </div>
+        )}
 
         {/* Contact Info Panel */}
         {showContactPanel && selectedPhoneKey && (

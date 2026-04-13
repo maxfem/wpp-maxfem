@@ -927,6 +927,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_rfm_scores: { Args: { _tenant_id: string }; Returns: undefined }
       get_user_tenant_ids: { Args: { _user_id: string }; Returns: string[] }
       has_role: {
         Args: {
@@ -939,6 +940,7 @@ export type Database = {
         Args: { _tenant_id: string; _user_id: string }
         Returns: boolean
       }
+      sync_rfm_lists: { Args: { _tenant_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "collaborator"

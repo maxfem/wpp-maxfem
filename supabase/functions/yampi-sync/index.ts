@@ -728,6 +728,16 @@ Deno.serve(async (req) => {
       if (syncSettings?.abandoned_carts !== false) {
         synced = await syncCarts(supabase, tenant_id, config);
       }
+      // Calculate RFM scores and sync RFM lists after all data is synced
+      try {
+        console.log("[rfm] Calculating RFM scores...");
+        await supabase.rpc("calculate_rfm_scores", { _tenant_id: tenant_id });
+        console.log("[rfm] Syncing RFM lists...");
+        await supabase.rpc("sync_rfm_lists", { _tenant_id: tenant_id });
+        console.log("[rfm] Done.");
+      } catch (rfmErr) {
+        console.error("[rfm] Error calculating RFM:", rfmErr);
+      }
       await supabase.from("integrations").update({
         sync_status: "success",
         sync_error: null,

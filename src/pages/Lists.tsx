@@ -291,9 +291,13 @@ export default function Lists() {
     manual: "Manual",
     csv_import: "Importação CSV",
     dynamic: "Dinâmica",
+    rfm: "RFM",
   };
 
+  const isRfmList = (list: ContactList) => list.type === "rfm";
+
   if (selectedList) {
+    const isRfm = isRfmList(selectedList);
     return (
       <AppLayout>
         <div className="p-6 space-y-6 animate-fade-in">
@@ -302,15 +306,21 @@ export default function Lists() {
               <button onClick={() => setSelectedList(null)} className="text-sm text-primary hover:underline mb-1">
                 ← Voltar para listas
               </button>
-              <h1 className="text-2xl font-bold text-foreground">{selectedList.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-foreground">{selectedList.name}</h1>
+                {isRfm && <Badge variant="secondary" className="text-xs">Auto RFM</Badge>}
+              </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {listMembers.length} contatos • {typeLabels[selectedList.type] || selectedList.type}
+                {isRfm && " • Atualizada automaticamente"}
               </p>
             </div>
-            <Button onClick={() => { setAddMembersOpen(true); setSelectedCustomers([]); }}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Adicionar contatos
-            </Button>
+            {!isRfm && (
+              <Button onClick={() => { setAddMembersOpen(true); setSelectedCustomers([]); }}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Adicionar contatos
+              </Button>
+            )}
           </div>
 
           <Card className="border border-border">
@@ -338,9 +348,11 @@ export default function Lists() {
                         <TableCell className="text-muted-foreground">{m.customers?.email || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{m.customers?.phone || "—"}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeMember.mutate(m.id)}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
+                          {!isRfm && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeMember.mutate(m.id)}>
+                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -555,17 +567,21 @@ export default function Lists() {
                           <Edit className="h-3.5 w-3.5 mr-2" />
                           Ver contatos
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
-                          <Edit className="h-3.5 w-3.5 mr-2" />
-                          Renomear
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-2" />
-                          Excluir
-                        </DropdownMenuItem>
+                        {!isRfmList(list) && (
+                          <>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
+                              <Edit className="h-3.5 w-3.5 mr-2" />
+                              Renomear
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -575,6 +591,9 @@ export default function Lists() {
                     <Badge variant="outline" className="text-xs">
                       {typeLabels[list.type] || list.type}
                     </Badge>
+                    {isRfmList(list) && (
+                      <Badge variant="secondary" className="text-xs">Auto</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-1">
                     {list.description || "Sem descrição"}

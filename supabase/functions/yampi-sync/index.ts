@@ -233,8 +233,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   let synced = 0;
 
   for (const o of orders) {
-    const customerId = yampiIdToCustomer.get(o.customer_id);
-    if (!customerId) continue;
+    const customerEntry = yampiIdToCustomer.get(o.customer_id);
+    if (!customerEntry) continue;
+    const customerId = customerEntry.id;
 
     const orderStatus = o.status?.data?.alias || "pending";
     const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;

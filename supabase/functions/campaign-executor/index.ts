@@ -157,6 +157,41 @@ function buildTemplateComponents(
   return components;
 }
 
+// Parse delay string from flow node config into milliseconds
+function parseDelayMs(delay: string | undefined): number {
+  if (!delay || delay === "Sem atraso") return 0;
+  if (delay === "5 minutos") return 5 * 60 * 1000;
+  if (delay === "15 minutos") return 15 * 60 * 1000;
+  if (delay === "1 hora") return 60 * 60 * 1000;
+  if (delay === "1 dia") return 24 * 60 * 60 * 1000;
+  return 0;
+}
+
+// Check if a pix/boleto order is still unpaid
+async function isOrderStillUnpaid(supabase: any, triggerData: any, tenantId: string): Promise<boolean> {
+  const yampiOrderId = triggerData?.yampi_order_id;
+  const orderId = triggerData?.order_id;
+  if (!yampiOrderId && !orderId) return true; // no order reference, proceed anyway
+
+  let query = supabase
+    .from("orders")
+    .select("mapped_status, status")
+    .eq("tenant_id", tenantId);
+
+  if (yampiOrderId) {
+    query = query.eq("external_id", `yampi_${yampiOrderId}`);
+  } else {
+    query = query.eq("id", orderId);
+  }
+
+  const { data: order } = await query.limit(1).single();
+  if (!order) return true; // order not found, proceed
+
+  const paidStatuses = ["paid", "pago", "approved", "aprovado", "invoiced", "faturado", "shipped", "enviado", "delivered", "entregue"];
+  const status = (order.mapped_status || order.status || "").toLowerCase();
+  return !paidStatuses.includes(status);
+}
+
 // ===== AUTOMATION QUEUE PROCESSOR =====
 async function processAutomationQueue(supabase: any) {
   const results: any[] = [];
@@ -168,7 +203,7 @@ async function processAutomationQueue(supabase: any) {
   // Fetch pending items created today or later (limit 50 per run)
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at")
     .eq("status", "pending")
     .gte("created_at", todayCutoff.toISOString())
     .order("created_at", { ascending: true })
@@ -221,10 +256,11 @@ async function processAutomationQueue(supabase: any) {
       continue;
     }
 
-    // Extract template from flow_data
+    // Extract template and delay from flow_data
     const flowData = campaign.flow_data as any;
     let templateName: string | null = null;
     let templateLanguage = "pt_BR";
+    let sendDelay = "";
 
     if (flowData?.nodes) {
       const sendNode = flowData.nodes.find(
@@ -233,8 +269,15 @@ async function processAutomationQueue(supabase: any) {
       if (sendNode) {
         templateName = sendNode.data.template || sendNode.data.templateName;
         templateLanguage = sendNode.data.templateLanguage || "pt_BR";
+        sendDelay = sendNode.data.delay || "";
       }
     }
+
+    const delayMs = parseDelayMs(sendDelay);
+
+    // Determine if this automation requires payment status check
+    const triggerType = campaign.trigger_type || "";
+    const needsPaymentCheck = ["order_created_pix", "order_created_boleto"].includes(triggerType);
 
     if (!templateName) {
       console.error(`Automation ${campaignId}: no template in flow`);
@@ -277,6 +320,30 @@ async function processAutomationQueue(supabase: any) {
     // Process each queued item
     for (const item of items) {
       try {
+        // === DELAY CHECK: skip items whose delay hasn't elapsed yet ===
+        if (delayMs > 0) {
+          const createdAt = new Date(item.created_at).getTime();
+          const readyAt = createdAt + delayMs;
+          if (Date.now() < readyAt) {
+            console.log(`Automation item ${item.id}: delay not elapsed yet (ready at ${new Date(readyAt).toISOString()}), skipping`);
+            continue; // leave as "pending", will be picked up in next cron run
+          }
+        }
+
+        // === PAYMENT CHECK: for pix/boleto triggers, verify order is still unpaid ===
+        if (needsPaymentCheck) {
+          const triggerData = item.trigger_data as any;
+          const stillUnpaid = await isOrderStillUnpaid(supabase, triggerData, item.tenant_id);
+          if (!stillUnpaid) {
+            console.log(`Automation item ${item.id}: order already paid, skipping send`);
+            await supabase.from("automation_queue").update({
+              status: "skipped",
+              processed_at: new Date().toISOString(),
+            }).eq("id", item.id);
+            continue;
+          }
+        }
+
         // Mark as processing
         await supabase.from("automation_queue").update({ status: "processing" }).eq("id", item.id);
 

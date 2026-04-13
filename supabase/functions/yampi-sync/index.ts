@@ -200,12 +200,23 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   const { alias, user_token, user_secret_key } = config;
   const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage);
 
-  // Load customer mapping
-  const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes, total_orders", { tenant_id });
-  const yampiIdToCustomer = new Map<number, string>();
-  for (const c of (allCustomers || [])) {
-    const attrs = c.custom_attributes as any;
-    if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, c.id);
+  // Build targeted customer lookup from yampi_ids in this batch only
+  const yampiCustomerIds = [...new Set(orders.map((o: any) => o.customer_id).filter(Boolean))];
+  const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
+  
+  // Query customers whose custom_attributes->yampi_id matches batch IDs
+  for (let i = 0; i < yampiCustomerIds.length; i += 100) {
+    const batch = yampiCustomerIds.slice(i, i + 100);
+    for (const yid of batch) {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, total_orders")
+        .eq("tenant_id", tenant_id)
+        .eq("custom_attributes->>yampi_id", String(yid))
+        .limit(1)
+        .maybeSingle();
+      if (data) yampiIdToCustomer.set(yid, { id: data.id, total_orders: data.total_orders || 0 });
+    }
   }
 
   // Check existing orders

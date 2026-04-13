@@ -580,7 +580,7 @@ Deno.serve(async (req) => {
             // Process all order pages in cron
             let orderPage = 1;
             while (orderPage) {
-              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage);
+              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
               ordersSynced += result.synced;
               orderPage = result.nextPage;
             }

@@ -157,6 +157,41 @@ function buildTemplateComponents(
   return components;
 }
 
+// Parse delay string from flow node config into milliseconds
+function parseDelayMs(delay: string | undefined): number {
+  if (!delay || delay === "Sem atraso") return 0;
+  if (delay === "5 minutos") return 5 * 60 * 1000;
+  if (delay === "15 minutos") return 15 * 60 * 1000;
+  if (delay === "1 hora") return 60 * 60 * 1000;
+  if (delay === "1 dia") return 24 * 60 * 60 * 1000;
+  return 0;
+}
+
+// Check if a pix/boleto order is still unpaid
+async function isOrderStillUnpaid(supabase: any, triggerData: any, tenantId: string): Promise<boolean> {
+  const orderId = triggerData?.order_id;
+  const externalId = triggerData?.external_id;
+  if (!orderId && !externalId) return true; // no order reference, proceed anyway
+
+  let query = supabase
+    .from("orders")
+    .select("mapped_status, status")
+    .eq("tenant_id", tenantId);
+
+  if (orderId) {
+    query = query.eq("id", orderId);
+  } else {
+    query = query.eq("external_id", externalId);
+  }
+
+  const { data: order } = await query.limit(1).single();
+  if (!order) return true; // order not found, proceed
+
+  const paidStatuses = ["paid", "pago", "approved", "aprovado", "invoiced", "faturado", "shipped", "enviado", "delivered", "entregue"];
+  const status = (order.mapped_status || order.status || "").toLowerCase();
+  return !paidStatuses.includes(status);
+}
+
 // ===== AUTOMATION QUEUE PROCESSOR =====
 async function processAutomationQueue(supabase: any) {
   const results: any[] = [];
@@ -168,7 +203,7 @@ async function processAutomationQueue(supabase: any) {
   // Fetch pending items created today or later (limit 50 per run)
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at")
     .eq("status", "pending")
     .gte("created_at", todayCutoff.toISOString())
     .order("created_at", { ascending: true })

@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2 } from "lucide-react";
+import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Conversation } from "./types";
@@ -22,6 +22,7 @@ interface ChatHeaderProps {
   onToggleMute?: () => void;
   onArchive?: () => void;
   onSetStatus?: (status: "open" | "resolved" | "pending") => void;
+  onBack?: () => void;
 }
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -30,7 +31,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   pending: { label: "Pendente", color: "bg-amber-500 hover:bg-amber-600" },
 };
 
-export function ChatHeader({ conversation, showContactPanel, onToggleContactPanel, onSearchInChat, onToggleFavorite, onToggleMute, onArchive, onSetStatus }: ChatHeaderProps) {
+export function ChatHeader({ conversation, showContactPanel, onToggleContactPanel, onSearchInChat, onToggleFavorite, onToggleMute, onArchive, onSetStatus, onBack }: ChatHeaderProps) {
   const navigate = useNavigate();
 
   if (!conversation) return null;
@@ -43,6 +44,11 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
   return (
     <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card">
       <div className="flex items-center gap-3 min-w-0">
+        {onBack && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
         <Avatar className="h-8 w-8 shrink-0">
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
             {conversation.customerName.slice(0, 2).toUpperCase()}

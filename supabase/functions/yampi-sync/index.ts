@@ -30,15 +30,15 @@ async function yampiGet(alias: string, path: string, token: string, secret: stri
   return res.json();
 }
 
-/** Fetch pages from Yampi starting at `startPage`, up to `maxPages` pages. Returns { data, nextPage, totalPages } */
-async function yampiGetBatch(alias: string, path: string, token: string, secret: string, startPage = 1, maxPages = PAGES_PER_BATCH, limit = 50) {
+/** Fetch pages from Yampi starting at `startPage`, up to `maxPages` pages. Extra params merged in. */
+async function yampiGetBatch(alias: string, path: string, token: string, secret: string, startPage = 1, maxPages = PAGES_PER_BATCH, limit = 50, extraParams: Record<string, string> = {}) {
   const allData: any[] = [];
   let page = startPage;
   let totalPages = startPage;
 
   let fetched = 0;
   while (page <= totalPages && fetched < maxPages) {
-    const res = await yampiGet(alias, path, token, secret, { page: String(page), limit: String(limit) });
+    const res = await yampiGet(alias, path, token, secret, { page: String(page), limit: String(limit), ...extraParams });
     if (!res) break;
     allData.push(...(res.data || []));
     totalPages = res.meta?.pagination?.total_pages || 1;

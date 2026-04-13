@@ -82,7 +82,7 @@ export function ChatSidebar({
     : conversations;
 
   return (
-    <div className="w-[340px] min-w-[340px] border-r border-border flex flex-col bg-card overflow-hidden">
+    <div className="w-[380px] min-w-[380px] border-r border-border flex flex-col bg-card overflow-hidden shrink-0">
       {/* Chatwoot-style header */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border bg-card">
         <div className="flex items-center gap-2">
@@ -267,11 +267,11 @@ export function ChatSidebar({
                 </Avatar>
               </div>
               <div className="flex-1 min-w-0 overflow-hidden">
-                <div className="flex items-center justify-between gap-2 mb-0.5">
+                <div className="flex items-start justify-between gap-2 mb-0.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-xs text-muted-foreground">📱 WhatsApp</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
+                  <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap pl-1">
                     {formatTime(conv.lastMessageAt)}
                   </span>
                 </div>

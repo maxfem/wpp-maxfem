@@ -384,8 +384,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   if (orderAutomations && orderAutomations.length > 0) {
     let enqueued = 0;
     for (const o of orders) {
-      const customerId = yampiIdToCustomer.get(o.customer_id);
-      if (!customerId) continue;
+      const customerEntry = yampiIdToCustomer.get(o.customer_id);
+      if (!customerEntry) continue;
+      const customerId = customerEntry.id;
 
       const orderStatus = o.status?.data?.alias || "pending";
       const txData = o.transactions?.data;
@@ -408,8 +409,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       if (orderStatus === "invoiced") matchedTriggers.push("invoice_issued");
       if (["returned", "exchanged", "refunded"].includes(orderStatus)) matchedTriggers.push("return_approved");
       if ((orderStatus === "paid" || txStatus === "captured") && customerId) {
-        const cust = allCustomers.find((c: any) => c.id === customerId);
-        if ((cust as any)?.total_orders <= 1) matchedTriggers.push("first_purchase");
+        if (customerEntry.total_orders <= 1) matchedTriggers.push("first_purchase");
       }
 
       for (const automation of orderAutomations) {

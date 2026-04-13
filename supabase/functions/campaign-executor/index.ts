@@ -169,19 +169,19 @@ function parseDelayMs(delay: string | undefined): number {
 
 // Check if a pix/boleto order is still unpaid
 async function isOrderStillUnpaid(supabase: any, triggerData: any, tenantId: string): Promise<boolean> {
+  const yampiOrderId = triggerData?.yampi_order_id;
   const orderId = triggerData?.order_id;
-  const externalId = triggerData?.external_id;
-  if (!orderId && !externalId) return true; // no order reference, proceed anyway
+  if (!yampiOrderId && !orderId) return true; // no order reference, proceed anyway
 
   let query = supabase
     .from("orders")
     .select("mapped_status, status")
     .eq("tenant_id", tenantId);
 
-  if (orderId) {
-    query = query.eq("id", orderId);
+  if (yampiOrderId) {
+    query = query.eq("external_id", `yampi_${yampiOrderId}`);
   } else {
-    query = query.eq("external_id", externalId);
+    query = query.eq("id", orderId);
   }
 
   const { data: order } = await query.limit(1).single();

@@ -27,6 +27,7 @@ interface ChatSidebarProps {
   statusFilter: StatusFilter;
   onStatusFilterChange: (value: StatusFilter) => void;
   onNewChat?: () => void;
+  isMobile?: boolean;
 }
 
 const formatTime = (dateStr: string) => {
@@ -66,6 +67,7 @@ export function ChatSidebar({
   statusFilter,
   onStatusFilterChange,
   onNewChat,
+  isMobile,
 }: ChatSidebarProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>("all");
@@ -82,7 +84,10 @@ export function ChatSidebar({
     : conversations;
 
   return (
-    <div className="w-[380px] min-w-[380px] border-r border-border flex flex-col bg-card overflow-hidden shrink-0">
+    <div className={cn(
+      "border-r border-border flex flex-col bg-card overflow-hidden",
+      isMobile ? "w-full" : "w-[380px] min-w-[380px] shrink-0"
+    )}>
       {/* Chatwoot-style header */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border bg-card">
         <div className="flex items-center gap-2">

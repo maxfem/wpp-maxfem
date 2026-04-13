@@ -420,6 +420,7 @@ export default function Campaigns() {
                       </Badge>
                       <Switch
                         className="scale-75"
+                        aria-label={`Ativar campanha ${c.name}`}
                         checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
                         onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
                       />
@@ -476,11 +477,12 @@ export default function Campaigns() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>
                       <TableCell className="text-right">
-                        <Switch
-                          className="scale-75"
-                          checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
-                          onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
-                        />
+                         <Switch
+                           className="scale-75"
+                           aria-label={`Ativar campanha ${c.name}`}
+                           checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
+                           onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                         />
                       </TableCell>
                       <TableCell>{renderCampaignActions(c)}</TableCell>
                     </TableRow>

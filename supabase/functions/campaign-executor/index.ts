@@ -320,6 +320,30 @@ async function processAutomationQueue(supabase: any) {
     // Process each queued item
     for (const item of items) {
       try {
+        // === DELAY CHECK: skip items whose delay hasn't elapsed yet ===
+        if (delayMs > 0) {
+          const createdAt = new Date(item.created_at).getTime();
+          const readyAt = createdAt + delayMs;
+          if (Date.now() < readyAt) {
+            console.log(`Automation item ${item.id}: delay not elapsed yet (ready at ${new Date(readyAt).toISOString()}), skipping`);
+            continue; // leave as "pending", will be picked up in next cron run
+          }
+        }
+
+        // === PAYMENT CHECK: for pix/boleto triggers, verify order is still unpaid ===
+        if (needsPaymentCheck) {
+          const triggerData = item.trigger_data as any;
+          const stillUnpaid = await isOrderStillUnpaid(supabase, triggerData, item.tenant_id);
+          if (!stillUnpaid) {
+            console.log(`Automation item ${item.id}: order already paid, skipping send`);
+            await supabase.from("automation_queue").update({
+              status: "skipped",
+              processed_at: new Date().toISOString(),
+            }).eq("id", item.id);
+            continue;
+          }
+        }
+
         // Mark as processing
         await supabase.from("automation_queue").update({ status: "processing" }).eq("id", item.id);
 

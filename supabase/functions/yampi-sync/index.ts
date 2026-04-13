@@ -450,11 +450,18 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
   try {
     const { data: carts, nextPage } = await yampiGetBatch(alias, "checkout/carts", user_token, user_secret_key, startPage);
 
-    const allCustomers = await fetchAllRows(supabase, "customers", "id, custom_attributes", { tenant_id });
+    // Targeted customer lookup for this batch only
+    const yampiCustomerIds = [...new Set(carts.map((c: any) => c.customer_id).filter(Boolean))];
     const yampiIdToCustomer = new Map<number, { id: string; custom_attributes: any }>();
-    for (const c of (allCustomers || [])) {
-      const attrs = c.custom_attributes as any;
-      if (attrs?.yampi_id) yampiIdToCustomer.set(attrs.yampi_id, { id: c.id, custom_attributes: attrs });
+    for (const yid of yampiCustomerIds) {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, custom_attributes")
+        .eq("tenant_id", tenant_id)
+        .eq("custom_attributes->>yampi_id", String(yid))
+        .limit(1)
+        .maybeSingle();
+      if (data) yampiIdToCustomer.set(yid, { id: data.id, custom_attributes: data.custom_attributes });
     }
 
     const { data: automations } = await supabase

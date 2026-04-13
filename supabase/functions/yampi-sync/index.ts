@@ -717,7 +717,7 @@ Deno.serve(async (req) => {
       }
     } else if (phase === "orders") {
       if (syncSettings?.orders !== false) {
-        const result = await syncOrders(supabase, tenant_id, config, page_offset);
+        const result = await syncOrders(supabase, tenant_id, config, page_offset, integration.last_synced_at);
         synced = result.synced;
         nextPage = result.nextPage;
       }

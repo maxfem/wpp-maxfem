@@ -28,11 +28,11 @@ import { Plus, Search, Users, UserCheck, BarChart3, UserPlus } from "lucide-reac
 import { toast } from "sonner";
 
 const rfmSegments = [
-  { name: "Campeões", color: "bg-success text-success-foreground", count: 0 },
-  { name: "Leais", color: "bg-primary text-primary-foreground", count: 0 },
-  { name: "Potenciais", color: "bg-info text-info-foreground", count: 0 },
-  { name: "Em Risco", color: "bg-warning text-warning-foreground", count: 0 },
-  { name: "Hibernando", color: "bg-destructive text-destructive-foreground", count: 0 },
+  { name: "Campeões", color: "bg-success text-success-foreground" },
+  { name: "Leais", color: "bg-primary text-primary-foreground" },
+  { name: "Potenciais", color: "bg-info text-info-foreground" },
+  { name: "Em Risco", color: "bg-warning text-warning-foreground" },
+  { name: "Hibernando", color: "bg-destructive text-destructive-foreground" },
 ];
 
 export default function Customers() {

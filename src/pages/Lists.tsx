@@ -291,7 +291,10 @@ export default function Lists() {
     manual: "Manual",
     csv_import: "Importação CSV",
     dynamic: "Dinâmica",
+    rfm: "RFM",
   };
+
+  const isRfmList = (list: ContactList) => list.type === "rfm";
 
   if (selectedList) {
     return (

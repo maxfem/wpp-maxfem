@@ -131,16 +131,30 @@ export default function SettingsYampi() {
 
       for (const phase of phases) {
         setSyncPhaseLabel(PHASE_LABELS[phase]);
-        setSyncProgress(PHASE_PROGRESS[phase] - 20);
+        const baseProgress = PHASE_PROGRESS[phase] - 30;
+        setSyncProgress(baseProgress);
 
-        const { data, error } = await supabase.functions.invoke("yampi-sync", {
-          body: { tenant_id: currentTenant.id, phase },
-        });
+        let pageOffset = 1;
+        let totalSynced = 0;
 
-        if (error) throw new Error(`Erro na fase ${phase}: ${error.message}`);
-        if (data?.error) throw new Error(data.error);
+        // Loop through paginated batches within each phase
+        while (pageOffset) {
+          const { data, error } = await supabase.functions.invoke("yampi-sync", {
+            body: { tenant_id: currentTenant.id, phase, page_offset: pageOffset },
+          });
 
-        results[phase] = data?.synced || 0;
+          if (error) throw new Error(`Erro na fase ${phase}: ${error.message}`);
+          if (data?.error) throw new Error(data.error);
+
+          totalSynced += data?.synced || 0;
+          pageOffset = data?.next_page || null;
+
+          // Gradual progress within phase
+          const phaseMax = PHASE_PROGRESS[phase];
+          setSyncProgress(Math.min(baseProgress + 20, phaseMax - 5));
+        }
+
+        results[phase] = totalSynced;
         setSyncProgress(PHASE_PROGRESS[phase]);
       }
 

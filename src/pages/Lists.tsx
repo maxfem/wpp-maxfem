@@ -567,17 +567,21 @@ export default function Lists() {
                           <Edit className="h-3.5 w-3.5 mr-2" />
                           Ver contatos
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
-                          <Edit className="h-3.5 w-3.5 mr-2" />
-                          Renomear
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-2" />
-                          Excluir
-                        </DropdownMenuItem>
+                        {!isRfmList(list) && (
+                          <>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>
+                              <Edit className="h-3.5 w-3.5 mr-2" />
+                              Renomear
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={(e) => { e.stopPropagation(); deleteList.mutate(list.id); }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -587,6 +591,9 @@ export default function Lists() {
                     <Badge variant="outline" className="text-xs">
                       {typeLabels[list.type] || list.type}
                     </Badge>
+                    {isRfmList(list) && (
+                      <Badge variant="secondary" className="text-xs">Auto</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-1">
                     {list.description || "Sem descrição"}

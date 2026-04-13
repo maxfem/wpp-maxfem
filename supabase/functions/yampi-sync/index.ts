@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 const YAMPI_BASE = "https://api.dooki.com.br/v2";
-const PAGES_PER_BATCH = 5; // Max pages fetched per invocation to stay under CPU limit
-const ENRICHMENT_BATCH = 10; // Max orders enriched per invocation
+const PAGES_PER_BATCH = 3; // Max pages fetched per invocation to stay under CPU limit
+const ENRICHMENT_BATCH = 5; // Max orders enriched per invocation
 
 async function yampiGet(alias: string, path: string, token: string, secret: string, params: Record<string, string> = {}) {
   const url = new URL(`${YAMPI_BASE}/${alias}/${path}`);

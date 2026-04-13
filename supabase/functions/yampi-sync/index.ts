@@ -196,27 +196,36 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // ===== PHASE: ORDERS =====
-async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number) {
+async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null) {
   const { alias, user_token, user_secret_key } = config;
-  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage);
-
-  // Build targeted customer lookup from yampi_ids in this batch only
-  const yampiCustomerIds = [...new Set(orders.map((o: any) => o.customer_id).filter(Boolean))];
-  const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
   
-  // Query customers whose custom_attributes->yampi_id matches batch IDs
-  for (let i = 0; i < yampiCustomerIds.length; i += 100) {
-    const batch = yampiCustomerIds.slice(i, i + 100);
-    for (const yid of batch) {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, total_orders")
-        .eq("tenant_id", tenant_id)
-        .eq("custom_attributes->>yampi_id", String(yid))
-        .limit(1)
-        .maybeSingle();
-      if (data) yampiIdToCustomer.set(yid, { id: data.id, total_orders: data.total_orders || 0 });
+  // Use date filter for incremental sync (only fetch orders updated since last sync)
+  const extraParams: Record<string, string> = {};
+  if (lastSyncedAt && startPage === 1) {
+    // Yampi supports date filters - fetch orders updated in last 48h for safety margin
+    const sinceDate = new Date(new Date(lastSyncedAt).getTime() - 48 * 60 * 60 * 1000);
+    extraParams["updated_at_min"] = sinceDate.toISOString().split("T")[0];
+    console.log(`Incremental sync: orders since ${extraParams["updated_at_min"]}`);
+  }
+  
+  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
+
+  // Build customer lookup: load all customers in single paginated query (minimal columns)
+  const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
+  let from = 0;
+  while (true) {
+    const { data: custs } = await supabase
+      .from("customers")
+      .select("id, custom_attributes, total_orders")
+      .eq("tenant_id", tenant_id)
+      .range(from, from + 999);
+    if (!custs || custs.length === 0) break;
+    for (const c of custs) {
+      const yid = (c.custom_attributes as any)?.yampi_id;
+      if (yid) yampiIdToCustomer.set(yid, { id: c.id, total_orders: c.total_orders || 0 });
     }
+    if (custs.length < 1000) break;
+    from += 1000;
   }
 
   // Check existing orders

@@ -25,16 +25,41 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { subDays, format, startOfDay } from "date-fns";
+import { subDays, format } from "date-fns";
 
 const PERIOD_DAYS = 14;
+
+// Brazilian number formatting helpers
+const fmtNumber = (v: number) => {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (v >= 10_000) return `${(v / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
+  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+};
+
+const fmtMoney = (v: number) =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtMoneyShort = (v: number) => {
+  if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (v >= 10_000) return `R$ ${(v / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
+  return `R$ ${v.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+};
+
+// Build ordered day keys for the period
+function buildDayEntries(days: number) {
+  const entries: { key: string; label: string }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = subDays(new Date(), days - 1 - i);
+    entries.push({ key: format(d, "yyyy-MM-dd"), label: format(d, "dd/MM") });
+  }
+  return entries;
+}
 
 export default function Dashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
   const periodStart = subDays(new Date(), PERIOD_DAYS).toISOString();
 
-  // Orders in period
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-orders", tenantId],
     queryFn: async () => {
@@ -49,7 +74,6 @@ export default function Dashboard() {
     enabled: !!tenantId,
   });
 
-  // Customers aggregate
   const { data: customers = [] } = useQuery({
     queryKey: ["dashboard-customers", tenantId],
     queryFn: async () => {
@@ -62,7 +86,6 @@ export default function Dashboard() {
     enabled: !!tenantId,
   });
 
-  // Campaign activities with conversions
   const { data: activities = [] } = useQuery({
     queryKey: ["dashboard-activities", tenantId],
     queryFn: async () => {
@@ -76,7 +99,6 @@ export default function Dashboard() {
     enabled: !!tenantId,
   });
 
-  // Link clicks in period
   const { data: clicks = [] } = useQuery({
     queryKey: ["dashboard-clicks", tenantId],
     queryFn: async () => {
@@ -115,7 +137,6 @@ export default function Dashboard() {
     ? activeCustomers.reduce((s, c) => s + (c.total_orders || 0), 0) / activeCustomers.length
     : 0;
 
-  // Avg days between orders
   const customersWithMultiple = activeCustomers.filter((c) => (c.total_orders || 0) > 1 && c.last_order_at && c.created_at);
   const avgDaysBetween = customersWithMultiple.length > 0
     ? customersWithMultiple.reduce((s, c) => {
@@ -126,35 +147,36 @@ export default function Dashboard() {
 
   const totalClicks = (clicks as any[]).length;
 
-  const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0);
-  const fmtMoney = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
   const kpis = [
     { label: "Receita Total", value: fmtMoney(totalRevenue), icon: DollarSign },
     { label: "Receita Martz", value: fmtMoney(martzRevenue), icon: Target },
-    { label: "Clientes", value: fmt(totalCustomers), icon: Users },
-    { label: "Pedidos", value: fmt(totalOrders), icon: ShoppingCart },
+    { label: "Clientes", value: fmtNumber(totalCustomers), icon: Users },
+    { label: "Pedidos", value: fmtNumber(totalOrders), icon: ShoppingCart },
     { label: "Ticket Médio", value: fmtMoney(avgTicket), icon: TrendingUp },
     { label: "LTV", value: fmtMoney(ltv), icon: BarChart3 },
     { label: "Freq. Compra", value: `${avgFrequency.toFixed(1)}x`, icon: Repeat },
     { label: "Tempo entre Pedidos", value: avgDaysBetween > 0 ? `${Math.round(avgDaysBetween)} dias` : "—", icon: Clock },
-    { label: "Cliques", value: fmt(totalClicks), icon: MousePointerClick },
+    { label: "Cliques", value: fmtNumber(totalClicks), icon: MousePointerClick },
   ];
 
-  // Chart data: group orders by day
-  const dayMap: Record<string, { receita: number; pedidos: number }> = {};
-  for (let i = 0; i < PERIOD_DAYS; i++) {
-    const d = format(subDays(new Date(), PERIOD_DAYS - 1 - i), "dd");
-    dayMap[d] = { receita: 0, pedidos: 0 };
-  }
+  // Chart data: group orders by day using full date key
+  const dayEntries = buildDayEntries(PERIOD_DAYS);
+  const dayMap: Record<string, { label: string; receita: number; pedidos: number }> = {};
+  dayEntries.forEach(({ key, label }) => {
+    dayMap[key] = { label, receita: 0, pedidos: 0 };
+  });
   orders.forEach((o) => {
-    const d = format(new Date(o.created_at), "dd");
-    if (dayMap[d]) {
-      dayMap[d].receita += Number(o.total || 0);
-      dayMap[d].pedidos += 1;
+    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    if (dayMap[key]) {
+      dayMap[key].receita += Number(o.total || 0);
+      dayMap[key].pedidos += 1;
     }
   });
-  const revenueData = Object.entries(dayMap).map(([day, v]) => ({ day, ...v }));
+  const revenueData = dayEntries.map(({ key }) => ({
+    day: dayMap[key].label,
+    receita: dayMap[key].receita,
+    pedidos: dayMap[key].pedidos,
+  }));
 
   // Chart data: new vs returning by day
   const newCustomerIds = new Set(
@@ -162,22 +184,25 @@ export default function Dashboard() {
       .filter((c) => new Date(c.created_at) >= new Date(periodStart))
       .map((c) => c.id)
   );
-  const customerDayMap: Record<string, { novos: number; recorrentes: number }> = {};
-  for (let i = 0; i < PERIOD_DAYS; i++) {
-    const d = format(subDays(new Date(), PERIOD_DAYS - 1 - i), "dd");
-    customerDayMap[d] = { novos: 0, recorrentes: 0 };
-  }
+  const customerDayMap: Record<string, { label: string; novos: number; recorrentes: number }> = {};
+  dayEntries.forEach(({ key, label }) => {
+    customerDayMap[key] = { label, novos: 0, recorrentes: 0 };
+  });
   orders.forEach((o) => {
-    const d = format(new Date(o.created_at), "dd");
-    if (customerDayMap[d]) {
+    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    if (customerDayMap[key]) {
       if (newCustomerIds.has(o.customer_id)) {
-        customerDayMap[d].novos += Number(o.total || 0);
+        customerDayMap[key].novos += Number(o.total || 0);
       } else {
-        customerDayMap[d].recorrentes += Number(o.total || 0);
+        customerDayMap[key].recorrentes += Number(o.total || 0);
       }
     }
   });
-  const customerTypeData = Object.entries(customerDayMap).map(([day, v]) => ({ day, ...v }));
+  const customerTypeData = dayEntries.map(({ key }) => ({
+    day: customerDayMap[key].label,
+    novos: customerDayMap[key].novos,
+    recorrentes: customerDayMap[key].recorrentes,
+  }));
 
   return (
     <AppLayout>
@@ -217,7 +242,7 @@ export default function Dashboard() {
                 <BarChart data={revenueData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="day" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                  <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => fmtMoneyShort(v)} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "hsl(var(--card))",
@@ -225,6 +250,7 @@ export default function Dashboard() {
                       borderRadius: "8px",
                       fontSize: "12px",
                     }}
+                    formatter={(value: number) => [fmtMoney(value), "Receita"]}
                   />
                   <Bar dataKey="receita" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -243,7 +269,7 @@ export default function Dashboard() {
                 <AreaChart data={customerTypeData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="day" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                  <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => fmtMoneyShort(v)} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "hsl(var(--card))",
@@ -251,6 +277,7 @@ export default function Dashboard() {
                       borderRadius: "8px",
                       fontSize: "12px",
                     }}
+                    formatter={(value: number, name: string) => [fmtMoney(value), name === "recorrentes" ? "Recorrentes" : "Novos"]}
                   />
                   <Area type="monotone" dataKey="recorrentes" stackId="1" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
                   <Area type="monotone" dataKey="novos" stackId="1" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2) / 0.2)" />

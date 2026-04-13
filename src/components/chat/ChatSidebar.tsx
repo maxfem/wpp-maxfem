@@ -266,7 +266,7 @@ export function ChatSidebar({
                   </AvatarFallback>
                 </Avatar>
               </div>
-              <div className="flex-1 min-w-0 overflow-hidden">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-0.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-xs text-muted-foreground">📱 WhatsApp</span>

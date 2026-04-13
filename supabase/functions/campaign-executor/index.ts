@@ -256,10 +256,11 @@ async function processAutomationQueue(supabase: any) {
       continue;
     }
 
-    // Extract template from flow_data
+    // Extract template and delay from flow_data
     const flowData = campaign.flow_data as any;
     let templateName: string | null = null;
     let templateLanguage = "pt_BR";
+    let sendDelay = "";
 
     if (flowData?.nodes) {
       const sendNode = flowData.nodes.find(
@@ -268,8 +269,15 @@ async function processAutomationQueue(supabase: any) {
       if (sendNode) {
         templateName = sendNode.data.template || sendNode.data.templateName;
         templateLanguage = sendNode.data.templateLanguage || "pt_BR";
+        sendDelay = sendNode.data.delay || "";
       }
     }
+
+    const delayMs = parseDelayMs(sendDelay);
+
+    // Determine if this automation requires payment status check
+    const triggerType = campaign.trigger_type || "";
+    const needsPaymentCheck = ["order_created_pix", "order_created_boleto"].includes(triggerType);
 
     if (!templateName) {
       console.error(`Automation ${campaignId}: no template in flow`);

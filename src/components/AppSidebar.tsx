@@ -143,6 +143,7 @@ export function AppSidebar() {
               onClick={signOut}
               className="rounded-md p-2 text-sidebar-foreground hover:bg-sidebar-accent"
               title="Sair"
+              aria-label="Sair da conta"
             >
               <LogOut className="h-4 w-4" />
             </button>

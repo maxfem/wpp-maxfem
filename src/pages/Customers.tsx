@@ -41,22 +41,31 @@ export default function Customers() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: "", email: "", phone: "" });
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
 
-  const { data: customers = [], isLoading } = useQuery({
-    queryKey: ["customers", currentTenant?.id],
+  const { data: customersData, isLoading } = useQuery({
+    queryKey: ["customers", currentTenant?.id, page],
     queryFn: async () => {
-      if (!currentTenant) return [];
-      const { data, error } = await supabase
+      if (!currentTenant) return { rows: [], total: 0 };
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from("customers")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("tenant_id", currentTenant.id)
         .eq("is_lead", false)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(from, to);
       if (error) throw error;
-      return data;
+      return { rows: data || [], total: count || 0 };
     },
     enabled: !!currentTenant,
   });
+
+  const customers = customersData?.rows || [];
+  const totalCustomers = customersData?.total || 0;
+  const totalPages = Math.ceil(totalCustomers / PAGE_SIZE);
 
   const { data: leads = [] } = useQuery({
     queryKey: ["leads", currentTenant?.id],
@@ -128,7 +137,7 @@ export default function Customers() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {customers.length} clientes • {leads.length} leads
+              {totalCustomers} clientes • {leads.length} leads
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -263,6 +272,33 @@ export default function Customers() {
                 </Table>
               </CardContent>
             </Card>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Página {page + 1} de {totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="groups" className="mt-4">

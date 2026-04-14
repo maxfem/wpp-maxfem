@@ -1,50 +1,45 @@
 
 
-## Plan: Fix Duplicate Automation Queue Entries
+## Plan: Add Pagination to Automation Activity Log
 
-### Root Cause
-The unique index `idx_aq_unique_cart` only prevents duplicates when status is `pending`, `processing`, or `sent`. Once a queue item reaches `completed` or `failed`, the constraint no longer applies. On the next yampi-sync cycle, the same order re-matches the same trigger and inserts a new queue entry.
+### Problem
+The activity log table currently loads all activities from today only, with no pagination. The user wants to control how many records are displayed (10, 20, 50, 100) and see all historical data — not just today's.
 
-Zelyane has 1 order but 3 completed `order_created_pix` entries — one per sync cycle.
+### Changes
 
-### Solution
+**File: `src/pages/AutomationDetails.tsx`**
 
-**Option A (recommended): Expand the unique index to include `completed` status**
+1. **Remove the `todayStart` filter** from the activities query — fetch all activities for this automation, not just today's.
 
-Drop and recreate the unique index to also cover `completed` and `failed` statuses:
+2. **Add server-side pagination** using Supabase `.range()`:
+   - Add state for `pageSize` (default 20) and `currentPage` (default 0)
+   - Query with `.range(currentPage * pageSize, (currentPage + 1) * pageSize - 1)`
+   - Also fetch total count with `{ count: 'exact' }`
 
-```sql
-DROP INDEX IF EXISTS idx_aq_unique_cart;
-CREATE UNIQUE INDEX idx_aq_unique_cart 
-  ON automation_queue (customer_id, campaign_id, trigger_type)
-  WHERE status IN ('pending', 'processing', 'sent', 'completed', 'failed');
+3. **Add a page size selector** (10, 20, 50, 100) above the table using a `<Select>` component.
+
+4. **Add pagination controls** below the table (Previous/Next buttons + "Página X de Y" label).
+
+5. **Keep metrics based on all data**: Add a separate lightweight query for metrics (counts only) that isn't paginated, or compute from the full count.
+
+6. **Update the subtitle** to remove "a partir de hoje" text since we're now showing all data.
+
+### UI Layout (Log tab)
+
+```text
+┌─────────────────────────────────────────────┐
+│ Log de Atividades (total)   [10|20|50|100▼] │
+├─────────────────────────────────────────────┤
+│ Cliente | Telefone | Enviado | Entregue ... │
+│ ...rows...                                  │
+├─────────────────────────────────────────────┤
+│ ◀ Anterior    Página 1 de 5    Próxima ▶    │
+└─────────────────────────────────────────────┘
 ```
 
-This is the simplest fix — the same customer+campaign+trigger combination can never have more than one entry regardless of status.
+### Technical Details
 
-**Additionally: Add `trigger_data` order reference to the unique check**
-
-Since the same customer could legitimately have multiple Pix orders over time, the index should also include the order identifier. We'll add a generated column or use a functional index on `trigger_data->>'yampi_order_id'`:
-
-```sql
-DROP INDEX IF EXISTS idx_aq_unique_cart;
-CREATE UNIQUE INDEX idx_aq_unique_trigger 
-  ON automation_queue (customer_id, campaign_id, trigger_type, COALESCE((trigger_data->>'yampi_order_id'), id::text));
-```
-
-This way:
-- Same order + same automation = blocked (no duplicates)
-- Different orders + same automation = allowed (legitimate new triggers)
-
-### Files to Change
-
-| File | Change |
-|------|--------|
-| Migration SQL | Replace unique index to cover all statuses + include order ID |
-| Cleanup | Mark the 2 extra Zelyane entries as `skipped` |
-
-### Result
-- Each order triggers the automation exactly once
-- Multiple distinct orders from the same customer still work
-- No more duplicate sends on every sync cycle
+- Use two queries: one for paginated log display, one for metrics (all activities count/sums)
+- Page size selector resets to page 0 on change
+- Supabase `count: 'exact'` returns total without fetching all rows
 

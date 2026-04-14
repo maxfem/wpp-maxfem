@@ -601,6 +601,7 @@ Deno.serve(async (req) => {
             }
           }
 
+          if (syncSettings?.abandoned_carts !== false) {
             let cartPage: number | null = 1;
             let cartPages = 0;
             while (cartPage && cartPages < MAX_CRON_PAGES) {
@@ -610,6 +611,12 @@ Deno.serve(async (req) => {
               cartPages++;
             }
           }
+
+          // Update last_synced_at after successful sync
+          await supabase.from("integrations")
+            .update({ last_synced_at: new Date().toISOString(), sync_status: "success", sync_error: null })
+            .eq("tenant_id", int.tenant_id)
+            .eq("provider", "yampi");
 
           cronResults.push({ tenant_id: int.tenant_id, orders: ordersSynced, carts: cartsSynced });
         } catch (err) {

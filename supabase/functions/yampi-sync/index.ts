@@ -436,6 +436,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
             status: orderStatus,
           },
           status: "pending",
+          current_node_id: "start",
         });
         if (qErr && !qErr.message?.includes("duplicate")) {
           console.error("Order queue insert error:", qErr.message);
@@ -516,6 +517,7 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
           trigger_type: "cart_abandoned",
           trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl },
           status: "pending",
+          current_node_id: "start",
         });
         if (qErr && !qErr.message?.includes("duplicate")) {
           console.error("Queue insert error:", qErr.message);

@@ -587,10 +587,9 @@ Deno.serve(async (req) => {
         try {
           let ordersSynced = 0;
           let cartsSynced = 0;
+          const MAX_CRON_PAGES = 30;
 
           if (syncSettings?.orders !== false) {
-            // Process all order pages in cron
-            const MAX_CRON_PAGES = 30;
             let orderPage: number | null = 1;
             let orderPages = 0;
             while (orderPage && orderPages < MAX_CRON_PAGES) {

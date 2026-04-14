@@ -87,7 +87,7 @@ export default function TrackingDashboard() {
 
   // Fetch activities with conversions
   const { data: activities = [] } = useQuery({
-    queryKey: ["tracking-activities", tenantId],
+    queryKey: ["tracking-activities", tenantId, periodDays],
     queryFn: async () => {
       const { data } = await supabase
         .from("campaign_activities")

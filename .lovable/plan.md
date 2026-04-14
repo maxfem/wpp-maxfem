@@ -1,40 +1,44 @@
 
 
-## Plan: Migrar Links para `wpp.maxapps.com.br` + Dashboard de Tracking
+## Plano: Corrigir Cron Yampi + Reset do Estado
 
-### Contexto
-O domínio `wpp.maxapps.com.br` já está configurado e apontando para o projeto via Lovable. Atualmente os links usam a URL do backend (`${SUPABASE_URL}/functions/v1/link-redirect?c=CODE`). Precisamos migrar para `https://wpp.maxapps.com.br/r/CODE` e adicionar um dashboard de cliques/conversões.
+### Problema
+1. O SELECT do cron não inclui `last_synced_at`, então `int.last_synced_at` é `undefined` → syncOrders roda sem filtro de data → tenta 460 páginas → CPU timeout
+2. O status está travado em `syncing` desde 11/04, bloqueando visualmente
+3. O `last_synced_at` está em 11/04 — após a correção, precisa ser atualizado para "agora" para não reprocessar 3 dias de histórico desnecessariamente
 
-### Parte 1: Migrar URL dos Links
+### Correções
 
-**Problema**: O `linkShortener.ts` gera URLs com a URL interna do backend. Precisamos trocar para o domínio personalizado.
+**Arquivo: `supabase/functions/yampi-sync/index.ts`**
 
-**Arquivos a alterar:**
+1. **Linha 572** — Incluir `last_synced_at` no SELECT do cron:
+   - De: `.select("tenant_id, config, sync_settings")`
+   - Para: `.select("tenant_id, config, sync_settings, last_synced_at")`
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/lib/linkShortener.ts` | Trocar `${supabaseUrl}/functions/v1/link-redirect?c=${code}` por `https://wpp.maxapps.com.br/r/${code}` |
-| `supabase/functions/link-redirect/index.ts` | Adicionar suporte ao path `/r/:code` além do query param `?c=` (para o novo formato de URL) |
-| `mem://features/tracking/link-shortener-utm` | Atualizar domínio de referência |
+2. **Linhas 593-598** — Adicionar guard de páginas no loop de orders do cron:
+   ```typescript
+   const MAX_CRON_PAGES = 30;
+   let pagesProcessed = 0;
+   while (orderPage && pagesProcessed < MAX_CRON_PAGES) {
+     // ...existing logic...
+     pagesProcessed++;
+   }
+   ```
 
-**Nota sobre o `campaign-executor`**: Ele passa apenas o `code` para o template Meta como `{{1}}`. O domínio base é configurado no template da Meta (ex: `https://wpp.maxapps.com.br/r/{{1}}`). Portanto **não precisa alterar** o campaign-executor — apenas garantir que os templates na Meta usem a URL base correta.
+3. **Mesmo guard para carts** (linhas 601-607)
 
-### Parte 2: Dashboard de Cliques e Conversões
+4. **Após o loop do tenant** — Atualizar `last_synced_at` e `sync_status`:
+   ```typescript
+   await supabase.from("integrations")
+     .update({ last_synced_at: new Date().toISOString(), sync_status: "success" })
+     .eq("tenant_id", int.tenant_id)
+     .eq("provider", "yampi");
+   ```
 
-Adicionar uma seção de tracking na página Dashboard (`/dashboard`) com:
-
-**KPIs adicionais (na grid existente):**
-- CTR (Cliques / Entregas)
-- Conversões (total de `converted_at` preenchidos)
-- Receita Atribuída (soma de `conversion_value`)
-
-**Novo gráfico:**
-- Cliques por dia (BarChart, últimos 14 dias) — cruzando `tracked_links` + `link_clicks`
-- Tabela rankeada: Top campanhas/automações por cliques e conversões
-
-**Dados**: Usar as queries existentes de `activities` e `clicks` já presentes no Dashboard, expandindo para incluir conversões e agrupamento por campanha.
+**Reset do estado atual via SQL** — Atualizar a integração para `sync_status = 'pending'` e `last_synced_at = now()` para limpar o estado travado e começar do zero (apenas pedidos novos a partir de agora serão sincronizados).
 
 ### Resultado
-- Links curtos com domínio próprio: `https://wpp.maxapps.com.br/r/CODE`
-- Dashboard com visibilidade de cliques, CTR, conversões e receita atribuída por campanha
+- Cron volta a funcionar em segundos (apenas pedidos recentes)
+- Próximos pedidos de teste serão importados e dispararão automações
+- Guard de 30 páginas previne futuros timeouts
 

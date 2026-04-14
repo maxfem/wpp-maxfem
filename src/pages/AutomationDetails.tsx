@@ -23,7 +23,6 @@ import {
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { formatSP } from "@/lib/utils";
-import { ptBR } from "date-fns/locale";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 
 const statusConfig: Record<string, { label: string; className: string }> = {

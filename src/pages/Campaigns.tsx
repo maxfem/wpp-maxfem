@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { cn, formatSP } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {

@@ -386,7 +386,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   ];
   const { data: orderAutomations } = await supabase
     .from("campaigns")
-    .select("id, trigger_type, start_date, updated_at")
+    .select("id, trigger_type, start_date, updated_at, created_at")
     .eq("tenant_id", tenant_id)
     .eq("kind", "automation")
     .eq("status", "running")
@@ -411,8 +411,8 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
 
       const matchedTriggers: string[] = [];
       matchedTriggers.push("order_created");
-      if (isPix && txStatus !== "captured" && orderStatus !== "paid") matchedTriggers.push("order_created_pix");
-      if (isBillet && txStatus !== "captured" && orderStatus !== "paid") matchedTriggers.push("order_created_boleto");
+      if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_pix");
+      if (isBillet && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_boleto");
       if (orderStatus === "paid" || txStatus === "captured") matchedTriggers.push("order_paid");
       if (isCreditCard && ["refused", "rejected", "cancelled"].includes(txStatus)) matchedTriggers.push("order_rejected_card");
       if (["approved", "invoiced", "paid"].includes(orderStatus)) matchedTriggers.push("order_approved");
@@ -426,7 +426,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       for (const automation of orderAutomations) {
         if (!matchedTriggers.includes(automation.trigger_type)) continue;
         // Only enqueue events that happened AFTER the automation was activated
-        const activationDate = automation.start_date || automation.updated_at;
+        const activationDate = automation.start_date || automation.created_at;
         const orderDate = o.created_at?.date || o.created_at || "";
         if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
@@ -517,7 +517,7 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
       for (const automation of activeAutomations) {
         if (!customer.id) continue;
         // Only enqueue carts created AFTER the automation was activated
-        const activationDate = automation.start_date || automation.updated_at;
+        const activationDate = automation.start_date || automation.created_at;
         const cartDate = cart.created_at?.date || cart.created_at || cart.updated_at?.date || cart.updated_at || "";
         if (activationDate && cartDate && new Date(cartDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({

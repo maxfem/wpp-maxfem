@@ -188,6 +188,22 @@ export default function TrackingDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Period selector */}
+      <div className="flex items-center justify-end">
+        <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PERIOD_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {kpis.map((kpi) => (

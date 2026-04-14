@@ -569,7 +569,7 @@ Deno.serve(async (req) => {
     if (cron) {
       const { data: integrations } = await supabase
         .from("integrations")
-        .select("tenant_id, config, sync_settings")
+        .select("tenant_id, config, sync_settings, last_synced_at")
         .eq("provider", "yampi")
         .eq("is_active", true);
 

@@ -290,17 +290,13 @@ async function evaluateCondition(
 async function processAutomationQueue(supabase: any) {
   const results: any[] = [];
 
-  // Only process items created from today onwards
-  const todayCutoff = new Date();
-  todayCutoff.setUTCHours(0, 0, 0, 0);
-
   // Fetch pending items whose scheduled_for has passed (or is null)
+  // No date cutoff here — filtering happens at insertion time (yampi-sync / automation-cron)
   const now = new Date().toISOString();
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
     .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for")
     .eq("status", "pending")
-    .gte("created_at", todayCutoff.toISOString())
     .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })
     .limit(50);

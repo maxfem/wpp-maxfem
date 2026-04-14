@@ -13,7 +13,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { subDays, format } from "date-fns";
+import { subDays } from "date-fns";
+import { formatSP } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -45,7 +46,7 @@ function buildDayEntries(days: number) {
   const entries: { key: string; label: string }[] = [];
   for (let i = 0; i < days; i++) {
     const d = subDays(new Date(), days - 1 - i);
-    entries.push({ key: format(d, "yyyy-MM-dd"), label: format(d, "dd/MM") });
+    entries.push({ key: formatSP(d, "yyyy-MM-dd"), label: formatSP(d, "dd/MM") });
   }
   return entries;
 }

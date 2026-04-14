@@ -121,13 +121,13 @@ export default function SettingsBling() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Token expira em</span>
                   <span className="font-medium">
-                    {accessExpiresAt.toLocaleString("pt-BR")}
+                    {accessExpiresAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Refresh token expira em</span>
                   <span className="font-medium">
-                    {refreshExpiresAt?.toLocaleString("pt-BR") || "—"}
+                    {refreshExpiresAt?.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) || "—"}
                   </span>
                 </div>
                 {integration?.sync_error && (

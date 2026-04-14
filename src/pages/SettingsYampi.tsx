@@ -270,7 +270,7 @@ export default function SettingsYampi() {
                 </span>
                 {lastSynced && (
                   <span className="text-xs text-muted-foreground">
-                    · {new Date(lastSynced).toLocaleString("pt-BR")}
+                    · {new Date(lastSynced).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                   </span>
                 )}
               </div>

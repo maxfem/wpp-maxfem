@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
@@ -21,8 +22,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-const PERIOD_DAYS = 14;
+const PERIOD_OPTIONS = [
+  { value: "7", label: "7 dias" },
+  { value: "14", label: "14 dias" },
+  { value: "30", label: "30 dias" },
+];
 
 const fmtNumber = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 const fmtMoney = (v: number) =>
@@ -41,7 +53,8 @@ function buildDayEntries(days: number) {
 export default function TrackingDashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
-  const periodStart = subDays(new Date(), PERIOD_DAYS).toISOString();
+  const [periodDays, setPeriodDays] = useState(14);
+  const periodStart = subDays(new Date(), periodDays).toISOString();
 
   // Fetch tracked links for this tenant
   const { data: trackedLinks = [] } = useQuery({
@@ -58,7 +71,7 @@ export default function TrackingDashboard() {
 
   // Fetch clicks for period
   const { data: clicks = [] } = useQuery({
-    queryKey: ["tracking-clicks", tenantId, trackedLinks.length],
+    queryKey: ["tracking-clicks", tenantId, trackedLinks.length, periodDays],
     queryFn: async () => {
       if (trackedLinks.length === 0) return [];
       const linkIds = trackedLinks.map((l) => l.id);
@@ -74,7 +87,7 @@ export default function TrackingDashboard() {
 
   // Fetch activities with conversions
   const { data: activities = [] } = useQuery({
-    queryKey: ["tracking-activities", tenantId],
+    queryKey: ["tracking-activities", tenantId, periodDays],
     queryFn: async () => {
       const { data } = await supabase
         .from("campaign_activities")
@@ -116,7 +129,7 @@ export default function TrackingDashboard() {
   ];
 
   // Clicks by day chart
-  const dayEntries = buildDayEntries(PERIOD_DAYS);
+  const dayEntries = buildDayEntries(periodDays);
   const clickDayMap: Record<string, number> = {};
   dayEntries.forEach(({ key }) => { clickDayMap[key] = 0; });
   clicks.forEach((c: any) => {
@@ -175,6 +188,22 @@ export default function TrackingDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Period selector */}
+      <div className="flex items-center justify-end">
+        <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PERIOD_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {kpis.map((kpi) => (

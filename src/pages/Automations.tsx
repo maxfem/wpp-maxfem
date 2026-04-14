@@ -23,9 +23,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { cn, formatSP } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
@@ -206,10 +205,10 @@ export default function Automations() {
       return datePresets.find((p) => p.days === datePreset)?.label || "";
     }
     if (customDateFrom && customDateTo) {
-      return `${format(customDateFrom, "dd/MM", { locale: ptBR })} - ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+      return `${formatSP(customDateFrom, "dd/MM")} - ${formatSP(customDateTo, "dd/MM")}`;
     }
-    if (customDateFrom) return `A partir de ${format(customDateFrom, "dd/MM", { locale: ptBR })}`;
-    if (customDateTo) return `Até ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    if (customDateFrom) return `A partir de ${formatSP(customDateFrom, "dd/MM")}`;
+    if (customDateTo) return `Até ${formatSP(customDateTo, "dd/MM")}`;
     return "Todos";
   }, [datePreset, customDateFrom, customDateTo]);
 

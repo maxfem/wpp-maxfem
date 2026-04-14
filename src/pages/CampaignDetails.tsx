@@ -18,8 +18,7 @@ import {
   DollarSign, Clock, Users, TrendingUp,
 } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatSP } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -139,9 +138,9 @@ export default function CampaignDetails() {
               <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Criada em {format(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              Criada em {formatSP(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm")}
               {campaign.scheduled_at && (
-                <> · Agendada para {format(new Date(campaign.scheduled_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</>
+                <> · Agendada para {formatSP(new Date(campaign.scheduled_at), "dd/MM/yyyy 'às' HH:mm")}</>
               )}
             </p>
           </div>
@@ -278,11 +277,11 @@ export default function CampaignDetails() {
                           <TableRow key={a.id}>
                             <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
                             <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
-                            <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={format(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={format(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={format(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={format(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={format(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                            <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                            <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                            <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                            <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                            <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
                             <TableCell className="text-right font-medium">
                               {Number(a.conversion_value) > 0
                                 ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`

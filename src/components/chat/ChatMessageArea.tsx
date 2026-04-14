@@ -12,9 +12,11 @@ interface ChatMessageAreaProps {
   onCloseSearch?: () => void;
 }
 
+const SP_TZ = "America/Sao_Paulo";
+
 const formatTime = (dateStr: string) => {
   const d = new Date(dateStr);
-  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: SP_TZ });
 };
 
 const formatDateSeparator = (dateStr: string) => {
@@ -22,9 +24,9 @@ const formatDateSeparator = (dateStr: string) => {
   const now = new Date();
   const yesterday = new Date();
   yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === now.toDateString()) return "Hoje";
-  if (d.toDateString() === yesterday.toDateString()) return "Ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  if (d.toLocaleDateString("pt-BR", { timeZone: SP_TZ }) === now.toLocaleDateString("pt-BR", { timeZone: SP_TZ })) return "Hoje";
+  if (d.toLocaleDateString("pt-BR", { timeZone: SP_TZ }) === yesterday.toLocaleDateString("pt-BR", { timeZone: SP_TZ })) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric", timeZone: SP_TZ });
 };
 
 function renderFormattedText(text: string) {

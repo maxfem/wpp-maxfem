@@ -143,7 +143,7 @@ export default function Customers() {
     v ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—";
 
   const formatDate = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+    d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 
   return (
     <AppLayout>

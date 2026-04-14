@@ -26,7 +26,8 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { subDays, format } from "date-fns";
+import { subDays } from "date-fns";
+import { formatSP } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 
 
@@ -54,7 +55,7 @@ function buildDayEntries(days: number) {
   const entries: { key: string; label: string }[] = [];
   for (let i = 0; i < days; i++) {
     const d = subDays(new Date(), days - 1 - i);
-    entries.push({ key: format(d, "yyyy-MM-dd"), label: format(d, "dd/MM") });
+    entries.push({ key: formatSP(d, "yyyy-MM-dd"), label: formatSP(d, "dd/MM") });
   }
   return entries;
 }
@@ -146,7 +147,7 @@ export default function Dashboard() {
     dayMap[key] = { label, receita: 0, pedidos: 0 };
   });
   orders.forEach((o) => {
-    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
     if (dayMap[key]) {
       dayMap[key].receita += Number(o.total || 0);
       dayMap[key].pedidos += 1;
@@ -169,7 +170,7 @@ export default function Dashboard() {
     customerDayMap[key] = { label, novos: 0, recorrentes: 0 };
   });
   orders.forEach((o) => {
-    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
     if (customerDayMap[key]) {
       if (newCustomerIds.has(o.customer_id)) {
         customerDayMap[key].novos += Number(o.total || 0);

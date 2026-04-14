@@ -453,7 +453,8 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações. Use apenas os dados retornados pela função.
-- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://exemplo.com/rastreio". Exemplos ERRADOS: "[clique aqui](https://exemplo.com/rastreio)", "(https://exemplo.com/rastreio)", "* [Acompanhar pedido](url)".
+- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://rastreio.maxfem.com.br/ABC123". Exemplos ERRADOS: "[clique aqui](url)", "(https://url)", "* [Acompanhar pedido](url)".
+- O link de rastreio é SEMPRE no formato https://rastreio.maxfem.com.br/CODIGO_RASTREIO — use exatamente o tracking_url retornado pela função, sem modificar, sem adicionar parênteses, colchetes ou qualquer caractere ao redor.
 - CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI_16023873836", escreva "BLI_16023873836" e NÃO "BLI16023873836".`;
     }
 

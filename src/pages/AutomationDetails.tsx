@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,13 +12,17 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   ChartContainer, ChartTooltip, ChartTooltipContent,
 } from "@/components/ui/chart";
 import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { format, startOfDay } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 
@@ -33,6 +38,9 @@ export default function AutomationDetails() {
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
 
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(0);
+
   const { data: campaign, isLoading: loadingCampaign } = useQuery({
     queryKey: ["automation", id],
     queryFn: async () => {
@@ -47,33 +55,52 @@ export default function AutomationDetails() {
     enabled: !!id,
   });
 
-  // Only fetch activities from today onwards
-  const todayStart = startOfDay(new Date()).toISOString();
-
-  const { data: activities = [] } = useQuery({
-    queryKey: ["automation-activities", id, todayStart],
+  // Metrics query — all activities, no pagination
+  const { data: metricsData } = useQuery({
+    queryKey: ["automation-metrics", id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("campaign_activities")
-        .select("*, customers(name, phone, email)")
-        .eq("campaign_id", id!)
-        .gte("created_at", todayStart)
-        .order("created_at", { ascending: false });
+        .select("sent_at, delivered_at, read_at, clicked_at, replied_at, converted_at, conversion_value")
+        .eq("campaign_id", id!);
       if (error) throw error;
-      return data;
+      return data || [];
     },
     enabled: !!id,
   });
 
+  // Paginated activities for the log table
+  const { data: activitiesResult } = useQuery({
+    queryKey: ["automation-activities", id, currentPage, pageSize],
+    queryFn: async () => {
+      const from = currentPage * pageSize;
+      const to = from + pageSize - 1;
+      const { data, error, count } = await supabase
+        .from("campaign_activities")
+        .select("*, customers(name, phone, email)", { count: "exact" })
+        .eq("campaign_id", id!)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      return { rows: data || [], total: count || 0 };
+    },
+    enabled: !!id,
+  });
+
+  const activities = activitiesResult?.rows || [];
+  const totalActivities = activitiesResult?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(totalActivities / pageSize));
+
+  const allActivities = metricsData || [];
   const metrics = {
-    total: activities.length,
-    sent: activities.filter((a) => a.sent_at).length,
-    delivered: activities.filter((a) => a.delivered_at).length,
-    read: activities.filter((a) => a.read_at).length,
-    clicked: activities.filter((a) => a.clicked_at).length,
-    replied: activities.filter((a) => a.replied_at).length,
-    converted: activities.filter((a) => a.converted_at).length,
-    revenue: activities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
+    total: allActivities.length,
+    sent: allActivities.filter((a) => a.sent_at).length,
+    delivered: allActivities.filter((a) => a.delivered_at).length,
+    read: allActivities.filter((a) => a.read_at).length,
+    clicked: allActivities.filter((a) => a.clicked_at).length,
+    replied: allActivities.filter((a) => a.replied_at).length,
+    converted: allActivities.filter((a) => a.converted_at).length,
+    revenue: allActivities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
   };
 
   const deliveryRate = metrics.sent > 0 ? ((metrics.delivered / metrics.sent) * 100).toFixed(1) : "0";
@@ -140,7 +167,6 @@ export default function AutomationDetails() {
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               Criada em {format(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-              {" · "}Exibindo disparos a partir de hoje
             </p>
           </div>
         </div>
@@ -240,46 +266,86 @@ export default function AutomationDetails() {
           <TabsContent value="log">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Log de Atividades ({activities.length})</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Log de Atividades ({totalActivities})</CardTitle>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(0); }}
+                  >
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 {activities.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-12">Nenhuma atividade registrada a partir de hoje.</p>
+                  <p className="text-center text-muted-foreground py-12">Nenhuma atividade registrada.</p>
                 ) : (
-                  <div className="overflow-auto max-h-[500px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Telefone</TableHead>
-                          <TableHead>Enviado</TableHead>
-                          <TableHead>Entregue</TableHead>
-                          <TableHead>Lido</TableHead>
-                          <TableHead>Clicado</TableHead>
-                          <TableHead>Conversão</TableHead>
-                          <TableHead className="text-right">Valor</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {activities.map((a: any) => (
-                          <TableRow key={a.id}>
-                            <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
-                            <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={format(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={format(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={format(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={format(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={format(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {Number(a.conversion_value) > 0
-                                ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                : "—"}
-                            </TableCell>
+                  <>
+                    <div className="overflow-auto max-h-[500px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Cliente</TableHead>
+                            <TableHead>Telefone</TableHead>
+                            <TableHead>Enviado</TableHead>
+                            <TableHead>Entregue</TableHead>
+                            <TableHead>Lido</TableHead>
+                            <TableHead>Clicado</TableHead>
+                            <TableHead>Conversão</TableHead>
+                            <TableHead className="text-right">Valor</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {activities.map((a: any) => (
+                            <TableRow key={a.id}>
+                              <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
+                              <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={format(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={format(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={format(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={format(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={format(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {Number(a.conversion_value) > 0
+                                  ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination controls */}
+                    <div className="flex items-center justify-between px-4 py-3 border-t">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage === 0}
+                        onClick={() => setCurrentPage((p) => p - 1)}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Página {currentPage + 1} de {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage + 1 >= totalPages}
+                        onClick={() => setCurrentPage((p) => p + 1)}
+                      >
+                        Próxima <ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>

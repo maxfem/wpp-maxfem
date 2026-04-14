@@ -23,9 +23,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { cn, formatSP } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 

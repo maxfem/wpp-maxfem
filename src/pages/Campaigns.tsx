@@ -29,9 +29,9 @@ import {
   Check, Clock, FileText, LayoutGrid, List, CalendarIcon, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { cn, formatSP } from "@/lib/utils";
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
   draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },

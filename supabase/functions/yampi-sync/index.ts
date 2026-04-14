@@ -590,11 +590,14 @@ Deno.serve(async (req) => {
 
           if (syncSettings?.orders !== false) {
             // Process all order pages in cron
-            let orderPage = 1;
-            while (orderPage) {
+            const MAX_CRON_PAGES = 30;
+            let orderPage: number | null = 1;
+            let orderPages = 0;
+            while (orderPage && orderPages < MAX_CRON_PAGES) {
               const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
               ordersSynced += result.synced;
               orderPage = result.nextPage;
+              orderPages++;
             }
           }
 

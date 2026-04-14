@@ -18,7 +18,7 @@ import {
   DollarSign, Clock, Users, TrendingUp,
 } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
-import { format } from "date-fns";
+import { formatSP } from "@/lib/utils";
 import { ptBR } from "date-fns/locale";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 

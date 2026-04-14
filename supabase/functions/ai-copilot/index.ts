@@ -601,10 +601,12 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       .replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_: string, _text: string, url: string) => url)
       // Remove wrapping parentheses around URLs: (https://...) → https://...
       .replace(/\((https?:\/\/[^\s)]+)\)/g, (_: string, url: string) => url)
-      // Remove leading * before URLs
-      .replace(/\*\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
+      // Remove leading * or - before URLs
+      .replace(/[*\-]\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
       // Strip trailing punctuation from URLs
-      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""));
+      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""))
+      // Final safety pass: catch any remaining parens/brackets wrapping URLs
+      .replace(/[\[(](https?:\/\/[^\s\])]+)[\])]/g, (_: string, url: string) => url);
 
     return new Response(JSON.stringify({ suggestion }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

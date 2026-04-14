@@ -450,7 +450,7 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações. Use apenas os dados retornados pela função.
-- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. Exemplo correto: "Acompanhe pelo link: https://exemplo.com/rastreio". Exemplo ERRADO: "[clique aqui](https://exemplo.com/rastreio)".
+- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://exemplo.com/rastreio". Exemplos ERRADOS: "[clique aqui](https://exemplo.com/rastreio)", "(https://exemplo.com/rastreio)", "* [Acompanhar pedido](url)".
 - CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI_16023873836", escreva "BLI_16023873836" e NÃO "BLI16023873836".`;
     }
 
@@ -590,11 +590,17 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    // Sanitize: remove trailing punctuation from URLs (e.g. `)`, `).`, `),`)
+    // Sanitize: convert Markdown links to plain URLs and strip wrapping parens
     const rawSuggestion = assistantMessage?.content || "";
-    const suggestion = rawSuggestion.replace(/(https?:\/\/[^\s]+)/g, (url: string) => {
-      return url.replace(/[)}\].,;:!?]+$/, "");
-    });
+    let suggestion = rawSuggestion
+      // Convert [text](url) → url
+      .replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_: string, _text: string, url: string) => url)
+      // Remove wrapping parentheses around URLs: (https://...) → https://...
+      .replace(/\((https?:\/\/[^\s)]+)\)/g, (_: string, url: string) => url)
+      // Remove leading * before URLs
+      .replace(/\*\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
+      // Strip trailing punctuation from URLs
+      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""));
 
     return new Response(JSON.stringify({ suggestion }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -101,6 +101,7 @@ Deno.serve(async (req) => {
                 trigger_type: "birthday",
                 trigger_data: { birthday: bday },
                 status: "pending",
+                current_node_id: "start",
               });
               if (!error || error.message?.includes("duplicate")) {
                 if (!error) results.birthday++;
@@ -133,6 +134,7 @@ Deno.serve(async (req) => {
                 trigger_type: "first_purchase_anniversary",
                 trigger_data: { years: yearsDiff, first_order_date: c.last_order_at },
                 status: "pending",
+                current_node_id: "start",
               });
               if (!error) results.first_purchase_anniversary++;
             }
@@ -165,6 +167,7 @@ Deno.serve(async (req) => {
               trigger_type: "inactivity",
               trigger_data: { days_inactive: inactivityDays, last_order_at: c.last_order_at },
               status: "pending",
+              current_node_id: "start",
             });
             if (!error) results.inactivity++;
           }
@@ -195,6 +198,7 @@ Deno.serve(async (req) => {
               trigger_type: "7 dias após entrega",
               trigger_data: { order_id: o.id, order_number: o.order_number },
               status: "pending",
+              current_node_id: "start",
             });
             if (!error) results["7 dias após entrega"]++;
           }

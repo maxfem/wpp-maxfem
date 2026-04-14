@@ -18,9 +18,11 @@ export type Database = {
         Row: {
           campaign_id: string | null
           created_at: string
+          current_node_id: string | null
           customer_id: string | null
           id: string
           processed_at: string | null
+          scheduled_for: string | null
           status: string
           tenant_id: string
           trigger_data: Json | null
@@ -29,9 +31,11 @@ export type Database = {
         Insert: {
           campaign_id?: string | null
           created_at?: string
+          current_node_id?: string | null
           customer_id?: string | null
           id?: string
           processed_at?: string | null
+          scheduled_for?: string | null
           status?: string
           tenant_id: string
           trigger_data?: Json | null
@@ -40,9 +44,11 @@ export type Database = {
         Update: {
           campaign_id?: string | null
           created_at?: string
+          current_node_id?: string | null
           customer_id?: string | null
           id?: string
           processed_at?: string | null
+          scheduled_for?: string | null
           status?: string
           tenant_id?: string
           trigger_data?: Json | null

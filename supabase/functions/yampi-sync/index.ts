@@ -587,7 +587,7 @@ Deno.serve(async (req) => {
         try {
           let ordersSynced = 0;
           let cartsSynced = 0;
-          const MAX_CRON_PAGES = 5;
+          const MAX_CRON_PAGES = 1;
 
           if (syncSettings?.orders !== false) {
             let orderPage: number | null = 1;

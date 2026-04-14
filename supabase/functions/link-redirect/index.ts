@@ -5,7 +5,10 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  const code = url.searchParams.get("c");
+
+  // Support both /r/:code path and ?c=code query param
+  const pathMatch = url.pathname.match(/\/r\/([A-Za-z0-9]+)$/);
+  const code = pathMatch ? pathMatch[1] : url.searchParams.get("c");
 
   if (!code) {
     return new Response("Missing code", { status: 400 });

@@ -55,18 +55,26 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
     refunded: "Reembolsado",
   };
 
-  const formattedOrders = orders.map((o: any) => ({
-    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
-    status: statusLabels[o.status_alias || o.status] || o.status,
-    status_alias: o.status_alias || o.status,
-    total: o.total,
-    created_at: o.created_at,
-    tracking_code: o.tracking_code || null,
-    tracking_url: o.tracking_url || null,
-    carrier: o.carrier || null,
-    payments: o.payment_summary || [],
-    items: o.items_summary || [],
-  }));
+  const formattedOrders = orders.map((o: any) => {
+    const trackingCode = o.tracking_code || null;
+    // Always use Maxfem tracking page when tracking_code exists
+    const trackingUrl = trackingCode
+      ? `https://rastreio.maxfem.com.br/${trackingCode}`
+      : (o.tracking_url || null);
+
+    return {
+      order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+      status: statusLabels[o.status_alias || o.status] || o.status,
+      status_alias: o.status_alias || o.status,
+      total: o.total,
+      created_at: o.created_at,
+      tracking_code: trackingCode,
+      tracking_url: trackingUrl,
+      carrier: o.carrier || null,
+      payments: o.payment_summary || [],
+      items: o.items_summary || [],
+    };
+  });
 
   console.log("[copilot] Local orders lookup result:", JSON.stringify(formattedOrders));
 

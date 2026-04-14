@@ -384,7 +384,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   ];
   const { data: orderAutomations } = await supabase
     .from("campaigns")
-    .select("id, trigger_type")
+    .select("id, trigger_type, start_date, updated_at")
     .eq("tenant_id", tenant_id)
     .eq("kind", "automation")
     .eq("status", "running")
@@ -423,6 +423,10 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
 
       for (const automation of orderAutomations) {
         if (!matchedTriggers.includes(automation.trigger_type)) continue;
+        // Only enqueue events that happened AFTER the automation was activated
+        const activationDate = automation.start_date || automation.updated_at;
+        const orderDate = o.created_at?.date || o.created_at || "";
+        if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
           tenant_id,
           campaign_id: automation.id,
@@ -480,12 +484,12 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
 
     const { data: automations } = await supabase
       .from("campaigns")
-      .select("id")
+      .select("id, start_date, updated_at")
       .eq("tenant_id", tenant_id)
       .eq("trigger_type", "cart_abandoned")
       .eq("status", "running");
 
-    const activeAutomationIds = (automations || []).map((a: any) => a.id);
+    const activeAutomations = automations || [];
 
     for (const cart of carts) {
       if (!cart.customer_id) continue;
@@ -508,11 +512,15 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
         },
       }).eq("id", customer.id);
 
-      for (const campaignId of activeAutomationIds) {
+      for (const automation of activeAutomations) {
         if (!customer.id) continue;
+        // Only enqueue carts created AFTER the automation was activated
+        const activationDate = automation.start_date || automation.updated_at;
+        const cartDate = cart.created_at?.date || cart.created_at || cart.updated_at?.date || cart.updated_at || "";
+        if (activationDate && cartDate && new Date(cartDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
           tenant_id,
-          campaign_id: campaignId,
+          campaign_id: automation.id,
           customer_id: customer.id,
           trigger_type: "cart_abandoned",
           trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl },

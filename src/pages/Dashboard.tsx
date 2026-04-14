@@ -147,7 +147,7 @@ export default function Dashboard() {
     dayMap[key] = { label, receita: 0, pedidos: 0 };
   });
   orders.forEach((o) => {
-    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
     if (dayMap[key]) {
       dayMap[key].receita += Number(o.total || 0);
       dayMap[key].pedidos += 1;
@@ -170,7 +170,7 @@ export default function Dashboard() {
     customerDayMap[key] = { label, novos: 0, recorrentes: 0 };
   });
   orders.forEach((o) => {
-    const key = format(new Date(o.created_at), "yyyy-MM-dd");
+    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
     if (customerDayMap[key]) {
       if (newCustomerIds.has(o.customer_id)) {
         customerDayMap[key].novos += Number(o.total || 0);

@@ -134,7 +134,7 @@ export default function TrackingDashboard() {
   const clickDayMap: Record<string, number> = {};
   dayEntries.forEach(({ key }) => { clickDayMap[key] = 0; });
   clicks.forEach((c: any) => {
-    const key = format(new Date(c.clicked_at), "yyyy-MM-dd");
+    const key = formatSP(new Date(c.clicked_at), "yyyy-MM-dd");
     if (clickDayMap[key] !== undefined) clickDayMap[key]++;
   });
   const clicksPerDay = dayEntries.map(({ key, label }) => ({

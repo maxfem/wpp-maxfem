@@ -129,7 +129,7 @@ export default function TrackingDashboard() {
   ];
 
   // Clicks by day chart
-  const dayEntries = buildDayEntries(PERIOD_DAYS);
+  const dayEntries = buildDayEntries(periodDays);
   const clickDayMap: Record<string, number> = {};
   dayEntries.forEach(({ key }) => { clickDayMap[key] = 0; });
   clicks.forEach((c: any) => {

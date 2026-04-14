@@ -201,7 +201,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   
   // Use date filter for incremental sync (only fetch orders updated since last sync)
   // IMPORTANT: Apply the filter on ALL pages, not just startPage===1
-  const extraParams: Record<string, string> = {};
+  const extraParams: Record<string, string> = { "sort": "-updated_at" };
   if (lastSyncedAt) {
     const sinceDate = new Date(new Date(lastSyncedAt).getTime() - 48 * 60 * 60 * 1000);
     extraParams["updated_at_min"] = sinceDate.toISOString().split("T")[0];
@@ -587,7 +587,7 @@ Deno.serve(async (req) => {
         try {
           let ordersSynced = 0;
           let cartsSynced = 0;
-          const MAX_CRON_PAGES = 30;
+          const MAX_CRON_PAGES = 1;
 
           if (syncSettings?.orders !== false) {
             let orderPage: number | null = 1;

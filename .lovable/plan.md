@@ -1,44 +1,59 @@
 
 
-## Plano: Corrigir Cron Yampi + Reset do Estado
+## Diagnóstico: Por que o pedido de teste não gerou trigger
 
-### Problema
-1. O SELECT do cron não inclui `last_synced_at`, então `int.last_synced_at` é `undefined` → syncOrders roda sem filtro de data → tenta 460 páginas → CPU timeout
-2. O status está travado em `syncing` desde 11/04, bloqueando visualmente
-3. O `last_synced_at` está em 11/04 — após a correção, precisa ser atualizado para "agora" para não reprocessar 3 dias de histórico desnecessariamente
+### Causa raiz
+
+O filtro de **cutoff de ativação** na linha 429 descarta o pedido:
+
+```typescript
+const activationDate = automation.start_date || automation.updated_at;
+if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
+```
+
+- A automação "Pix Não Pago" tem `start_date = null`
+- Portanto, `activationDate = automation.updated_at` = **2026-04-14 21:34** (atualizado quando o sistema fez alguma modificação)
+- O pedido de teste foi criado em **2026-04-14 14:40** (hora na Yampi)
+- Como 14:40 < 21:34, o pedido é **descartado** pelo filtro
+
+O problema é usar `updated_at` como fallback — qualquer edição na automação (salvar fluxo, mudar nome, etc.) reseta a janela e ignora pedidos recentes.
+
+### Segundo problema
+
+Mesmo que o trigger fosse enfileirado, o pedido já está com status `cancelled` na Yampi. A condição `isPix && txStatus !== "captured" && orderStatus !== "paid"` poderia casar, mas semanticamente não faz sentido disparar "Pix Não Pago" para pedidos já cancelados.
 
 ### Correções
 
 **Arquivo: `supabase/functions/yampi-sync/index.ts`**
 
-1. **Linha 572** — Incluir `last_synced_at` no SELECT do cron:
-   - De: `.select("tenant_id, config, sync_settings")`
-   - Para: `.select("tenant_id, config, sync_settings, last_synced_at")`
-
-2. **Linhas 593-598** — Adicionar guard de páginas no loop de orders do cron:
+1. **Linha 429** — Usar `created_at` da automação como fallback em vez de `updated_at`:
    ```typescript
-   const MAX_CRON_PAGES = 30;
-   let pagesProcessed = 0;
-   while (orderPage && pagesProcessed < MAX_CRON_PAGES) {
-     // ...existing logic...
-     pagesProcessed++;
-   }
+   const activationDate = automation.start_date || automation.created_at;
+   ```
+   Isso garante que edições na automação não resetem a janela de cutoff.
+
+2. **Mesma correção na linha 520** (bloco de carrinhos):
+   ```typescript
+   const activationDate = automation.start_date || automation.created_at;
    ```
 
-3. **Mesmo guard para carts** (linhas 601-607)
-
-4. **Após o loop do tenant** — Atualizar `last_synced_at` e `sync_status`:
+3. **Linha 387-389** — Incluir `created_at` no SELECT das automações:
    ```typescript
-   await supabase.from("integrations")
-     .update({ last_synced_at: new Date().toISOString(), sync_status: "success" })
-     .eq("tenant_id", int.tenant_id)
-     .eq("provider", "yampi");
+   .select("id, trigger_type, start_date, updated_at, created_at")
    ```
 
-**Reset do estado atual via SQL** — Atualizar a integração para `sync_status = 'pending'` e `last_synced_at = now()` para limpar o estado travado e começar do zero (apenas pedidos novos a partir de agora serão sincronizados).
+4. **Linha 414** — Adicionar guard contra pedidos cancelados no trigger de Pix:
+   ```typescript
+   if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") 
+     matchedTriggers.push("order_created_pix");
+   ```
+   (E equivalente para boleto na linha 415)
+
+**SQL — Reset** para reprocessar o pedido de teste na próxima execução:
+- Atualizar `last_synced_at` da integração para um timestamp anterior ao pedido de teste, forçando re-sync
 
 ### Resultado
-- Cron volta a funcionar em segundos (apenas pedidos recentes)
-- Próximos pedidos de teste serão importados e dispararão automações
-- Guard de 30 páginas previne futuros timeouts
+- Automações não perdem triggers por causa de edições no fluxo
+- Pedidos cancelados não disparam cobranças indevidas
+- O próximo pedido Pix de teste será enfileirado corretamente
 

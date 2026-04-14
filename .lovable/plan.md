@@ -1,30 +1,43 @@
 
 
-## Plan: Fix Tracking Links — No Parentheses + Use rastreio.maxfem.com.br
+## Plan: Fix Automation Queue — Process Only From Activation Date Forward
 
 ### Problem
-The AI copilot keeps wrapping tracking URLs in parentheses, breaking the link. Additionally, tracking links should use the Maxfem tracking page instead of carrier-specific URLs.
+Two issues:
+1. The `todayCutoff` filter (`created_at >= today 00:00 UTC`) blocks items created yesterday that have a future `scheduled_for` (wait nodes). This breaks multi-day flows.
+2. Old/legacy queue items should never be processed — only items created after the automation was activated.
 
-### Changes
+### Solution
 
-**File: `supabase/functions/ai-copilot/index.ts`**
+**File: `supabase/functions/campaign-executor/index.ts`**
 
-1. **Replace all carrier-specific tracking URLs with Maxfem format** (lines 253-261):
-   - Instead of `https://www.loggi.com/rastreador/{code}`, `https://rastreio.fmtransportes.com.br/...`, or `https://rastreamento.correios.com.br/...`
-   - Use: `https://rastreio.maxfem.com.br/{tracking_code}` for ALL carriers
+Remove the `todayCutoff` / `.gte("created_at", ...)` filter from the queue query. Items are already gated by:
+- `status = 'pending'` — only unprocessed items
+- `scheduled_for <= now() OR scheduled_for IS NULL` — respects wait timers
+- Campaign `status = 'running'` check — inactive automations are skipped
 
-2. **Strengthen the system prompt** (line 453):
-   - Add explicit instruction: "O link de rastreio é SEMPRE no formato https://rastreio.maxfem.com.br/CODIGO_RASTREIO"
-   - Reinforce: never wrap URLs in parentheses, brackets, or any formatting
+This is sufficient. The cutoff logic should live at **insertion time** (in `yampi-sync` and `automation-cron`), not at processing time.
 
-3. **Harden the sanitization regex** (lines 595-603):
-   - Add an additional pass to catch any remaining `(url)` patterns the model might generate
+**File: `supabase/functions/yampi-sync/index.ts`**
 
-4. **Also update the local lookup** (`lookupOrdersByCpf`):
-   - If `tracking_url` is stored in DB with old carrier URLs, override it with the Maxfem format when `tracking_code` exists
+Add a check: when inserting into `automation_queue`, compare the event timestamp (cart creation, order creation) against the campaign's `start_date` or `updated_at`. Only enqueue if the event happened **after** the automation was activated. This prevents old historical events from entering the queue.
+
+**File: `supabase/functions/automation-cron/index.ts`**
+
+Already only processes today's events (birthday today, inactivity window today), so no legacy items enter. No change needed.
+
+**Data cleanup**: Mark any remaining old `pending` items as `skipped` to clear the queue.
+
+### Files to Edit
+
+| File | Change |
+|------|--------|
+| `supabase/functions/campaign-executor/index.ts` | Remove `todayCutoff` filter (lines 293-295, 303) — process by `scheduled_for` only |
+| `supabase/functions/yampi-sync/index.ts` | Add activation-date check before inserting into queue |
+| Data cleanup | Mark old pending items as `skipped` |
 
 ### Result
-- All tracking links will be `https://rastreio.maxfem.com.br/{tracking_code}`
-- No parentheses, no brackets, no Markdown formatting around URLs
-- Works for Loggi, Correios, FM Transportes, and any other carrier
+- Multi-day flows (wait nodes spanning days) will work correctly
+- Only events occurring after activation enter the queue
+- No retroactive processing of historical data
 

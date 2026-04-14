@@ -22,7 +22,6 @@ interface CreateTrackedLinkParams {
 
 export async function createTrackedLink(params: CreateTrackedLinkParams): Promise<string> {
   const code = generateCode();
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   const { error } = await supabase.from("tracked_links" as any).insert({
     tenant_id: params.tenantId,
@@ -41,7 +40,7 @@ export async function createTrackedLink(params: CreateTrackedLinkParams): Promis
     throw error;
   }
 
-  return `${supabaseUrl}/functions/v1/link-redirect?c=${code}`;
+  return `https://wpp.maxapps.com.br/r/${code}`;
 }
 
 /**

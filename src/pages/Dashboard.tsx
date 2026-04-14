@@ -103,27 +103,6 @@ export default function Dashboard() {
     enabled: !!tenantId,
   });
 
-  const { data: clicks = [] } = useQuery({
-    queryKey: ["dashboard-clicks", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("tracked_links" as any)
-        .select("id, created_at")
-        .eq("tenant_id", tenantId!);
-
-      if (!data || data.length === 0) return [];
-
-      const linkIds = (data as any[]).map((l: any) => l.id);
-      const { data: clickData } = await supabase
-        .from("link_clicks" as any)
-        .select("link_id, clicked_at")
-        .in("link_id", linkIds)
-        .gte("clicked_at", periodStart);
-      return clickData || [];
-    },
-    enabled: !!tenantId,
-  });
-
   // Compute KPIs
   const totalRevenue = orders.reduce((s, o) => s + Number(o.total || 0), 0);
   const martzRevenue = activities
@@ -149,8 +128,6 @@ export default function Dashboard() {
       }, 0) / customersWithMultiple.length
     : 0;
 
-  const totalClicks = (clicks as any[]).length;
-
   const kpis = [
     { label: "Receita Total", value: fmtMoney(totalRevenue), icon: DollarSign },
     { label: "Receita Martz", value: fmtMoney(martzRevenue), icon: Target },
@@ -160,7 +137,6 @@ export default function Dashboard() {
     { label: "LTV", value: fmtMoney(ltv), icon: BarChart3 },
     { label: "Freq. Compra", value: `${avgFrequency.toFixed(1)}x`, icon: Repeat },
     { label: "Tempo entre Pedidos", value: avgDaysBetween > 0 ? `${Math.round(avgDaysBetween)} dias` : "—", icon: Clock },
-    { label: "Cliques", value: fmtNumber(totalClicks), icon: MousePointerClick },
   ];
 
   // Chart data: group orders by day using full date key

@@ -28,18 +28,8 @@ import {
 } from "recharts";
 import { subDays, format } from "date-fns";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from "recharts";
-import { subDays, format } from "date-fns";
+
+
 
 const PERIOD_DAYS = 14;
 

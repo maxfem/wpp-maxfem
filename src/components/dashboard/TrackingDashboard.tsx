@@ -71,7 +71,7 @@ export default function TrackingDashboard() {
 
   // Fetch clicks for period
   const { data: clicks = [] } = useQuery({
-    queryKey: ["tracking-clicks", tenantId, trackedLinks.length],
+    queryKey: ["tracking-clicks", tenantId, trackedLinks.length, periodDays],
     queryFn: async () => {
       if (trackedLinks.length === 0) return [];
       const linkIds = trackedLinks.map((l) => l.id);

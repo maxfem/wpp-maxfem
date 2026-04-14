@@ -192,20 +192,116 @@ async function isOrderStillUnpaid(supabase: any, triggerData: any, tenantId: str
   return !paidStatuses.includes(status);
 }
 
-// ===== AUTOMATION QUEUE PROCESSOR =====
+// ===== FLOW GRAPH HELPERS =====
+
+interface FlowNode {
+  id: string;
+  type: string;
+  data: Record<string, any>;
+}
+
+interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+}
+
+function getNextNodeId(edges: FlowEdge[], currentNodeId: string, sourceHandle?: string): string | null {
+  const edge = edges.find(e => {
+    if (e.source !== currentNodeId) return false;
+    if (sourceHandle && e.sourceHandle) return e.sourceHandle === sourceHandle;
+    return true;
+  });
+  return edge?.target || null;
+}
+
+function getNodeById(nodes: FlowNode[], nodeId: string): FlowNode | null {
+  return nodes.find(n => n.id === nodeId) || null;
+}
+
+function calculateWaitMs(waitTime: number | string, waitUnit: string): number {
+  const t = Number(waitTime) || 0;
+  switch (waitUnit) {
+    case "minutes": return t * 60 * 1000;
+    case "hours": return t * 60 * 60 * 1000;
+    case "days": return t * 24 * 60 * 60 * 1000;
+    default: return t * 60 * 1000;
+  }
+}
+
+// Evaluate a condition node against live data
+async function evaluateCondition(
+  supabase: any, node: FlowNode, item: any
+): Promise<boolean> {
+  const data = node.data || {};
+  const field = data.conditionField || "";
+  const op = data.conditionOp || "equals";
+  const value = data.conditionValue || "";
+  const triggerData = (item.trigger_data || {}) as any;
+
+  // Built-in condition: payment_status (check if order is paid)
+  if (field === "payment_status" || field === "order_status") {
+    const yampiOrderId = triggerData?.yampi_order_id;
+    const orderId = triggerData?.order_id;
+    if (!yampiOrderId && !orderId) return false;
+
+    let query = supabase.from("orders").select("mapped_status, status").eq("tenant_id", item.tenant_id);
+    if (yampiOrderId) query = query.eq("external_id", `yampi_${yampiOrderId}`);
+    else query = query.eq("id", orderId);
+    const { data: order } = await query.limit(1).single();
+
+    const status = (order?.mapped_status || order?.status || "").toLowerCase();
+    const paidStatuses = ["paid", "pago", "approved", "aprovado", "invoiced", "faturado", "shipped", "enviado", "delivered", "entregue"];
+
+    if (value === "paid" || value === "pago") return paidStatuses.includes(status);
+    if (value === "unpaid" || value === "pending") return !paidStatuses.includes(status);
+    return status === value.toLowerCase();
+  }
+
+  // Built-in condition: cart_purchased (check if customer placed order after cart)
+  if (field === "cart_purchased") {
+    const cartTime = triggerData?.updated_at || item.created_at;
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("tenant_id", item.tenant_id)
+      .eq("customer_id", item.customer_id)
+      .gte("created_at", cartTime)
+      .limit(1);
+    const hasPurchased = (orders || []).length > 0;
+    return value === "no" ? !hasPurchased : hasPurchased;
+  }
+
+  // Generic trigger_data field comparison
+  const actual = String(triggerData?.[field] || "").toLowerCase();
+  const expected = value.toLowerCase();
+  switch (op) {
+    case "equals": return actual === expected;
+    case "not_equals": return actual !== expected;
+    case "contains": return actual.includes(expected);
+    case "greater_than": return Number(actual) > Number(expected);
+    case "less_than": return Number(actual) < Number(expected);
+    default: return actual === expected;
+  }
+}
+
+// ===== AUTOMATION QUEUE PROCESSOR (GRAPH WALKER) =====
 async function processAutomationQueue(supabase: any) {
   const results: any[] = [];
 
-  // Only process items created from today onwards (ignore historical backfill)
+  // Only process items created from today onwards
   const todayCutoff = new Date();
   todayCutoff.setUTCHours(0, 0, 0, 0);
 
-  // Fetch pending items created today or later (limit 50 per run)
+  // Fetch pending items whose scheduled_for has passed (or is null)
+  const now = new Date().toISOString();
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for")
     .eq("status", "pending")
     .gte("created_at", todayCutoff.toISOString())
+    .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -213,9 +309,9 @@ async function processAutomationQueue(supabase: any) {
     return results;
   }
 
-  console.log(`Processing ${queueItems.length} automation queue items`);
+  console.log(`Processing ${queueItems.length} automation queue items (graph walker)`);
 
-  // Group by campaign to load template once per campaign
+  // Group by campaign
   const byCampaign = new Map<string, any[]>();
   for (const item of queueItems) {
     const list = byCampaign.get(item.campaign_id) || [];
@@ -224,7 +320,6 @@ async function processAutomationQueue(supabase: any) {
   }
 
   for (const [campaignId, items] of byCampaign) {
-    // Load campaign
     const { data: campaign } = await supabase
       .from("campaigns")
       .select("*")
@@ -232,14 +327,24 @@ async function processAutomationQueue(supabase: any) {
       .single();
 
     if (!campaign || campaign.status !== "running") {
-      // Mark items as failed if campaign is no longer active
       for (const item of items) {
-        await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
+        await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
       }
       continue;
     }
 
-    // Get WhatsApp credentials
+    const flowData = campaign.flow_data as any;
+    const nodes: FlowNode[] = flowData?.nodes || [];
+    const edges: FlowEdge[] = flowData?.edges || [];
+
+    if (nodes.length === 0) {
+      for (const item of items) {
+        await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+      }
+      continue;
+    }
+
+    // Get WhatsApp credentials once per campaign
     const { data: waAccount } = await supabase
       .from("whatsapp_accounts")
       .select("phone_number_id")
@@ -251,211 +356,305 @@ async function processAutomationQueue(supabase: any) {
     const phoneNumberId = waAccount?.phone_number_id || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
     const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
 
-    if (!phoneNumberId || !accessToken) {
-      console.error(`Automation ${campaignId}: no WhatsApp credentials`);
-      continue;
-    }
-
-    // Extract template and delay from flow_data
-    const flowData = campaign.flow_data as any;
-    let templateName: string | null = null;
-    let templateLanguage = "pt_BR";
-    let sendDelay = "";
-
-    if (flowData?.nodes) {
-      const sendNode = flowData.nodes.find(
-        (n: any) => n.data?.nodeType === "sendWhatsApp" && (n.data?.template || n.data?.templateName)
-      );
-      if (sendNode) {
-        templateName = sendNode.data.template || sendNode.data.templateName;
-        templateLanguage = sendNode.data.templateLanguage || "pt_BR";
-        sendDelay = sendNode.data.delay || "";
-      }
-    }
-
-    const delayMs = parseDelayMs(sendDelay);
-
-    // Determine if this automation requires payment status check
-    const triggerType = campaign.trigger_type || "";
-    const needsPaymentCheck = ["order_created_pix", "order_created_boleto"].includes(triggerType);
-
-    if (!templateName) {
-      console.error(`Automation ${campaignId}: no template in flow`);
-      for (const item of items) {
-        await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
-      }
-      continue;
-    }
-
-    // Load template record
-    const { data: templateRecord } = await supabase
-      .from("message_templates")
-      .select("body, header_type, header_content, sample_values, buttons")
-      .eq("name", templateName)
-      .eq("tenant_id", campaign.tenant_id)
-      .limit(1)
-      .single();
-
-    const bodyVarCount = templateRecord?.body
-      ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length
-      : 0;
-    const hasHeaderVar = templateRecord?.header_type === "text" &&
-      templateRecord?.header_content?.includes("{{");
-    const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
-    const templateButtons = (templateRecord?.buttons as any[]) || [];
-    const dynamicUrlBtnIndex = templateButtons.findIndex(
-      (b: any) => b.type === "URL" && b.url?.includes("{{1}}")
-    );
-    const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
-
     // Extract campaign-level variables
     const campaignVars: any = {};
-    if (flowData?.nodes) {
-      for (const node of flowData.nodes) {
-        if (node.data?.coupon) campaignVars.coupon = node.data.coupon;
-        if (node.data?.discount) campaignVars.discount = node.data.discount;
-      }
+    for (const node of nodes) {
+      if (node.data?.coupon) campaignVars.coupon = node.data.coupon;
+      if (node.data?.discount) campaignVars.discount = node.data.discount;
     }
 
-    // Process each queued item
+    // Template cache to avoid re-fetching
+    const templateCache = new Map<string, any>();
+
     for (const item of items) {
       try {
-        // === DELAY CHECK: skip items whose delay hasn't elapsed yet ===
-        if (delayMs > 0) {
-          const createdAt = new Date(item.created_at).getTime();
-          const readyAt = createdAt + delayMs;
-          if (Date.now() < readyAt) {
-            console.log(`Automation item ${item.id}: delay not elapsed yet (ready at ${new Date(readyAt).toISOString()}), skipping`);
-            continue; // leave as "pending", will be picked up in next cron run
-          }
-        }
+        // Walk the graph from current_node_id
+        let currentNodeId = item.current_node_id || "start";
+        let stepCount = 0;
+        const MAX_STEPS = 20; // safety limit
 
-        // === PAYMENT CHECK: for pix/boleto triggers, verify order is still unpaid ===
-        if (needsPaymentCheck) {
-          const triggerData = item.trigger_data as any;
-          const stillUnpaid = await isOrderStillUnpaid(supabase, triggerData, item.tenant_id);
-          if (!stillUnpaid) {
-            console.log(`Automation item ${item.id}: order already paid, skipping send`);
+        while (stepCount < MAX_STEPS) {
+          stepCount++;
+
+          // If we're at "start", find the first edge from the start node
+          if (currentNodeId === "start") {
+            const startNode = nodes.find(n => n.type === "startNode" || n.data?.nodeType === "start");
+            if (startNode) {
+              const nextId = getNextNodeId(edges, startNode.id);
+              if (nextId) {
+                currentNodeId = nextId;
+                continue;
+              }
+            }
+            // No start node or no edge from it — try first edge from any node
+            const firstEdge = edges[0];
+            if (firstEdge) {
+              currentNodeId = firstEdge.target;
+              continue;
+            }
+            // No edges at all — done
             await supabase.from("automation_queue").update({
-              status: "skipped",
-              processed_at: new Date().toISOString(),
+              status: "completed", processed_at: now, current_node_id: currentNodeId,
             }).eq("id", item.id);
+            break;
+          }
+
+          const node = getNodeById(nodes, currentNodeId);
+          if (!node) {
+            // Node not found — mark completed
+            await supabase.from("automation_queue").update({
+              status: "completed", processed_at: now, current_node_id: currentNodeId,
+            }).eq("id", item.id);
+            break;
+          }
+
+          const nodeType = node.data?.nodeType || node.type;
+
+          // ---- WAIT NODE ----
+          if (nodeType === "wait" || nodeType === "waitDate" || nodeType === "waitCondition") {
+            const waitMs = calculateWaitMs(node.data?.waitTime || 0, node.data?.waitUnit || "minutes");
+            const scheduledFor = new Date(Date.now() + waitMs).toISOString();
+            const nextId = getNextNodeId(edges, currentNodeId);
+
+            if (nextId) {
+              await supabase.from("automation_queue").update({
+                current_node_id: nextId,
+                scheduled_for: scheduledFor,
+              }).eq("id", item.id);
+              console.log(`Item ${item.id}: wait ${node.data?.waitTime} ${node.data?.waitUnit}, scheduled for ${scheduledFor}`);
+            } else {
+              await supabase.from("automation_queue").update({
+                status: "completed", processed_at: now, current_node_id: currentNodeId,
+              }).eq("id", item.id);
+            }
+            break; // Stop walking — will resume after scheduled_for
+          }
+
+          // ---- CONDITION NODE ----
+          if (nodeType === "condition" || nodeType === "multiCondition") {
+            const conditionMet = await evaluateCondition(supabase, node, item);
+            const handle = conditionMet ? "condition-true" : "condition-false";
+            const nextId = getNextNodeId(edges, currentNodeId, handle);
+
+            console.log(`Item ${item.id}: condition ${node.data?.conditionField} = ${conditionMet}, next: ${nextId}`);
+
+            if (nextId) {
+              currentNodeId = nextId;
+              // Update position and continue walking
+              await supabase.from("automation_queue").update({
+                current_node_id: currentNodeId, scheduled_for: null,
+              }).eq("id", item.id);
+              continue;
+            } else {
+              // No next node on this branch — completed
+              await supabase.from("automation_queue").update({
+                status: conditionMet ? "completed" : "skipped",
+                processed_at: now,
+                current_node_id: currentNodeId,
+              }).eq("id", item.id);
+              break;
+            }
+          }
+
+          // ---- SEND WHATSAPP NODE ----
+          if (nodeType === "sendWhatsApp") {
+            if (!phoneNumberId || !accessToken) {
+              console.error(`Item ${item.id}: no WhatsApp credentials`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            const templateName = node.data?.template || node.data?.templateName;
+            const templateLanguage = node.data?.templateLanguage || "pt_BR";
+
+            if (!templateName) {
+              console.error(`Item ${item.id}: sendWhatsApp node has no template`);
+              const nextId = getNextNodeId(edges, currentNodeId, "out-3"); // "Próxima etapa"
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id);
+                continue;
+              }
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            // Load template (cached)
+            if (!templateCache.has(templateName)) {
+              const { data: tpl } = await supabase
+                .from("message_templates")
+                .select("body, header_type, header_content, sample_values, buttons")
+                .eq("name", templateName)
+                .eq("tenant_id", campaign.tenant_id)
+                .limit(1).single();
+              templateCache.set(templateName, tpl);
+            }
+            const templateRecord = templateCache.get(templateName);
+
+            const bodyVarCount = templateRecord?.body
+              ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
+            const hasHeaderVar = templateRecord?.header_type === "text" &&
+              templateRecord?.header_content?.includes("{{");
+            const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
+            const templateButtons = (templateRecord?.buttons as any[]) || [];
+            const dynamicUrlBtnIndex = templateButtons.findIndex(
+              (b: any) => b.type === "URL" && b.url?.includes("{{1}}")
+            );
+            const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+
+            // Load customer
+            const { data: customer } = await supabase
+              .from("customers")
+              .select("id, name, phone, email, custom_attributes")
+              .eq("id", item.customer_id).single();
+
+            if (!customer?.phone) {
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
+            if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
+
+            const ctx = { customer, order: null, campaign: campaignVars };
+
+            // Tracked link for dynamic URL button
+            let buttonUrlCode: string | undefined;
+            if (hasDynamicUrlButton) {
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName);
+              if (dynamicUrl) {
+                const code = generateCode(10);
+                await supabase.from("tracked_links").insert({
+                  tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                  customer_id: customer.id, original_url: dynamicUrl, code,
+                  utm_source: "whatsapp", utm_medium: "automation", utm_campaign: campaign.name,
+                });
+                buttonUrlCode = code;
+              }
+            }
+
+            // Send via Meta
+            const waRes = await fetch(
+              `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
+              {
+                method: "POST",
+                headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  messaging_product: "whatsapp", to: phone, type: "template",
+                  template: {
+                    name: templateName,
+                    language: { code: templateLanguage },
+                    components: buildTemplateComponents(
+                      variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                      buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                    ),
+                  },
+                }),
+              }
+            );
+
+            const waData = await waRes.json();
+
+            if (waData.messages?.[0]?.id) {
+              await supabase.from("whatsapp_messages").insert({
+                tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
+                direction: "outbound", message_type: "template", template_name: templateName,
+                wamid: waData.messages[0].id, status: "sent",
+                content: `[Automação: ${templateName}]`,
+              });
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: customer.id, status: "sent", channel: "whatsapp",
+                sent_at: new Date().toISOString(),
+              });
+              console.log(`Item ${item.id}: sent ${templateName} to ${phone}`);
+
+              // Advance to next node via "out-3" (Próxima etapa) handle
+              const nextId = getNextNodeId(edges, currentNodeId, "out-3")
+                || getNextNodeId(edges, currentNodeId);
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({
+                  current_node_id: currentNodeId, scheduled_for: null,
+                }).eq("id", item.id);
+                continue; // Keep walking
+              } else {
+                await supabase.from("automation_queue").update({
+                  status: "sent", processed_at: now, current_node_id: currentNodeId,
+                }).eq("id", item.id);
+                break;
+              }
+            } else {
+              const apiErr = waData?.error?.message || JSON.stringify(waData);
+              console.error(`Item ${item.id}: send failed: ${apiErr}`);
+              await supabase.from("automation_queue").update({
+                status: "failed", processed_at: now, current_node_id: currentNodeId,
+              }).eq("id", item.id);
+              break;
+            }
+          }
+
+          // ---- EXIT NODE ----
+          if (nodeType === "exit") {
+            await supabase.from("automation_queue").update({
+              status: "completed", processed_at: now, current_node_id: currentNodeId,
+            }).eq("id", item.id);
+            break;
+          }
+
+          // ---- ADD TAG ----
+          if (nodeType === "addTag" && node.data?.tagName) {
+            await supabase.rpc("", {}); // Tags are array append
+            const { data: cust } = await supabase.from("customers")
+              .select("tags").eq("id", item.customer_id).single();
+            const currentTags = cust?.tags || [];
+            if (!currentTags.includes(node.data.tagName)) {
+              await supabase.from("customers").update({
+                tags: [...currentTags, node.data.tagName],
+              }).eq("id", item.customer_id);
+            }
+            const nextId = getNextNodeId(edges, currentNodeId);
+            if (nextId) { currentNodeId = nextId; continue; }
+            await supabase.from("automation_queue").update({
+              status: "completed", processed_at: now, current_node_id: currentNodeId,
+            }).eq("id", item.id);
+            break;
+          }
+
+          // ---- REMOVE TAG ----
+          if (nodeType === "removeTag" && node.data?.tagName) {
+            const { data: cust } = await supabase.from("customers")
+              .select("tags").eq("id", item.customer_id).single();
+            const currentTags = (cust?.tags || []).filter((t: string) => t !== node.data.tagName);
+            await supabase.from("customers").update({ tags: currentTags }).eq("id", item.customer_id);
+            const nextId = getNextNodeId(edges, currentNodeId);
+            if (nextId) { currentNodeId = nextId; continue; }
+            await supabase.from("automation_queue").update({
+              status: "completed", processed_at: now, current_node_id: currentNodeId,
+            }).eq("id", item.id);
+            break;
+          }
+
+          // ---- ARCHIVE CHAT / TRANSFER / NOTE / UNKNOWN ----
+          // Skip non-actionable nodes, advance to next
+          const nextId = getNextNodeId(edges, currentNodeId);
+          if (nextId) {
+            currentNodeId = nextId;
+            await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id);
             continue;
           }
-        }
-
-        // Mark as processing
-        await supabase.from("automation_queue").update({ status: "processing" }).eq("id", item.id);
-
-        // Load customer
-        const { data: customer } = await supabase
-          .from("customers")
-          .select("id, name, phone, email, custom_attributes")
-          .eq("id", item.customer_id)
-          .single();
-
-        if (!customer?.phone) {
-          await supabase.from("automation_queue").update({ status: "failed", processed_at: new Date().toISOString() }).eq("id", item.id);
-          continue;
-        }
-
-        let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
-        if (!phone.startsWith("55") && phone.length <= 11) {
-          phone = "55" + phone;
-        }
-
-        const ctx = { customer, order: null, campaign: campaignVars };
-
-        // Create tracked link for dynamic URL button
-        let buttonUrlCode: string | undefined;
-        if (hasDynamicUrlButton) {
-          const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
-          if (dynamicUrl) {
-            const code = generateCode(10);
-            await supabase.from("tracked_links").insert({
-              tenant_id: campaign.tenant_id,
-              campaign_id: campaign.id,
-              customer_id: customer.id,
-              original_url: dynamicUrl,
-              code,
-              utm_source: "whatsapp",
-              utm_medium: "automation",
-              utm_campaign: campaign.name,
-            });
-            buttonUrlCode = code;
-          }
-        }
-
-        // Send via Meta Graph API
-        const waRes = await fetch(
-          `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: phone,
-              type: "template",
-              template: {
-                name: templateName,
-                language: { code: templateLanguage },
-                components: buildTemplateComponents(
-                  variableMappings, ctx, bodyVarCount, hasHeaderVar,
-                  buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
-                ),
-              },
-            }),
-          }
-        );
-
-        const waData = await waRes.json();
-
-        if (waData.messages?.[0]?.id) {
-          await supabase.from("whatsapp_messages").insert({
-            tenant_id: campaign.tenant_id,
-            customer_id: customer.id,
-            phone,
-            direction: "outbound",
-            message_type: "template",
-            template_name: templateName,
-            wamid: waData.messages[0].id,
-            status: "sent",
-            content: `[Automação: ${templateName}]`,
-          });
-
-          await supabase.from("campaign_activities").insert({
-            tenant_id: campaign.tenant_id,
-            campaign_id: campaign.id,
-            customer_id: customer.id,
-            status: "sent",
-            channel: "whatsapp",
-            sent_at: new Date().toISOString(),
-          });
-
           await supabase.from("automation_queue").update({
-            status: "sent",
-            processed_at: new Date().toISOString(),
+            status: "completed", processed_at: now, current_node_id: currentNodeId,
           }).eq("id", item.id);
-
-          console.log(`Automation sent to ${phone} (campaign ${campaignId})`);
-        } else {
-          const apiErr = waData?.error?.message || JSON.stringify(waData);
-          console.error(`Automation send failed to ${phone}: ${apiErr}`);
-          await supabase.from("automation_queue").update({
-            status: "failed",
-            processed_at: new Date().toISOString(),
-          }).eq("id", item.id);
+          break;
         }
 
+        // Rate limit between items
         await new Promise((r) => setTimeout(r, 100));
       } catch (err) {
-        console.error(`Automation queue item ${item.id} error:`, err);
+        console.error(`Queue item ${item.id} error:`, err);
         await supabase.from("automation_queue").update({
-          status: "failed",
-          processed_at: new Date().toISOString(),
+          status: "failed", processed_at: now,
         }).eq("id", item.id);
       }
     }

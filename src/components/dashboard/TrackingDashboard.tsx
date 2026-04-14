@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
@@ -21,8 +22,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-const PERIOD_DAYS = 14;
+const PERIOD_OPTIONS = [
+  { value: "7", label: "7 dias" },
+  { value: "14", label: "14 dias" },
+  { value: "30", label: "30 dias" },
+];
 
 const fmtNumber = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 const fmtMoney = (v: number) =>
@@ -41,7 +53,8 @@ function buildDayEntries(days: number) {
 export default function TrackingDashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
-  const periodStart = subDays(new Date(), PERIOD_DAYS).toISOString();
+  const [periodDays, setPeriodDays] = useState(14);
+  const periodStart = subDays(new Date(), periodDays).toISOString();
 
   // Fetch tracked links for this tenant
   const { data: trackedLinks = [] } = useQuery({

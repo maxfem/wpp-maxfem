@@ -601,12 +601,13 @@ Deno.serve(async (req) => {
             }
           }
 
-          if (syncSettings?.abandoned_carts !== false) {
-            let cartPage = 1;
-            while (cartPage) {
+            let cartPage: number | null = 1;
+            let cartPages = 0;
+            while (cartPage && cartPages < MAX_CRON_PAGES) {
               const result = await syncCarts(supabase, int.tenant_id, cfg, cartPage);
               cartsSynced += result.synced;
               cartPage = result.nextPage;
+              cartPages++;
             }
           }
 

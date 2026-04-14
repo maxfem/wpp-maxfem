@@ -206,10 +206,10 @@ export default function Automations() {
       return datePresets.find((p) => p.days === datePreset)?.label || "";
     }
     if (customDateFrom && customDateTo) {
-      return `${format(customDateFrom, "dd/MM", { locale: ptBR })} - ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+      return `${formatSP(customDateFrom, "dd/MM")} - ${formatSP(customDateTo, "dd/MM")}`;
     }
-    if (customDateFrom) return `A partir de ${format(customDateFrom, "dd/MM", { locale: ptBR })}`;
-    if (customDateTo) return `Até ${format(customDateTo, "dd/MM", { locale: ptBR })}`;
+    if (customDateFrom) return `A partir de ${formatSP(customDateFrom, "dd/MM")}`;
+    if (customDateTo) return `Até ${formatSP(customDateTo, "dd/MM")}`;
     return "Todos";
   }, [datePreset, customDateFrom, customDateTo]);
 

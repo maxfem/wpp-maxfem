@@ -1,45 +1,40 @@
 
 
-## Plan: Add Pagination to Automation Activity Log
+## Plan: Migrar Links para `wpp.maxapps.com.br` + Dashboard de Tracking
 
-### Problem
-The activity log table currently loads all activities from today only, with no pagination. The user wants to control how many records are displayed (10, 20, 50, 100) and see all historical data — not just today's.
+### Contexto
+O domínio `wpp.maxapps.com.br` já está configurado e apontando para o projeto via Lovable. Atualmente os links usam a URL do backend (`${SUPABASE_URL}/functions/v1/link-redirect?c=CODE`). Precisamos migrar para `https://wpp.maxapps.com.br/r/CODE` e adicionar um dashboard de cliques/conversões.
 
-### Changes
+### Parte 1: Migrar URL dos Links
 
-**File: `src/pages/AutomationDetails.tsx`**
+**Problema**: O `linkShortener.ts` gera URLs com a URL interna do backend. Precisamos trocar para o domínio personalizado.
 
-1. **Remove the `todayStart` filter** from the activities query — fetch all activities for this automation, not just today's.
+**Arquivos a alterar:**
 
-2. **Add server-side pagination** using Supabase `.range()`:
-   - Add state for `pageSize` (default 20) and `currentPage` (default 0)
-   - Query with `.range(currentPage * pageSize, (currentPage + 1) * pageSize - 1)`
-   - Also fetch total count with `{ count: 'exact' }`
+| Arquivo | Mudança |
+|---------|---------|
+| `src/lib/linkShortener.ts` | Trocar `${supabaseUrl}/functions/v1/link-redirect?c=${code}` por `https://wpp.maxapps.com.br/r/${code}` |
+| `supabase/functions/link-redirect/index.ts` | Adicionar suporte ao path `/r/:code` além do query param `?c=` (para o novo formato de URL) |
+| `mem://features/tracking/link-shortener-utm` | Atualizar domínio de referência |
 
-3. **Add a page size selector** (10, 20, 50, 100) above the table using a `<Select>` component.
+**Nota sobre o `campaign-executor`**: Ele passa apenas o `code` para o template Meta como `{{1}}`. O domínio base é configurado no template da Meta (ex: `https://wpp.maxapps.com.br/r/{{1}}`). Portanto **não precisa alterar** o campaign-executor — apenas garantir que os templates na Meta usem a URL base correta.
 
-4. **Add pagination controls** below the table (Previous/Next buttons + "Página X de Y" label).
+### Parte 2: Dashboard de Cliques e Conversões
 
-5. **Keep metrics based on all data**: Add a separate lightweight query for metrics (counts only) that isn't paginated, or compute from the full count.
+Adicionar uma seção de tracking na página Dashboard (`/dashboard`) com:
 
-6. **Update the subtitle** to remove "a partir de hoje" text since we're now showing all data.
+**KPIs adicionais (na grid existente):**
+- CTR (Cliques / Entregas)
+- Conversões (total de `converted_at` preenchidos)
+- Receita Atribuída (soma de `conversion_value`)
 
-### UI Layout (Log tab)
+**Novo gráfico:**
+- Cliques por dia (BarChart, últimos 14 dias) — cruzando `tracked_links` + `link_clicks`
+- Tabela rankeada: Top campanhas/automações por cliques e conversões
 
-```text
-┌─────────────────────────────────────────────┐
-│ Log de Atividades (total)   [10|20|50|100▼] │
-├─────────────────────────────────────────────┤
-│ Cliente | Telefone | Enviado | Entregue ... │
-│ ...rows...                                  │
-├─────────────────────────────────────────────┤
-│ ◀ Anterior    Página 1 de 5    Próxima ▶    │
-└─────────────────────────────────────────────┘
-```
+**Dados**: Usar as queries existentes de `activities` e `clicks` já presentes no Dashboard, expandindo para incluir conversões e agrupamento por campanha.
 
-### Technical Details
-
-- Use two queries: one for paginated log display, one for metrics (all activities count/sums)
-- Page size selector resets to page 0 on change
-- Supabase `count: 'exact'` returns total without fetching all rows
+### Resultado
+- Links curtos com domínio próprio: `https://wpp.maxapps.com.br/r/CODE`
+- Dashboard com visibilidade de cliques, CTR, conversões e receita atribuída por campanha
 

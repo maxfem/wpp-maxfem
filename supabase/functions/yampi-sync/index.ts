@@ -569,7 +569,7 @@ Deno.serve(async (req) => {
     if (cron) {
       const { data: integrations } = await supabase
         .from("integrations")
-        .select("tenant_id, config, sync_settings")
+        .select("tenant_id, config, sync_settings, last_synced_at")
         .eq("provider", "yampi")
         .eq("is_active", true);
 
@@ -590,22 +590,33 @@ Deno.serve(async (req) => {
 
           if (syncSettings?.orders !== false) {
             // Process all order pages in cron
-            let orderPage = 1;
-            while (orderPage) {
+            const MAX_CRON_PAGES = 30;
+            let orderPage: number | null = 1;
+            let orderPages = 0;
+            while (orderPage && orderPages < MAX_CRON_PAGES) {
               const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
               ordersSynced += result.synced;
               orderPage = result.nextPage;
+              orderPages++;
             }
           }
 
           if (syncSettings?.abandoned_carts !== false) {
-            let cartPage = 1;
-            while (cartPage) {
+            let cartPage: number | null = 1;
+            let cartPages = 0;
+            while (cartPage && cartPages < MAX_CRON_PAGES) {
               const result = await syncCarts(supabase, int.tenant_id, cfg, cartPage);
               cartsSynced += result.synced;
               cartPage = result.nextPage;
+              cartPages++;
             }
           }
+
+          // Update last_synced_at after successful sync
+          await supabase.from("integrations")
+            .update({ last_synced_at: new Date().toISOString(), sync_status: "success", sync_error: null })
+            .eq("tenant_id", int.tenant_id)
+            .eq("provider", "yampi");
 
           cronResults.push({ tenant_id: int.tenant_id, orders: ordersSynced, carts: cartsSynced });
         } catch (err) {

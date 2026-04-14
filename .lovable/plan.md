@@ -1,43 +1,50 @@
 
 
-## Plan: Fix Automation Queue — Process Only From Activation Date Forward
+## Plan: Fix Duplicate Automation Queue Entries
 
-### Problem
-Two issues:
-1. The `todayCutoff` filter (`created_at >= today 00:00 UTC`) blocks items created yesterday that have a future `scheduled_for` (wait nodes). This breaks multi-day flows.
-2. Old/legacy queue items should never be processed — only items created after the automation was activated.
+### Root Cause
+The unique index `idx_aq_unique_cart` only prevents duplicates when status is `pending`, `processing`, or `sent`. Once a queue item reaches `completed` or `failed`, the constraint no longer applies. On the next yampi-sync cycle, the same order re-matches the same trigger and inserts a new queue entry.
+
+Zelyane has 1 order but 3 completed `order_created_pix` entries — one per sync cycle.
 
 ### Solution
 
-**File: `supabase/functions/campaign-executor/index.ts`**
+**Option A (recommended): Expand the unique index to include `completed` status**
 
-Remove the `todayCutoff` / `.gte("created_at", ...)` filter from the queue query. Items are already gated by:
-- `status = 'pending'` — only unprocessed items
-- `scheduled_for <= now() OR scheduled_for IS NULL` — respects wait timers
-- Campaign `status = 'running'` check — inactive automations are skipped
+Drop and recreate the unique index to also cover `completed` and `failed` statuses:
 
-This is sufficient. The cutoff logic should live at **insertion time** (in `yampi-sync` and `automation-cron`), not at processing time.
+```sql
+DROP INDEX IF EXISTS idx_aq_unique_cart;
+CREATE UNIQUE INDEX idx_aq_unique_cart 
+  ON automation_queue (customer_id, campaign_id, trigger_type)
+  WHERE status IN ('pending', 'processing', 'sent', 'completed', 'failed');
+```
 
-**File: `supabase/functions/yampi-sync/index.ts`**
+This is the simplest fix — the same customer+campaign+trigger combination can never have more than one entry regardless of status.
 
-Add a check: when inserting into `automation_queue`, compare the event timestamp (cart creation, order creation) against the campaign's `start_date` or `updated_at`. Only enqueue if the event happened **after** the automation was activated. This prevents old historical events from entering the queue.
+**Additionally: Add `trigger_data` order reference to the unique check**
 
-**File: `supabase/functions/automation-cron/index.ts`**
+Since the same customer could legitimately have multiple Pix orders over time, the index should also include the order identifier. We'll add a generated column or use a functional index on `trigger_data->>'yampi_order_id'`:
 
-Already only processes today's events (birthday today, inactivity window today), so no legacy items enter. No change needed.
+```sql
+DROP INDEX IF EXISTS idx_aq_unique_cart;
+CREATE UNIQUE INDEX idx_aq_unique_trigger 
+  ON automation_queue (customer_id, campaign_id, trigger_type, COALESCE((trigger_data->>'yampi_order_id'), id::text));
+```
 
-**Data cleanup**: Mark any remaining old `pending` items as `skipped` to clear the queue.
+This way:
+- Same order + same automation = blocked (no duplicates)
+- Different orders + same automation = allowed (legitimate new triggers)
 
-### Files to Edit
+### Files to Change
 
 | File | Change |
 |------|--------|
-| `supabase/functions/campaign-executor/index.ts` | Remove `todayCutoff` filter (lines 293-295, 303) — process by `scheduled_for` only |
-| `supabase/functions/yampi-sync/index.ts` | Add activation-date check before inserting into queue |
-| Data cleanup | Mark old pending items as `skipped` |
+| Migration SQL | Replace unique index to cover all statuses + include order ID |
+| Cleanup | Mark the 2 extra Zelyane entries as `skipped` |
 
 ### Result
-- Multi-day flows (wait nodes spanning days) will work correctly
-- Only events occurring after activation enter the queue
-- No retroactive processing of historical data
+- Each order triggers the automation exactly once
+- Multiple distinct orders from the same customer still work
+- No more duplicate sends on every sync cycle
 

@@ -55,18 +55,26 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
     refunded: "Reembolsado",
   };
 
-  const formattedOrders = orders.map((o: any) => ({
-    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
-    status: statusLabels[o.status_alias || o.status] || o.status,
-    status_alias: o.status_alias || o.status,
-    total: o.total,
-    created_at: o.created_at,
-    tracking_code: o.tracking_code || null,
-    tracking_url: o.tracking_url || null,
-    carrier: o.carrier || null,
-    payments: o.payment_summary || [],
-    items: o.items_summary || [],
-  }));
+  const formattedOrders = orders.map((o: any) => {
+    const trackingCode = o.tracking_code || null;
+    // Always use Maxfem tracking page when tracking_code exists
+    const trackingUrl = trackingCode
+      ? `https://rastreio.maxfem.com.br/${trackingCode}`
+      : (o.tracking_url || null);
+
+    return {
+      order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+      status: statusLabels[o.status_alias || o.status] || o.status,
+      status_alias: o.status_alias || o.status,
+      total: o.total,
+      created_at: o.created_at,
+      tracking_code: trackingCode,
+      tracking_url: trackingUrl,
+      carrier: o.carrier || null,
+      payments: o.payment_summary || [],
+      items: o.items_summary || [],
+    };
+  });
 
   console.log("[copilot] Local orders lookup result:", JSON.stringify(formattedOrders));
 
@@ -250,14 +258,9 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
         }
       }
 
-      if (trackingCode && !trackingUrl) {
-        if (/^BLI[_-]/i.test(trackingCode)) {
-          trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
-        } else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) {
-          trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
-        } else {
-          trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
-        }
+      // Always use Maxfem tracking page for all carriers
+      if (trackingCode) {
+        trackingUrl = `https://rastreio.maxfem.com.br/${trackingCode}`;
       }
 
       const payments = (d.parcelas || []).map((p: any) => ({
@@ -450,7 +453,8 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
 - Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações. Use apenas os dados retornados pela função.
-- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://exemplo.com/rastreio". Exemplos ERRADOS: "[clique aqui](https://exemplo.com/rastreio)", "(https://exemplo.com/rastreio)", "* [Acompanhar pedido](url)".
+- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://rastreio.maxfem.com.br/ABC123". Exemplos ERRADOS: "[clique aqui](url)", "(https://url)", "* [Acompanhar pedido](url)".
+- O link de rastreio é SEMPRE no formato https://rastreio.maxfem.com.br/CODIGO_RASTREIO — use exatamente o tracking_url retornado pela função, sem modificar, sem adicionar parênteses, colchetes ou qualquer caractere ao redor.
 - CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI_16023873836", escreva "BLI_16023873836" e NÃO "BLI16023873836".`;
     }
 
@@ -597,10 +601,12 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       .replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_: string, _text: string, url: string) => url)
       // Remove wrapping parentheses around URLs: (https://...) → https://...
       .replace(/\((https?:\/\/[^\s)]+)\)/g, (_: string, url: string) => url)
-      // Remove leading * before URLs
-      .replace(/\*\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
+      // Remove leading * or - before URLs
+      .replace(/[*\-]\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
       // Strip trailing punctuation from URLs
-      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""));
+      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""))
+      // Final safety pass: catch any remaining parens/brackets wrapping URLs
+      .replace(/[\[(](https?:\/\/[^\s\])]+)[\])]/g, (_: string, url: string) => url);
 
     return new Response(JSON.stringify({ suggestion }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

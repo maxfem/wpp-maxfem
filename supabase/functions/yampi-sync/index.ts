@@ -244,8 +244,59 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   let synced = 0;
 
   for (const o of orders) {
-    const customerEntry = yampiIdToCustomer.get(o.customer_id);
-    if (!customerEntry) continue;
+    let customerEntry = yampiIdToCustomer.get(o.customer_id);
+
+    // Auto-create customer if not found (avoids skipping orders for unsynchronized customers)
+    if (!customerEntry) {
+      const customerName = o.customer?.data?.name || `${o.customer?.data?.first_name || ""} ${o.customer?.data?.last_name || ""}`.trim() || "Cliente";
+      const customerPhone = o.customer?.data?.phone?.full_number || null;
+      const customerEmail = o.customer?.data?.email || null;
+      const customerCpf = normalizeCpf(o.customer?.data?.cpf);
+
+      if (customerName) {
+        // Check if customer already exists by phone or email
+        let existingCustomerId: string | null = null;
+        if (customerPhone) {
+          const { data: byPhone } = await supabase.from("customers").select("id, total_orders").eq("tenant_id", tenant_id).eq("phone", customerPhone).limit(1).maybeSingle();
+          if (byPhone) existingCustomerId = byPhone.id;
+        }
+        if (!existingCustomerId && customerEmail) {
+          const { data: byEmail } = await supabase.from("customers").select("id, total_orders").eq("tenant_id", tenant_id).eq("email", customerEmail).limit(1).maybeSingle();
+          if (byEmail) existingCustomerId = byEmail.id;
+        }
+
+        if (existingCustomerId) {
+          // Update existing customer with yampi_id
+          await supabase.from("customers").update({
+            custom_attributes: { yampi_id: o.customer_id, cpf: o.customer?.data?.cpf },
+          }).eq("id", existingCustomerId);
+          customerEntry = { id: existingCustomerId, total_orders: 0 };
+          yampiIdToCustomer.set(o.customer_id, customerEntry);
+          console.log(`Linked existing customer ${existingCustomerId} to yampi_id ${o.customer_id}`);
+        } else {
+          // Create new customer
+          const { data: newCust, error: custErr } = await supabase.from("customers").insert({
+            tenant_id,
+            name: customerName,
+            phone: customerPhone,
+            email: customerEmail,
+            document: customerCpf,
+            custom_attributes: { yampi_id: o.customer_id, cpf: o.customer?.data?.cpf },
+          }).select("id").single();
+
+          if (custErr) {
+            console.error(`Auto-create customer failed for yampi_id ${o.customer_id}:`, custErr.message);
+            continue;
+          }
+          customerEntry = { id: newCust.id, total_orders: 0 };
+          yampiIdToCustomer.set(o.customer_id, customerEntry);
+          console.log(`Auto-created customer ${newCust.id} for yampi_id ${o.customer_id}`);
+        }
+      } else {
+        continue;
+      }
+    }
+
     const customerId = customerEntry.id;
 
     const orderStatus = o.status?.data?.alias || "pending";

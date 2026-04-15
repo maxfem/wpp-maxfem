@@ -50,6 +50,7 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Copy,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -447,6 +448,22 @@ export default function MessageTemplates() {
     setEditingId(null);
     setForm(emptyForm);
     setSampleValues([]);
+  };
+
+  const duplicateTemplate = (template: (typeof templates)[0]) => {
+    setEditingId(null);
+    setForm({
+      name: template.name + "_copia",
+      category: template.category,
+      language: template.language,
+      header_type: template.header_type || "none",
+      header_content: template.header_content || "",
+      body: template.body,
+      footer: template.footer || "",
+      buttons: (template.buttons as unknown as TemplateButton[]) || [],
+    });
+    setSampleValues((template.sample_values as string[]) || []);
+    setDialogOpen(true);
   };
 
   const openEdit = (template: (typeof templates)[0]) => {
@@ -989,6 +1006,9 @@ export default function MessageTemplates() {
                               ) : (
                                 <Upload className="h-4 w-4 text-primary" />
                               )}
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => duplicateTemplate(t)} title="Duplicar">
+                              <Copy className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(t)} title="Editar">
                               <Pencil className="h-4 w-4" />

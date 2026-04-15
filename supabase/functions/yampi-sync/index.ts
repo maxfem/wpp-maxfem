@@ -461,7 +461,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const paymentAlias = tx?.payment?.data?.alias || "";
 
       const matchedTriggers: string[] = [];
-      matchedTriggers.push("order_created");
+      // Only fire generic order_created if the order is NOT awaiting Pix/Boleto payment
+      const isAwaitingPixOrBoleto = (isPix || isBillet) && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled" && !["approved", "invoiced"].includes(orderStatus);
+      if (!isAwaitingPixOrBoleto) {
+        matchedTriggers.push("order_created");
+      }
       if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_pix");
       if (isBillet && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_boleto");
 

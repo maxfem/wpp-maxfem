@@ -7,309 +7,7 @@ const WHATSAPP_ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// ===== Local lookup: query orders from local DB by CPF =====
-async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string> {
-  const cleanCpf = cpf.replace(/\D/g, "");
-  if (cleanCpf.length < 11) {
-    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
-  }
-
-  // Find customer by document (normalized CPF)
-  const { data: customer } = await supabase
-    .from("customers")
-    .select("id, name, document, phone")
-    .eq("tenant_id", tenantId)
-    .eq("document", cleanCpf)
-    .maybeSingle();
-
-  if (!customer) {
-    return JSON.stringify({ error: "Nenhum cliente encontrado com esse CPF.", cpf: cleanCpf });
-  }
-
-  // Fetch orders for this customer
-  const { data: orders } = await supabase
-    .from("orders")
-    .select("id, external_id, order_number, total, status, mapped_status, status_alias, tracking_code, tracking_url, carrier, delivery_estimate, payment_summary, items_summary, created_at")
-    .eq("tenant_id", tenantId)
-    .eq("customer_id", customer.id)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
-  if (!orders || orders.length === 0) {
-    return JSON.stringify({
-      customer_name: customer.name,
-      cpf: cleanCpf,
-      orders: [],
-      message: "Cliente encontrado, mas sem pedidos registrados.",
-    });
-  }
-
-  const statusLabels: Record<string, string> = {
-    pending: "Aguardando pagamento",
-    waiting_payment: "Aguardando pagamento",
-    paid: "Pago",
-    invoiced: "Faturado",
-    shipped: "Enviado",
-    on_carriage: "Em transporte",
-    in_transit: "Em transporte",
-    delivered: "Entregue",
-    cancelled: "Cancelado",
-    refunded: "Reembolsado",
-  };
-
-  const formattedOrders = orders.map((o: any) => ({
-    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
-    status: statusLabels[o.status_alias || o.status] || o.status,
-    status_alias: o.status_alias || o.status,
-    total: o.total,
-    created_at: o.created_at,
-    tracking_code: o.tracking_code || null,
-    tracking_url: o.tracking_url || null,
-    carrier: o.carrier || null,
-    payments: o.payment_summary || [],
-    items: o.items_summary || [],
-  }));
-
-  console.log("[webhook] Local orders lookup result:", JSON.stringify(formattedOrders));
-
-  return JSON.stringify({
-    customer_name: customer.name,
-    cpf: cleanCpf,
-    orders_count: formattedOrders.length,
-    orders: formattedOrders,
-    note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem.",
-  });
-}
-
-// ===== Auto-refresh Bling token if expired =====
-async function refreshBlingToken(integrationId: string, cfg: any): Promise<string | null> {
-  const clientId = Deno.env.get("BLING_CLIENT_ID");
-  const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
-  if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
-
-  try {
-    const credentials = btoa(`${clientId}:${clientSecret}`);
-    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
-    });
-    const data = await res.json();
-    if (!res.ok) { console.error("[webhook] Bling refresh failed:", data); return null; }
-
-    const now = new Date();
-    const newConfig = {
-      ...cfg,
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      access_expires_at: new Date(now.getTime() + (data.expires_in || 21600) * 1000).toISOString(),
-      refresh_expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-    await supabase.from("integrations").update({ config: newConfig, sync_error: null, updated_at: now.toISOString() }).eq("id", integrationId);
-    console.log("[webhook] Bling token refreshed successfully");
-    return data.access_token;
-  } catch (e) { console.error("[webhook] Bling refresh error:", e); return null; }
-}
-
-// ===== Bling V3 API lookup: query orders in real-time by CPF =====
-async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string> {
-  const cleanCpf = cpf.replace(/\D/g, "");
-  if (cleanCpf.length < 11) {
-    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
-  }
-
-  try {
-    const { data: blingIntegration } = await supabase
-      .from("integrations")
-      .select("id, config")
-      .eq("tenant_id", tenantId)
-      .eq("provider", "bling")
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (!blingIntegration) {
-      return JSON.stringify({ error: "Integração Bling não configurada." });
-    }
-
-    const cfg = blingIntegration.config as any;
-    let accessToken = cfg?.access_token;
-    if (!accessToken) {
-      return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
-    }
-
-    // Check if token is expired or about to expire
-    const expiresAt = cfg.access_expires_at ? new Date(cfg.access_expires_at).getTime() : 0;
-    if (expiresAt < Date.now() + 5 * 60 * 1000) {
-      console.log("[webhook] Bling token expired, refreshing...");
-      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
-      if (newToken) accessToken = newToken;
-    }
-
-    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-
-    let contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    });
-
-    // Auto-retry with refresh on 401
-    if (contactRes.status === 401) {
-      console.log("[webhook] Bling 401, attempting token refresh...");
-      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
-      if (newToken) {
-        accessToken = newToken;
-        contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
-          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-        });
-      }
-    }
-
-    if (!contactRes.ok) {
-      console.error("[webhook] Bling contact search error:", contactRes.status);
-      return JSON.stringify({ error: "Erro ao consultar Bling." });
-    }
-
-    const contactData = await contactRes.json();
-    const contacts = contactData?.data || [];
-
-    if (contacts.length === 0) {
-      return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
-    }
-
-    const contactId = contacts[0].id;
-    const contactName = contacts[0].nome;
-
-    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    });
-
-    if (!ordersRes.ok) {
-      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
-    }
-
-    const ordersData = await ordersRes.json();
-    const ordersList = ordersData?.data || [];
-
-    if (ordersList.length === 0) {
-      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
-    }
-
-    const detailedOrders = [];
-    for (const order of ordersList.slice(0, 5)) {
-      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-      });
-      if (!detailRes.ok) continue;
-
-      const detail = await detailRes.json();
-      const d = detail?.data;
-      if (!d) continue;
-
-      // Try tracking from order transport volumes
-      const volumes = d.transporte?.volumes || [];
-      let trackingCode = volumes[0]?.codigoRastreamento || null;
-      let carrier = d.transporte?.contato?.nome || null;
-      let trackingUrl: string | null = null;
-
-      // If no tracking on order, try fetching from linked NFe (nota fiscal)
-      if (!trackingCode && d.notaFiscal?.id) {
-        try {
-          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
-            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-          });
-          if (nfeRes.ok) {
-            const nfeData = await nfeRes.json();
-            const nfe = nfeData?.data;
-            const nfeVolumes = nfe?.transporte?.volumes || [];
-            trackingCode = nfeVolumes[0]?.codigoRastreamento || trackingCode;
-            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
-          }
-        } catch (e) {
-          console.warn("[webhook] NFe tracking fetch error:", e);
-        }
-      }
-
-      // Also check linked logistic objects if available
-      if (!trackingCode) {
-        try {
-          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
-            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-          });
-          if (logRes.ok) {
-            const logData = await logRes.json();
-            const logItems = logData?.data || [];
-            if (logItems.length > 0) {
-              trackingCode = logItems[0]?.codigoRastreamento || logItems[0]?.rastreamento?.codigo || trackingCode;
-              trackingUrl = logItems[0]?.linkRastreamento || logItems[0]?.rastreamento?.link || null;
-            }
-          }
-        } catch (e) {
-          console.warn("[webhook] Logistics tracking fetch error:", e);
-        }
-      }
-
-      if (trackingCode && !trackingUrl) {
-        if (/^BLI[_-]/i.test(trackingCode)) {
-          trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
-        } else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) {
-          trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
-        } else {
-          trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
-        }
-      }
-
-      detailedOrders.push({
-        order_number: d.numero,
-        total: d.total,
-        date: d.data,
-        tracking_code: trackingCode,
-        tracking_url: trackingUrl,
-        carrier,
-        payments: (d.parcelas || []).map((p: any) => ({ value: p.valor, due_date: p.dataVencimento, method: p.observacoes || "" })),
-        items: (d.itens || []).map((i: any) => ({ name: i.descricao, quantity: i.quantidade, value: i.valor })),
-      });
-    }
-
-    console.log("[webhook] Bling orders lookup result:", JSON.stringify(detailedOrders));
-
-    return JSON.stringify({
-      source: "bling",
-      customer_name: contactName,
-      cpf: formattedCpf,
-      orders_count: detailedOrders.length,
-      orders: detailedOrders,
-    });
-  } catch (err) {
-    console.error("[webhook] Bling lookup error:", err);
-    return JSON.stringify({ error: "Erro interno ao consultar o Bling." });
-  }
-}
-
-const aiTools = [
-  {
-    type: "function" as const,
-    function: {
-      name: "lookup_orders_by_cpf",
-      description: "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema local.",
-      parameters: {
-        type: "object",
-        properties: { cpf: { type: "string", description: "CPF do cliente" } },
-        required: ["cpf"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "lookup_orders_bling",
-      description: "Consulta pedidos e código de rastreio em tempo real na API do Bling pelo CPF do cliente. Priorize esta função para dados mais atualizados.",
-      parameters: {
-        type: "object",
-        properties: { cpf: { type: "string", description: "CPF do cliente" } },
-        required: ["cpf"],
-      },
-    },
-  },
-];
+// ===== HELPERS =====
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, "");
@@ -354,26 +52,32 @@ async function resolveTenantByPhoneNumberId(phoneNumberId: string): Promise<stri
   return data.tenant_id;
 }
 
+async function resolveAccessToken(tenantId: string): Promise<string> {
+  const { data: waAccount } = await supabase
+    .from("whatsapp_accounts")
+    .select("access_token")
+    .eq("tenant_id", tenantId)
+    .eq("is_active", true)
+    .limit(1)
+    .single();
+  return waAccount?.access_token || WHATSAPP_ACCESS_TOKEN;
+}
+
+// ===== MEDIA HANDLING =====
+
 async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId: string): Promise<string | null> {
   try {
+    const token = await resolveAccessToken(tenantId);
     const metaRes = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
-      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!metaRes.ok) {
-      console.error(`[webhook] Failed to get media URL for ${mediaId}: ${metaRes.status}`);
-      return null;
-    }
+    if (!metaRes.ok) { console.error(`[webhook] Failed to get media URL for ${mediaId}: ${metaRes.status}`); return null; }
     const metaData = await metaRes.json();
     const downloadUrl = metaData.url;
     if (!downloadUrl) return null;
 
-    const mediaRes = await fetch(downloadUrl, {
-      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
-    });
-    if (!mediaRes.ok) {
-      console.error(`[webhook] Failed to download media: ${mediaRes.status}`);
-      return null;
-    }
+    const mediaRes = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (!mediaRes.ok) { console.error(`[webhook] Failed to download media: ${mediaRes.status}`); return null; }
     const mediaBlob = await mediaRes.blob();
 
     const extMap: Record<string, string> = {
@@ -391,10 +95,7 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
       .from("whatsapp-media")
       .upload(filePath, mediaBlob, { contentType: mimeType, upsert: true });
 
-    if (uploadError) {
-      console.error(`[webhook] Storage upload error:`, uploadError);
-      return null;
-    }
+    if (uploadError) { console.error(`[webhook] Storage upload error:`, uploadError); return null; }
 
     const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(filePath);
     console.log(`[webhook] Media stored: ${urlData.publicUrl}`);
@@ -404,6 +105,8 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
     return null;
   }
 }
+
+// ===== ACTIVITY TRACKING =====
 
 async function propagateStatusToActivity(wamid: string, status: string) {
   const { data: msg } = await supabase
@@ -436,52 +139,247 @@ async function propagateStatusToActivity(wamid: string, status: string) {
 async function markRepliedActivity(customerId: string, tenantId: string) {
   const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
-
   await supabase.from("campaign_activities").update({ replied_at: now })
     .eq("customer_id", customerId).eq("tenant_id", tenantId)
     .is("replied_at", null).gte("sent_at", cutoff);
 }
 
-async function tryAutoRespondWithAI(
-  tenantId: string,
-  customerId: string,
-  phone: string,
-  customerAttrs: Record<string, any> | null,
-) {
+// ===== ORDER LOOKUPS =====
+
+async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string> {
+  const cleanCpf = cpf.replace(/\D/g, "");
+  if (cleanCpf.length < 11) return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("id, name, document, phone")
+    .eq("tenant_id", tenantId)
+    .eq("document", cleanCpf)
+    .maybeSingle();
+
+  if (!customer) return JSON.stringify({ error: "Nenhum cliente encontrado com esse CPF.", cpf: cleanCpf });
+
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("id, external_id, order_number, total, status, mapped_status, status_alias, tracking_code, tracking_url, carrier, delivery_estimate, payment_summary, items_summary, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customer.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (!orders || orders.length === 0) {
+    return JSON.stringify({ customer_name: customer.name, cpf: cleanCpf, orders: [], message: "Cliente encontrado, mas sem pedidos registrados." });
+  }
+
+  const statusLabels: Record<string, string> = {
+    pending: "Aguardando pagamento", waiting_payment: "Aguardando pagamento",
+    paid: "Pago", invoiced: "Faturado", shipped: "Enviado",
+    on_carriage: "Em transporte", in_transit: "Em transporte",
+    delivered: "Entregue", cancelled: "Cancelado", refunded: "Reembolsado",
+  };
+
+  const formattedOrders = orders.map((o: any) => ({
+    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+    status: statusLabels[o.status_alias || o.status] || o.status,
+    status_alias: o.status_alias || o.status,
+    total: o.total, created_at: o.created_at,
+    tracking_code: o.tracking_code || null, tracking_url: o.tracking_url || null,
+    carrier: o.carrier || null, payments: o.payment_summary || [], items: o.items_summary || [],
+  }));
+
+  return JSON.stringify({ customer_name: customer.name, cpf: cleanCpf, orders_count: formattedOrders.length, orders: formattedOrders,
+    note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem." });
+}
+
+// ===== BLING INTEGRATION =====
+
+async function refreshBlingToken(integrationId: string, cfg: any): Promise<string | null> {
+  const clientId = Deno.env.get("BLING_CLIENT_ID");
+  const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
+  if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
+
+  try {
+    const credentials = btoa(`${clientId}:${clientSecret}`);
+    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
+    });
+    const data = await res.json();
+    if (!res.ok) { console.error("[webhook] Bling refresh failed:", data); return null; }
+
+    const now = new Date();
+    const newConfig = {
+      ...cfg, access_token: data.access_token, refresh_token: data.refresh_token,
+      access_expires_at: new Date(now.getTime() + (data.expires_in || 21600) * 1000).toISOString(),
+      refresh_expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    await supabase.from("integrations").update({ config: newConfig, sync_error: null, updated_at: now.toISOString() }).eq("id", integrationId);
+    return data.access_token;
+  } catch (e) { console.error("[webhook] Bling refresh error:", e); return null; }
+}
+
+async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string> {
+  const cleanCpf = cpf.replace(/\D/g, "");
+  if (cleanCpf.length < 11) return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+
+  try {
+    const { data: blingIntegration } = await supabase
+      .from("integrations").select("id, config")
+      .eq("tenant_id", tenantId).eq("provider", "bling").eq("is_active", true).maybeSingle();
+
+    if (!blingIntegration) return JSON.stringify({ error: "Integração Bling não configurada." });
+
+    const cfg = blingIntegration.config as any;
+    let accessToken = cfg?.access_token;
+    if (!accessToken) return JSON.stringify({ error: "Token do Bling expirado ou inválido." });
+
+    const expiresAt = cfg.access_expires_at ? new Date(cfg.access_expires_at).getTime() : 0;
+    if (expiresAt < Date.now() + 5 * 60 * 1000) {
+      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
+      if (newToken) accessToken = newToken;
+    }
+
+    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+    let contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (contactRes.status === 401) {
+      const newToken = await refreshBlingToken(blingIntegration.id, cfg);
+      if (newToken) {
+        accessToken = newToken;
+        contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        });
+      }
+    }
+
+    if (!contactRes.ok) return JSON.stringify({ error: "Erro ao consultar Bling." });
+
+    const contactData = await contactRes.json();
+    const contacts = contactData?.data || [];
+    if (contacts.length === 0) return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
+
+    const contactId = contacts[0].id;
+    const contactName = contacts[0].nome;
+
+    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+
+    if (!ordersRes.ok) return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
+
+    const ordersData = await ordersRes.json();
+    const ordersList = ordersData?.data || [];
+    if (ordersList.length === 0) return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
+
+    const detailedOrders = [];
+    for (const order of ordersList.slice(0, 5)) {
+      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+      if (!detailRes.ok) continue;
+      const detail = await detailRes.json();
+      const d = detail?.data;
+      if (!d) continue;
+
+      const volumes = d.transporte?.volumes || [];
+      let trackingCode = volumes[0]?.codigoRastreamento || null;
+      let carrier = d.transporte?.contato?.nome || null;
+      let trackingUrl: string | null = null;
+
+      if (!trackingCode && d.notaFiscal?.id) {
+        try {
+          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (nfeRes.ok) {
+            const nfe = (await nfeRes.json())?.data;
+            trackingCode = nfe?.transporte?.volumes?.[0]?.codigoRastreamento || trackingCode;
+            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      if (!trackingCode) {
+        try {
+          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+            headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          });
+          if (logRes.ok) {
+            const logItems = (await logRes.json())?.data || [];
+            if (logItems.length > 0) {
+              trackingCode = logItems[0]?.codigoRastreamento || logItems[0]?.rastreamento?.codigo || trackingCode;
+              trackingUrl = logItems[0]?.linkRastreamento || logItems[0]?.rastreamento?.link || null;
+            }
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      if (trackingCode && !trackingUrl) {
+        if (/^BLI[_-]/i.test(trackingCode)) trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
+        else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
+        else trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      }
+
+      detailedOrders.push({
+        order_number: d.numero, total: d.total, date: d.data,
+        tracking_code: trackingCode, tracking_url: trackingUrl, carrier,
+        payments: (d.parcelas || []).map((p: any) => ({ value: p.valor, due_date: p.dataVencimento, method: p.observacoes || "" })),
+        items: (d.itens || []).map((i: any) => ({ name: i.descricao, quantity: i.quantidade, value: i.valor })),
+      });
+    }
+
+    return JSON.stringify({ source: "bling", customer_name: contactName, cpf: formattedCpf, orders_count: detailedOrders.length, orders: detailedOrders });
+  } catch (err) {
+    console.error("[webhook] Bling lookup error:", err);
+    return JSON.stringify({ error: "Erro interno ao consultar o Bling." });
+  }
+}
+
+// ===== AI COPILOT =====
+
+const aiTools = [
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_orders_by_cpf",
+      description: "Consulta pedidos de um cliente pelo CPF nos dados sincronizados do sistema local.",
+      parameters: { type: "object", properties: { cpf: { type: "string", description: "CPF do cliente" } }, required: ["cpf"] },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "lookup_orders_bling",
+      description: "Consulta pedidos e código de rastreio em tempo real na API do Bling pelo CPF do cliente. Priorize esta função para dados mais atualizados.",
+      parameters: { type: "object", properties: { cpf: { type: "string", description: "CPF do cliente" } }, required: ["cpf"] },
+    },
+  },
+];
+
+async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone: string, customerAttrs: Record<string, any> | null) {
   try {
     const attrs = customerAttrs || {};
-    if (attrs.ai_enabled === false) {
-      console.log(`[webhook] AI disabled for customer ${customerId}`);
-      return;
-    }
+    if (attrs.ai_enabled === false) return;
 
     const { data: integration } = await supabase
-      .from("integrations")
-      .select("config")
-      .eq("tenant_id", tenantId)
-      .eq("provider", "openai")
-      .eq("is_active", true)
-      .maybeSingle();
+      .from("integrations").select("config")
+      .eq("tenant_id", tenantId).eq("provider", "openai").eq("is_active", true).maybeSingle();
 
-    if (!integration) {
-      console.log(`[webhook] No OpenAI integration for tenant ${tenantId}`);
-      return;
-    }
+    if (!integration) return;
 
     const config = integration.config as any;
     const apiKey = config?.openai_api_key;
-    if (!apiKey) {
-      console.log(`[webhook] No OpenAI API key configured`);
-      return;
-    }
+    if (!apiKey) return;
 
     const { data: recentMsgs } = await supabase
       .from("whatsapp_messages")
       .select("direction, content, message_type, created_at")
-      .eq("tenant_id", tenantId)
-      .eq("phone", phone)
-      .order("created_at", { ascending: false })
-      .limit(20);
+      .eq("tenant_id", tenantId).eq("phone", phone)
+      .order("created_at", { ascending: false }).limit(20);
 
     if (!recentMsgs || recentMsgs.length === 0) return;
 
@@ -497,19 +395,14 @@ async function tryAutoRespondWithAI(
       technical: "Seja preciso, objetivo e técnico.",
     };
 
-    // Check which integrations exist for order lookup tools
     const { data: orderIntegrations } = await supabase
-      .from("integrations")
-      .select("provider")
-      .eq("tenant_id", tenantId)
-      .in("provider", ["yampi", "bling"])
-      .eq("is_active", true);
+      .from("integrations").select("provider")
+      .eq("tenant_id", tenantId).in("provider", ["yampi", "bling"]).eq("is_active", true);
 
     const hasYampi = orderIntegrations?.some((i: any) => i.provider === "yampi");
     const hasBling = orderIntegrations?.some((i: any) => i.provider === "bling");
     const hasOrderTools = hasYampi || hasBling;
 
-    // Build available tools based on active integrations
     const activeTools: any[] = [];
     if (hasYampi) activeTools.push(aiTools[0]);
     if (hasBling) activeTools.push(aiTools[1]);
@@ -527,32 +420,15 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
 - Nunca invente informações.`;
     }
 
-    const fullSystemPrompt = `${systemPrompt}
-
-Tom de voz: ${toneInstructions[tone] || toneInstructions.friendly}
-${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}
-${orderInstructions}
-
-Você está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
+    const fullSystemPrompt = `${systemPrompt}\n\nTom de voz: ${toneInstructions[tone] || toneInstructions.friendly}${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}${orderInstructions}\n\nVocê está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
 
     const chatMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
-      ...recentMsgs.reverse().map((m: any) => ({
-        role: m.direction === "inbound" ? "user" : "assistant",
-        content: m.content || `[${m.message_type}]`,
-      })),
+      ...recentMsgs.reverse().map((m: any) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content || `[${m.message_type}]` })),
     ];
 
-    const openaiBody: any = {
-      model,
-      messages: chatMessages,
-      max_tokens: 500,
-      temperature: 0.7,
-    };
-    if (hasOrderTools) {
-      openaiBody.tools = activeTools;
-      openaiBody.tool_choice = "auto";
-    }
+    const openaiBody: any = { model, messages: chatMessages, max_tokens: 500, temperature: 0.7 };
+    if (hasOrderTools) { openaiBody.tools = activeTools; openaiBody.tool_choice = "auto"; }
 
     let openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -560,11 +436,7 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       body: JSON.stringify(openaiBody),
     });
 
-    if (!openaiResponse.ok) {
-      const errText = await openaiResponse.text();
-      console.error(`[webhook] OpenAI error: ${openaiResponse.status} ${errText}`);
-      return;
-    }
+    if (!openaiResponse.ok) { console.error(`[webhook] OpenAI error: ${openaiResponse.status}`); return; }
 
     let result = await openaiResponse.json();
     let assistantMessage = result.choices?.[0]?.message;
@@ -577,15 +449,8 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
       for (const toolCall of assistantMessage.tool_calls) {
         const args = JSON.parse(toolCall.function.arguments);
         let toolResult = "";
-
-        if (toolCall.function.name === "lookup_orders_by_cpf") {
-          console.log(`[webhook] Tool call: lookup_orders_by_cpf(${args.cpf})`);
-          toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
-        } else if (toolCall.function.name === "lookup_orders_bling") {
-          console.log(`[webhook] Tool call: lookup_orders_bling(${args.cpf})`);
-          toolResult = await lookupOrdersBling(tenantId, args.cpf);
-        }
-
+        if (toolCall.function.name === "lookup_orders_by_cpf") toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
+        else if (toolCall.function.name === "lookup_orders_bling") toolResult = await lookupOrdersBling(tenantId, args.cpf);
         chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
       }
 
@@ -595,64 +460,33 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
         body: JSON.stringify({ model, messages: chatMessages, max_tokens: 800, temperature: 0.7 }),
       });
 
-      if (!openaiResponse.ok) {
-        console.error("[webhook] OpenAI tool follow-up error:", openaiResponse.status);
-        break;
-      }
-
+      if (!openaiResponse.ok) break;
       result = await openaiResponse.json();
       assistantMessage = result.choices?.[0]?.message;
     }
 
     const aiReply = assistantMessage?.content?.trim();
+    if (!aiReply) return;
 
-    if (!aiReply) {
-      console.log(`[webhook] OpenAI returned empty response`);
-      return;
-    }
-
+    const token = await resolveAccessToken(tenantId);
     let phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
     const { data: waAccount } = await supabase
-      .from("whatsapp_accounts")
-      .select("phone_number_id")
-      .eq("tenant_id", tenantId)
-      .eq("is_active", true)
-      .limit(1)
-      .single();
+      .from("whatsapp_accounts").select("phone_number_id")
+      .eq("tenant_id", tenantId).eq("is_active", true).limit(1).single();
     if (waAccount?.phone_number_id) phoneNumberId = waAccount.phone_number_id;
 
-    const GRAPH_API = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
-    const waResponse = await fetch(GRAPH_API, {
+    const waResponse = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: phone,
-        type: "text",
-        text: { body: aiReply },
-      }),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: aiReply } }),
     });
 
     const waResult = await waResponse.json();
-    if (!waResponse.ok) {
-      console.error(`[webhook] Failed to send AI reply:`, waResult);
-      return;
-    }
-
-    const wamid = waResult.messages?.[0]?.id;
+    if (!waResponse.ok) { console.error(`[webhook] Failed to send AI reply:`, waResult); return; }
 
     await supabase.from("whatsapp_messages").insert({
-      tenant_id: tenantId,
-      customer_id: customerId,
-      phone,
-      direction: "outbound",
-      message_type: "text",
-      content: aiReply,
-      wamid,
-      status: "sent",
+      tenant_id: tenantId, customer_id: customerId, phone, direction: "outbound",
+      message_type: "text", content: aiReply, wamid: waResult.messages?.[0]?.id, status: "sent",
       metadata: { ai_generated: true },
     });
 
@@ -661,6 +495,24 @@ Você está respondendo automaticamente ao cliente via WhatsApp. Responda de for
     console.error(`[webhook] AI auto-respond error:`, err);
   }
 }
+
+// ===== RATE LIMITING =====
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 100; // requests per minute per IP
+const RATE_WINDOW = 60_000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = requestCounts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    requestCounts.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_LIMIT;
+}
+
+// ===== MAIN HANDLER =====
 
 Deno.serve(async (req) => {
   if (req.method === "GET") {
@@ -677,14 +529,17 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === "POST") {
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    if (isRateLimited(clientIp)) {
+      return new Response("Too Many Requests", { status: 429 });
+    }
+
     try {
       const body = await req.json();
       console.log("[webhook] POST received");
 
       const entries = body?.entry;
-      if (!entries || !Array.isArray(entries)) {
-        return new Response("OK", { status: 200 });
-      }
+      if (!entries || !Array.isArray(entries)) return new Response("OK", { status: 200 });
 
       for (const entry of entries) {
         const changes = entry?.changes;
@@ -696,11 +551,9 @@ Deno.serve(async (req) => {
 
           const phoneNumberId = value.metadata?.phone_number_id;
           const tenantId = await resolveTenantByPhoneNumberId(phoneNumberId || "");
-          if (!tenantId) {
-            console.error("[webhook] Could not resolve tenant for:", phoneNumberId);
-            continue;
-          }
+          if (!tenantId) { console.error("[webhook] Could not resolve tenant for:", phoneNumberId); continue; }
 
+          // Process status updates
           if (value.statuses && Array.isArray(value.statuses)) {
             for (const status of value.statuses) {
               const { id: wamid, status: msgStatus } = status;
@@ -709,6 +562,7 @@ Deno.serve(async (req) => {
             }
           }
 
+          // Process inbound messages
           if (value.messages && Array.isArray(value.messages)) {
             const contact = value.contacts?.[0];
 
@@ -721,42 +575,24 @@ Deno.serve(async (req) => {
               let mediaUrl: string | null = null;
 
               switch (msgType) {
-                case "text":
-                  content = message.text?.body || "";
-                  break;
-                case "image":
-                case "video":
-                case "audio":
-                case "document": {
+                case "text": content = message.text?.body || ""; break;
+                case "image": case "video": case "audio": case "document": {
                   const mediaData = message[msgType];
                   content = mediaData?.caption || "";
                   const mediaId = mediaData?.id;
                   const mimeType = mediaData?.mime_type || "application/octet-stream";
-                  if (mediaId) {
-                    mediaUrl = await downloadAndStoreMedia(mediaId, mimeType, tenantId);
-                  }
-                  if (msgType === "document" && mediaData?.filename) {
-                    content = content || mediaData.filename;
-                  }
+                  if (mediaId) mediaUrl = await downloadAndStoreMedia(mediaId, mimeType, tenantId);
+                  if (msgType === "document" && mediaData?.filename) content = content || mediaData.filename;
                   break;
                 }
                 case "sticker": {
                   const stickerId = message.sticker?.id;
-                  const stickerMime = message.sticker?.mime_type || "image/webp";
-                  if (stickerId) {
-                    mediaUrl = await downloadAndStoreMedia(stickerId, stickerMime, tenantId);
-                  }
-                  content = "[Sticker]";
-                  break;
+                  if (stickerId) mediaUrl = await downloadAndStoreMedia(stickerId, message.sticker?.mime_type || "image/webp", tenantId);
+                  content = "[Sticker]"; break;
                 }
-                case "reaction":
-                  content = message.reaction?.emoji || "";
-                  break;
-                case "location":
-                  content = `📍 ${message.location?.latitude},${message.location?.longitude}`;
-                  break;
-                default:
-                  content = `[${msgType}]`;
+                case "reaction": content = message.reaction?.emoji || ""; break;
+                case "location": content = `📍 ${message.location?.latitude},${message.location?.longitude}`; break;
+                default: content = `[${msgType}]`;
               }
 
               let customer = await findCustomerByPhone(phone, tenantId);
@@ -765,22 +601,15 @@ Deno.serve(async (req) => {
                 const { data: newCustomer, error: createError } = await supabase
                   .from("customers")
                   .insert({ name: customerName, phone, tenant_id: tenantId, is_lead: true })
-                  .select("id, tenant_id, name, phone, custom_attributes")
-                  .single();
+                  .select("id, tenant_id, name, phone, custom_attributes").single();
                 if (createError) { console.error("[webhook] Create customer error:", createError); continue; }
                 customer = newCustomer;
               }
 
               await supabase.from("whatsapp_messages").insert({
-                tenant_id: tenantId,
-                customer_id: customer!.id,
-                phone,
-                direction: "inbound",
-                message_type: msgType === "sticker" ? "image" : msgType,
-                content,
-                media_url: mediaUrl,
-                wamid,
-                status: "received",
+                tenant_id: tenantId, customer_id: customer!.id, phone, direction: "inbound",
+                message_type: msgType === "sticker" ? "image" : msgType, content, media_url: mediaUrl,
+                wamid, status: "received",
                 metadata: { phone_number_id: phoneNumberId, contact_name: contact?.profile?.name },
               });
 

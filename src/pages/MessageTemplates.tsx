@@ -50,6 +50,7 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Copy,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import { Checkbox } from "@/components/ui/checkbox";

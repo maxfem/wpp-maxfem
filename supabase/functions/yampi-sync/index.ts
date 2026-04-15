@@ -196,17 +196,16 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // ===== PHASE: ORDERS =====
-async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null) {
+async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null, sortBy: string = "-updated_at") {
   const { alias, user_token, user_secret_key } = config;
   
   // Use date filter for incremental sync (only fetch orders updated since last sync)
-  // IMPORTANT: Apply the filter on ALL pages, not just startPage===1
-  const extraParams: Record<string, string> = { "sort": "-updated_at" };
+  const extraParams: Record<string, string> = { "sort": sortBy };
   if (lastSyncedAt) {
     const sinceDate = new Date(new Date(lastSyncedAt).getTime() - 48 * 60 * 60 * 1000);
     extraParams["updated_at_min"] = sinceDate.toISOString().split("T")[0];
     if (startPage === 1) {
-      console.log(`Incremental sync: orders since ${extraParams["updated_at_min"]}`);
+      console.log(`Incremental sync (${sortBy}): orders since ${extraParams["updated_at_min"]}`);
     }
   }
   
@@ -449,6 +448,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const customerEntry = yampiIdToCustomer.get(o.customer_id);
       if (!customerEntry) continue;
       const customerId = customerEntry.id;
+      const orderNum = String(o.number || o.id);
 
       const orderStatus = o.status?.data?.alias || "pending";
       const txData = o.transactions?.data;
@@ -464,6 +464,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       matchedTriggers.push("order_created");
       if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_pix");
       if (isBillet && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_boleto");
+
+      // Debug log for Pix orders
+      if (isPix) {
+        console.log(`[DEBUG] Pix order #${orderNum} (yampi ${o.id}): status=${orderStatus}, txStatus=${txStatus}, triggers=${matchedTriggers.join(",")}, rawDate=${o.created_at?.date || o.created_at}`);
+      }
       if (orderStatus === "paid" || txStatus === "captured") matchedTriggers.push("order_paid");
       if (isCreditCard && ["refused", "rejected", "cancelled"].includes(txStatus)) matchedTriggers.push("order_rejected_card");
       if (["approved", "invoiced", "paid"].includes(orderStatus)) matchedTriggers.push("order_approved");
@@ -478,7 +483,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
         if (!matchedTriggers.includes(automation.trigger_type)) continue;
         // Only enqueue events that happened AFTER the automation was activated
         const activationDate = automation.start_date || automation.created_at;
-        const orderDate = o.created_at?.date || o.created_at || "";
+        // Yampi returns created_at.date as naive São Paulo time — append timezone offset
+        const rawOrderDate = o.created_at?.date || o.created_at || "";
+        const orderDate = typeof rawOrderDate === "string" && !rawOrderDate.includes("+") && !rawOrderDate.includes("Z")
+          ? rawOrderDate.replace(" ", "T") + "-03:00"
+          : rawOrderDate;
         if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
           tenant_id,
@@ -641,14 +650,13 @@ Deno.serve(async (req) => {
           const MAX_CRON_PAGES = 1;
 
           if (syncSettings?.orders !== false) {
-            let orderPage: number | null = 1;
-            let orderPages = 0;
-            while (orderPage && orderPages < MAX_CRON_PAGES) {
-              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
-              ordersSynced += result.synced;
-              orderPage = result.nextPage;
-              orderPages++;
-            }
+            // Pass 1: Newest orders first (catches new Pix/Boleto for automation triggers)
+            const newOrdersResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-id");
+            ordersSynced += newOrdersResult.synced;
+
+            // Pass 2: Recently updated orders (catches status changes like shipped, delivered)
+            const updatedResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-updated_at");
+            ordersSynced += updatedResult.synced;
           }
 
           if (syncSettings?.abandoned_carts !== false) {

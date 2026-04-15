@@ -191,6 +191,32 @@ export default function Automations() {
     onError: (e) => toast.error(e.message),
   });
 
+  const duplicateCampaign = useMutation({
+    mutationFn: async (campaign: any) => {
+      if (!currentTenant) throw new Error("No tenant");
+      const { data, error } = await supabase.from("campaigns").insert({
+        tenant_id: currentTenant.id,
+        name: `${campaign.name} (cópia)`,
+        type: campaign.type,
+        status: "draft",
+        trigger_type: campaign.trigger_type,
+        kind: "automation",
+        flow_data: campaign.flow_data,
+        audience_rules: campaign.audience_rules,
+        actions: campaign.actions,
+        list_id: campaign.list_id,
+      } as any).select("id").single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["automations"] });
+      toast.success("Automação duplicada!");
+      navigate(`/automations/flow/${data.id}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const toggleAutomation = useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
       const isActive = currentStatus === "running";

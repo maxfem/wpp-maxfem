@@ -52,7 +52,7 @@ function resolveVariable(key: string, ctx: {
 
     // Order fields
     case "order.number":
-      return order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
+      return order?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
     case "order.total":
       return order?.total ? formatCurrency(order.total) : "-";
     case "order.status":

@@ -62,11 +62,8 @@ function resolveVariable(key: string, ctx: {
       return order?.tracking_code || "-";
     case "order.delivery_days":
       return order?.delivery_days || "5 a 8";
-    case "order.pix_code": {
-      // Try from trigger_data first (saved during yampi-sync), then from order record
-      const triggerPix = ctx.customer?.custom_attributes?.pix_qr_code;
-      return order?.pix_qr_code || triggerPix || "-";
-    }
+    case "order.pix_code":
+      return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || "-";
 
     // Campaign-level fields (set by campaign creator)
     case "campaign.coupon":

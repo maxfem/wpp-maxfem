@@ -90,9 +90,9 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
   if (type === "image") {
     return (
       <div className="mb-1 rounded-lg overflow-hidden">
-        <a href={msg.media_url} target="_blank" rel="noopener noreferrer">
+        <a href={url} target="_blank" rel="noopener noreferrer">
           <img
-            src={msg.media_url}
+            src={url}
             alt="Imagem"
             className="max-w-full max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
             loading="lazy"
@@ -106,7 +106,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     return (
       <div className="mb-1 rounded-lg overflow-hidden">
         <video
-          src={msg.media_url}
+          src={url}
           controls
           preload="metadata"
           className="max-w-full max-h-[300px] rounded-lg"
@@ -121,7 +121,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     return (
       <div className="mb-1 flex items-center gap-2">
         <Volume2 className={cn("h-4 w-4 shrink-0", isOutbound ? "text-primary-foreground/70" : "text-muted-foreground")} />
-        <audio src={msg.media_url} controls preload="metadata" className="h-8 w-full min-w-[180px]">
+        <audio src={url} controls preload="metadata" className="h-8 w-full min-w-[180px]">
           Seu navegador não suporta áudio.
         </audio>
       </div>

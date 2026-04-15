@@ -161,7 +161,7 @@ export default function Customers() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {totalCustomers} clientes • {leads.length} leads
+              {totalCustomers} clientes • {totalLeads} leads
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -402,9 +402,36 @@ export default function Customers() {
                       ))
                     )}
                   </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Leads Pagination */}
+          {totalLeadsPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-muted-foreground">
+                Página {leadsPage + 1} de {totalLeadsPages}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={leadsPage === 0}
+                  onClick={() => setLeadsPage((p) => p - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={leadsPage >= totalLeadsPages - 1}
+                  onClick={() => setLeadsPage((p) => p + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
           </TabsContent>
         </Tabs>
       </div>

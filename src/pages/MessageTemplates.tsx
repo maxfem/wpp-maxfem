@@ -1007,6 +1007,9 @@ export default function MessageTemplates() {
                                 <Upload className="h-4 w-4 text-primary" />
                               )}
                             </Button>
+                            <Button variant="ghost" size="icon" onClick={() => duplicateTemplate(t)} title="Duplicar">
+                              <Copy className="h-4 w-4" />
+                            </Button>
                             <Button variant="ghost" size="icon" onClick={() => openEdit(t)} title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>

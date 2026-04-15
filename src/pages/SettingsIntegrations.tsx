@@ -10,6 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 
 const PROVIDERS = [
   {
+    id: "gemini",
+    name: "Gemini AI",
+    description: "IA multimodal integrada via Lovable AI. Analisa imagens, vídeos e áudios nativamente no atendimento. Sem necessidade de API Key.",
+    logo: "",
+    color: "#4285F4",
+    features: ["Imagem", "Vídeo", "Áudio", "Copilot", "Sem API Key"],
+  },
+  {
     id: "openai",
     name: "OpenAI",
     description: "Assistente de IA para atendimento. Sugere respostas, copilot inteligente no chat.",

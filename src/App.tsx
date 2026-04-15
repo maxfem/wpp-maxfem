@@ -28,6 +28,7 @@ const SettingsIntegrations = lazy(() => import("./pages/SettingsIntegrations"));
 const SettingsYampi = lazy(() => import("./pages/SettingsYampi"));
 const SettingsOpenAI = lazy(() => import("./pages/SettingsOpenAI"));
 const SettingsBling = lazy(() => import("./pages/SettingsBling"));
+const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
 
 const queryClient = new QueryClient();
@@ -85,6 +86,7 @@ const App = () => (
                 <Route path="/settings/integrations/yampi" element={<ProtectedRoute><SettingsYampi /></ProtectedRoute>} />
                 <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
                 <Route path="/settings/integrations/bling" element={<ProtectedRoute><SettingsBling /></ProtectedRoute>} />
+                <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
                 <Route path="/r/:code" element={<LinkRedirect />} />
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/terms" element={<TermsOfUse />} />

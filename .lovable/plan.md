@@ -1,59 +1,43 @@
 
 
-## Diagnóstico: Por que o pedido de teste não gerou trigger
+## Plano: Limpar histórico de automações e resetar cron
 
-### Causa raiz
+### O que será feito
 
-O filtro de **cutoff de ativação** na linha 429 descarta o pedido:
+**1. Limpar a fila de automação (SQL via insert tool)**
+- Deletar todos os ~2.932 registros antigos da `automation_queue` (failed, sent, skipped, completed)
+- Isso remove o lixo acumulado desde 11/04
 
-```typescript
-const activationDate = automation.start_date || automation.updated_at;
-if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
+**2. Atualizar `start_date` das automações ativas para `now()`**
+- As duas automações running ("Pix Não Pago" e "Pedido Aprovado") têm `start_date = null`
+- Setar `start_date = now()` garante que apenas pedidos **a partir de agora** serão processados
+- Isso funciona junto com o fix anterior que usa `start_date || created_at` como cutoff
+
+**3. Atualizar `last_synced_at` da integração Yampi para `now()`**
+- Garante que o próximo sync só busque pedidos novos, sem reprocessar histórico
+
+### O que NÃO será tocado
+- Os cron jobs existentes continuam rodando normalmente (campaign-executor a cada minuto, yampi-sync a cada 10min, automation-cron diário às 12h UTC)
+- Nenhuma mudança de código — apenas limpeza de dados
+
+### Comandos SQL (via insert tool)
+```sql
+-- 1. Limpar fila antiga
+DELETE FROM automation_queue;
+
+-- 2. Setar start_date = now() nas automações ativas
+UPDATE campaigns 
+SET start_date = now(), updated_at = now() 
+WHERE kind = 'automation' AND status = 'running';
+
+-- 3. Resetar last_synced_at da Yampi para agora
+UPDATE integrations 
+SET last_synced_at = now(), sync_status = 'pending'
+WHERE provider = 'yampi' AND is_active = true;
 ```
 
-- A automação "Pix Não Pago" tem `start_date = null`
-- Portanto, `activationDate = automation.updated_at` = **2026-04-14 21:34** (atualizado quando o sistema fez alguma modificação)
-- O pedido de teste foi criado em **2026-04-14 14:40** (hora na Yampi)
-- Como 14:40 < 21:34, o pedido é **descartado** pelo filtro
-
-O problema é usar `updated_at` como fallback — qualquer edição na automação (salvar fluxo, mudar nome, etc.) reseta a janela e ignora pedidos recentes.
-
-### Segundo problema
-
-Mesmo que o trigger fosse enfileirado, o pedido já está com status `cancelled` na Yampi. A condição `isPix && txStatus !== "captured" && orderStatus !== "paid"` poderia casar, mas semanticamente não faz sentido disparar "Pix Não Pago" para pedidos já cancelados.
-
-### Correções
-
-**Arquivo: `supabase/functions/yampi-sync/index.ts`**
-
-1. **Linha 429** — Usar `created_at` da automação como fallback em vez de `updated_at`:
-   ```typescript
-   const activationDate = automation.start_date || automation.created_at;
-   ```
-   Isso garante que edições na automação não resetem a janela de cutoff.
-
-2. **Mesma correção na linha 520** (bloco de carrinhos):
-   ```typescript
-   const activationDate = automation.start_date || automation.created_at;
-   ```
-
-3. **Linha 387-389** — Incluir `created_at` no SELECT das automações:
-   ```typescript
-   .select("id, trigger_type, start_date, updated_at, created_at")
-   ```
-
-4. **Linha 414** — Adicionar guard contra pedidos cancelados no trigger de Pix:
-   ```typescript
-   if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") 
-     matchedTriggers.push("order_created_pix");
-   ```
-   (E equivalente para boleto na linha 415)
-
-**SQL — Reset** para reprocessar o pedido de teste na próxima execução:
-- Atualizar `last_synced_at` da integração para um timestamp anterior ao pedido de teste, forçando re-sync
-
 ### Resultado
-- Automações não perdem triggers por causa de edições no fluxo
-- Pedidos cancelados não disparam cobranças indevidas
-- O próximo pedido Pix de teste será enfileirado corretamente
+- Fila zerada e limpa
+- Próximos pedidos reais serão os primeiros a entrar na fila
+- Crons continuam rodando sem interrupção
 

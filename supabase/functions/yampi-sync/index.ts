@@ -449,6 +449,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const customerEntry = yampiIdToCustomer.get(o.customer_id);
       if (!customerEntry) continue;
       const customerId = customerEntry.id;
+      const orderNum = String(o.number || o.id);
 
       const orderStatus = o.status?.data?.alias || "pending";
       const txData = o.transactions?.data;

@@ -67,21 +67,30 @@ export default function Customers() {
   const totalCustomers = customersData?.total || 0;
   const totalPages = Math.ceil(totalCustomers / PAGE_SIZE);
 
-  const { data: leads = [] } = useQuery({
-    queryKey: ["leads", currentTenant?.id],
+  const [leadsPage, setLeadsPage] = useState(0);
+
+  const { data: leadsData } = useQuery({
+    queryKey: ["leads", currentTenant?.id, leadsPage],
     queryFn: async () => {
-      if (!currentTenant) return [];
-      const { data, error } = await supabase
+      if (!currentTenant) return { rows: [], total: 0 };
+      const from = leadsPage * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from("customers")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("tenant_id", currentTenant.id)
         .eq("is_lead", true)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(from, to);
       if (error) throw error;
-      return data;
+      return { rows: data || [], total: count || 0 };
     },
     enabled: !!currentTenant,
   });
+
+  const leads = leadsData?.rows || [];
+  const totalLeads = leadsData?.total || 0;
+  const totalLeadsPages = Math.ceil(totalLeads / PAGE_SIZE);
 
   const { data: groups = [] } = useQuery({
     queryKey: ["customer_groups", currentTenant?.id],

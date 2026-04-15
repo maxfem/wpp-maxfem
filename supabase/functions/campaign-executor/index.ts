@@ -10,6 +10,7 @@ function resolveVariable(key: string, ctx: {
   customer: any;
   order: any;
   campaign: any;
+  triggerData?: any;
 }): string {
   const { customer, order, campaign } = ctx;
   const attrs = customer?.custom_attributes || {};
@@ -61,6 +62,8 @@ function resolveVariable(key: string, ctx: {
       return order?.tracking_code || "-";
     case "order.delivery_days":
       return order?.delivery_days || "5 a 8";
+    case "order.pix_code":
+      return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || "-";
 
     // Campaign-level fields (set by campaign creator)
     case "campaign.coupon":
@@ -525,7 +528,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
 
             // Tracked link for dynamic URL button
             let buttonUrlCode: string | undefined;

@@ -209,7 +209,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     }
   }
   
-  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items,customer", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
+  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items,customer,pix", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
 
   // Build customer lookup: load all customers in single paginated query (minimal columns)
   const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
@@ -504,6 +504,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
             total: o.value_total || 0,
             payment_method: paymentAlias,
             status: orderStatus,
+            pix_qr_code: o.pix?.data?.pix_qr_code || null,
           },
           status: "pending",
           current_node_id: "start",

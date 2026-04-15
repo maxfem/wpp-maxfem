@@ -37,12 +37,14 @@ export default function Chat() {
         .from("whatsapp_messages")
         .select("*")
         .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(1000);
       if (error) throw error;
       return data as Message[];
     },
     enabled: !!tenantId,
-    refetchInterval: 5000,
+    staleTime: 30000,
+    refetchInterval: 30000,
   });
 
   // Fetch customers

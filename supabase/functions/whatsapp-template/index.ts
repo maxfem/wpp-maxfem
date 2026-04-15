@@ -160,6 +160,9 @@ Deno.serve(async (req) => {
         buttons: buttons.map((btn) => {
           if (btn.type === "URL") {
             const normalizedUrl = btn.url?.replace(/\{\{\d+\}\}/g, "{{1}}");
+            if (normalizedUrl && !/^https?:\/\//i.test(normalizedUrl.replace(/\{\{1\}\}/g, ""))) {
+              return null; // skip invalid URLs silently
+            }
             const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: normalizedUrl };
             if (normalizedUrl?.includes("{{1}}")) {
               urlObj.example = ["https://example.com/checkout"];

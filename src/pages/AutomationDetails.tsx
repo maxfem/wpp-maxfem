@@ -42,9 +42,46 @@ export default function AutomationDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
+  const queryClient = useQueryClient();
 
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(0);
+
+  // Pending queue count
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ["automation-queue-count", id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("automation_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", id!)
+        .eq("status", "pending");
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!id,
+  });
+
+  // Clear queue mutation
+  const clearQueue = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase
+        .from("automation_queue")
+        .update({ status: "skipped", processed_at: new Date().toISOString() })
+        .eq("campaign_id", id!)
+        .eq("status", "pending")
+        .select("id");
+      if (error) throw error;
+      return data?.length || 0;
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} item(ns) removido(s) da fila`);
+      queryClient.invalidateQueries({ queryKey: ["automation-queue-count", id] });
+    },
+    onError: () => {
+      toast.error("Erro ao limpar a fila");
+    },
+  });
 
   const { data: campaign, isLoading: loadingCampaign } = useQuery({
     queryKey: ["automation", id],

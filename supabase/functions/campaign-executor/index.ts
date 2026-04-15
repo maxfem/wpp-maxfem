@@ -695,7 +695,7 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!serviceRoleKey || authBearer !== serviceRoleKey) {
-    console.log(`[auth] Unauthorized: authBearer matches service_role: ${authBearer === serviceRoleKey}`);
+    console.log(`[auth] Unauthorized: serviceRoleKey len: ${serviceRoleKey?.length}, authBearer len: ${authBearer?.length}, serviceRoleKey first10: ${serviceRoleKey?.substring(0,10)}, authBearer first10: ${authBearer?.substring(0,10)}`);
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 

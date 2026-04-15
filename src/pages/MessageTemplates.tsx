@@ -466,6 +466,7 @@ export default function MessageTemplates() {
     setDialogOpen(true);
   };
 
+  const openEdit = (template: (typeof templates)[0]) => {
     setEditingId(template.id);
     setForm({
       name: template.name,

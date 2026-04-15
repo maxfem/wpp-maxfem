@@ -97,9 +97,9 @@ async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId
 
     if (uploadError) { console.error(`[webhook] Storage upload error:`, uploadError); return null; }
 
-    const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(filePath);
-    console.log(`[webhook] Media stored: ${urlData.publicUrl}`);
-    return urlData.publicUrl;
+    // Store the path (not public URL) — client will use signed URLs
+    console.log(`[webhook] Media stored: ${filePath}`);
+    return filePath;
   } catch (err) {
     console.error(`[webhook] downloadAndStoreMedia error:`, err);
     return null;

@@ -1,10 +1,36 @@
-import { useRef, useEffect, Fragment, useState } from "react";
+import { useRef, useEffect, Fragment, useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Message } from "./types";
 import { Check, CheckCheck, Image, FileText, Video, Search, X, ArrowDown, Play, Download, Volume2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+
+// Resolve media_url: if it's a storage path (no protocol), generate a signed URL
+function useSignedUrl(mediaUrl: string | null | undefined): string | null {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (!mediaUrl) { setSignedUrl(null); return; }
+    // If it already has a protocol, it's a full URL (legacy data)
+    if (mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://")) {
+      setSignedUrl(mediaUrl);
+      return;
+    }
+    // It's a storage path — create signed URL (1 hour)
+    supabase.storage.from("whatsapp-media").createSignedUrl(mediaUrl, 3600).then(({ data, error }) => {
+      if (error || !data?.signedUrl) {
+        console.error("Signed URL error:", error);
+        setSignedUrl(null);
+      } else {
+        setSignedUrl(data.signedUrl);
+      }
+    });
+  }, [mediaUrl]);
+
+  return signedUrl;
+}
 
 interface ChatMessageAreaProps {
   messages: Message[];
@@ -56,16 +82,17 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }) {
-  if (!msg.media_url) return null;
+  const url = useSignedUrl(msg.media_url);
+  if (!msg.media_url || !url) return null;
 
   const type = msg.message_type;
 
   if (type === "image") {
     return (
       <div className="mb-1 rounded-lg overflow-hidden">
-        <a href={msg.media_url} target="_blank" rel="noopener noreferrer">
+        <a href={url} target="_blank" rel="noopener noreferrer">
           <img
-            src={msg.media_url}
+            src={url}
             alt="Imagem"
             className="max-w-full max-h-[300px] rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
             loading="lazy"
@@ -79,7 +106,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     return (
       <div className="mb-1 rounded-lg overflow-hidden">
         <video
-          src={msg.media_url}
+          src={url}
           controls
           preload="metadata"
           className="max-w-full max-h-[300px] rounded-lg"
@@ -94,7 +121,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     return (
       <div className="mb-1 flex items-center gap-2">
         <Volume2 className={cn("h-4 w-4 shrink-0", isOutbound ? "text-primary-foreground/70" : "text-muted-foreground")} />
-        <audio src={msg.media_url} controls preload="metadata" className="h-8 w-full min-w-[180px]">
+        <audio src={url} controls preload="metadata" className="h-8 w-full min-w-[180px]">
           Seu navegador não suporta áudio.
         </audio>
       </div>
@@ -105,7 +132,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     const filename = msg.content && !msg.content.startsWith("[") ? msg.content : "Documento";
     return (
       <a
-        href={msg.media_url}
+        href={url}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(

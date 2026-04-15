@@ -52,7 +52,7 @@ export default function SettingsWhatsApp() {
       if (!currentTenant?.id) return [];
       const { data } = await supabase
         .from("whatsapp_accounts")
-        .select("*")
+        .select("id, tenant_id, phone_number_id, display_phone, verified_name, quality_rating, is_active, created_at, updated_at")
         .eq("tenant_id", currentTenant.id)
         .order("created_at", { ascending: false });
       return data || [];

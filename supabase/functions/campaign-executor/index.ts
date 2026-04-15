@@ -693,7 +693,10 @@ Deno.serve(async (req) => {
 
   // Authenticate cron requests via CRON_SECRET
   const cronSecret = Deno.env.get("CRON_SECRET");
-  const requestSecret = req.headers.get("x-cron-secret") || req.headers.get("authorization")?.replace("Bearer ", "");
+  const requestCronHeader = req.headers.get("x-cron-secret");
+  const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
+  const requestSecret = requestCronHeader || authBearer;
+  console.log(`[auth] cronSecret set: ${!!cronSecret}, cronSecret len: ${cronSecret?.length}, x-cron-secret header set: ${!!requestCronHeader}, authBearer len: ${authBearer?.length}, match: ${requestSecret === cronSecret}`);
   if (!cronSecret || requestSecret !== cronSecret) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }

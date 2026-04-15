@@ -98,6 +98,26 @@ export default function Automations() {
     enabled: !!currentTenant,
   });
 
+  const { data: pendingQueueCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ["automation-queue-counts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return {};
+      const { data } = await supabase
+        .from("automation_queue")
+        .select("campaign_id")
+        .eq("tenant_id", currentTenant.id)
+        .eq("status", "pending");
+      const counts: Record<string, number> = {};
+      (data || []).forEach((item) => {
+        if (item.campaign_id) {
+          counts[item.campaign_id] = (counts[item.campaign_id] || 0) + 1;
+        }
+      });
+      return counts;
+    },
+    enabled: !!currentTenant,
+  });
+
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
     if (datePreset >= 0) {
@@ -320,6 +340,7 @@ export default function Automations() {
               const StIcon = st.icon;
               const typeLabel = c.trigger_type ? getTriggerLabel(c.trigger_type) : (automationTypes.find((t) => t.value === c.type)?.label || c.type);
               const metrics = metricsMap[c.id];
+              const pendingCount = pendingQueueCounts[c.id] || 0;
 
               return (
                 <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
@@ -361,10 +382,18 @@ export default function Automations() {
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-1 border-t border-border">
-                      <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
-                        <StIcon className="h-3 w-3" />
-                        {st.label}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                          <StIcon className="h-3 w-3" />
+                          {st.label}
+                        </Badge>
+                        {pendingCount > 0 && (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-orange-100 text-orange-700 border-orange-200">
+                            <Clock className="h-3 w-3" />
+                            {pendingCount} na fila
+                          </Badge>
+                        )}
+                      </div>
                       <Switch
                         className="scale-75"
                         checked={c.status === "running"}

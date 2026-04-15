@@ -153,16 +153,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    const buttons = (template.buttons as { type: string; text: string; url?: string; phone_number?: string }[]) || [];
+    const buttons = (template.buttons as { type: string; text: string; url?: string; phone_number?: string; example?: string }[]) || [];
     if (buttons.length > 0) {
       components.push({
         type: "BUTTONS",
         buttons: buttons.map((btn) => {
           if (btn.type === "URL") {
-            // Meta requires URL variables to be {{1}} — normalize any {{N}} to {{1}}
             const normalizedUrl = btn.url?.replace(/\{\{\d+\}\}/g, "{{1}}");
             const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: normalizedUrl };
-            // If URL contains a variable, Meta requires an example value
             if (normalizedUrl?.includes("{{1}}")) {
               urlObj.example = ["https://example.com/checkout"];
             }
@@ -170,6 +168,9 @@ Deno.serve(async (req) => {
           }
           if (btn.type === "PHONE_NUMBER") {
             return { type: "PHONE_NUMBER", text: btn.text, phone_number: btn.phone_number };
+          }
+          if (btn.type === "COPY_CODE") {
+            return { type: "COPY_CODE", example: btn.example || "CÓDIGO123" };
           }
           return { type: "QUICK_REPLY", text: btn.text };
         }),

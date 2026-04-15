@@ -61,7 +61,7 @@ function normalizeCpf(cpf: string | null | undefined): string | null {
 // ===== PHASE: CUSTOMERS =====
 async function syncCustomers(supabase: any, tenant_id: string, config: any, startPage: number) {
   const { alias, user_token, user_secret_key } = config;
-  const { data: customers, nextPage } = await yampiGetBatch(alias, "customers", user_token, user_secret_key, startPage);
+  const { data: customers, nextPage } = await yampiGetBatch(alias, "customers", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, { sort: "-id" });
   let synced = 0;
 
   const batchSize = 50;

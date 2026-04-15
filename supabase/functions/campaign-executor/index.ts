@@ -10,6 +10,7 @@ function resolveVariable(key: string, ctx: {
   customer: any;
   order: any;
   campaign: any;
+  triggerData?: any;
 }): string {
   const { customer, order, campaign } = ctx;
   const attrs = customer?.custom_attributes || {};

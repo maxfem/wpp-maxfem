@@ -1,0 +1,77 @@
+# Project Memory
+
+## Core
+- **Stack**: React, TypeScript, Tailwind, Recharts, @xyflow/react, Supabase (RLS, Auth, DB, Edge Functions).
+- **Domain**: Maxfem CRM, SaaS for e-commerce retention (Yampi, Nuvemshop, Bling) in Brazil.
+- **Design**: Minimalist. Pink (#ED2B75, #FCE4EF), Dark neutral (#1A1A2E). Poppins (headings), Inter (body).
+- **Timezone**: All dates use America/Sao_Paulo. Use `formatSP()` and `localeSP()` from `@/lib/utils`.
+- **WhatsApp API**: Cloud API v22.0. 24h window for free-form messages, otherwise requires pre-approved HSM templates.
+- **Meta Constraints**: Template body variables cannot be isolated at start/end. Buttons must use {{1}} and include examples.
+- **AI Copilot**: Gemini (priority) or GPT-4o-mini. Must use raw URLs (no Markdown). Preserve special chars in tracking codes.
+- **Tracking**: Use `https://rastreio.maxfem.com.br/` and `/r/:code` for shortlinks. UTMs injected and tracked via DB.
+
+## Memories
+- [Project Overview](mem://project/overview) — Core CRM functionalities: RFM segmentation, LTV, multichannel automated campaigns
+- [Design Direction](mem://style/design-direction) — Visual identity, colors, typography, minimal sidebar styling
+- [Multi-tenancy](mem://tech/multi-tenancy) — Supabase RLS isolation for distinct store accounts
+- [Core Functionalities](mem://features/core-functionality) — RFM segmentation, LTV, automated campaigns triggered by events
+- [Onboarding](mem://auth/onboarding-automation) — Auto user creation and tenant provisioning via handle_new_user trigger
+- [WhatsApp Official](mem://integrations/whatsapp-official) — Meta Graph API architecture, Edge Functions, webhook logic
+- [Edge Function Auth](mem://tech/edge-function-auth) — Authentication inside Supabase functions using `supabase.auth.getUser`
+- [Target Platforms](mem://integrations/target-platforms) — Brazilian e-commerce platforms and ERP integrations
+- [WhatsApp Production Constraints](mem://constraints/whatsapp-production-requirements) — Meta Business verification, CNPJ, number requirements
+- [Architectural Patterns](mem://tech/architectural-patterns) — DDD, CQRS, Outbox pattern, Adapter pattern usage
+- [WhatsApp Webhook Notes](mem://integrations/whatsapp-webhook-notes) — Meta test panel false positives and log verification
+- [Dev Tenant Context](mem://project/active-tenant-context) — Active dev tenant details, admin email, test number
+- [WhatsApp Preview UI](mem://style/whatsapp-preview-ui) — React component simulating mobile UI with textured bg and dynamic media
+- [Campaign Reporting](mem://features/campaign-reporting) — Overview and specific channel dashboards via Recharts
+- [Standard Templates](mem://features/standard-template-library) — Pre-configured HSM templates for e-commerce logic
+- [Tech Stack](mem://tech/stack) — React, TS, Tailwind, Supabase architecture summary
+- [Campaign Management](mem://features/campaign-management/overview) — Campaign vs Automation execution, statuses, and duplication
+- [Campaign Engine](mem://tech/campaign-flow-engine) — React Flow custom nodes, flow data JSONB persistence
+- [Ready Made Automations](mem://features/automation-ready-made-flows) — 16 automation templates for recovery, retention, transactional
+- [List Management](mem://features/list-management/overview) — CSV/Excel import, read-only auto RFM syncing
+- [Link Shortener](mem://features/tracking/link-shortener-utm) — Proprietary tracking via `link-redirect` and UTM injection
+- [WhatsApp Registration](mem://features/whatsapp-registration-flow) — /settings/whatsapp setup, PIN usage, Meta graph lifecycle
+- [WhatsApp Window Constraint](mem://constraints/whatsapp-messaging-window) — 24h open window for free-form messaging
+- [WhatsApp Webhook Subscriptions](mem://integrations/whatsapp-webhook-subscriptions) — Required payload events in Meta panel
+- [WhatsApp Troubleshooting](mem://integrations/whatsapp-troubleshooting-subscription) — WABA subscription endpoint call for webhook POST failures
+- [WhatsApp Bulk Send](mem://features/whatsapp-bulk-messaging) — Mass processing for HSM templates submission
+- [Edge Function Optimization](mem://tech/edge-function-optimization) — Using npm: prefixes for Supabase imports to avoid timeouts
+- [WhatsApp PIN](mem://integrations/whatsapp-registration-pin) — Standard '123456' PIN for cloud API registration
+- [Meta Dashboard Issues](mem://integrations/meta-dashboard-behavior) — Token generation resetting phone numbers
+- [Chat UI Constraints](mem://style/chat-ui-adjustments) — Fixed width sidebar to preserve timestamps and metadata
+- [Meta Compliance](mem://features/message-templates/meta-compliance-standards) — Sanitized headers, prefixed variables, mandatory greetings
+- [WhatsApp Dynamic Buttons](mem://features/tracking/botoes-dinamicos-whatsapp) — Yampi checkout bypass using dynamic edge function variables
+- [Meta Error Language](mem://constraints/meta-api-error-idioma) — Workaround for 4-week deleting language block using alt names
+- [Maxfem Context](mem://project/contexto-maxfem) — Default 'maxfem.com.br' domain integration context
+- [Attribution Logic](mem://features/tracking/attribution-logic) — 72-hour window attributing clicks/sends to valid orders
+- [WhatsApp Activity Sync](mem://features/tracking/whatsapp-activity-sync) — Webhook propagation of statuses and inbound replies
+- [Yampi Integration](mem://integrations/yampi-ecommerce) — E-commerce synchronization logic, prioritizing orders over carts
+- [Chat Interface](mem://features/chat/interface-and-ux) — Chatwoot pattern, bidirectional media, Supabase bucket storage
+- [Automation Queue](mem://features/campaign-management/automation-queue) — Unique index constraint preventing duplicate event triggers
+- [Meta Naming Cooldown](mem://features/message-templates/meta-naming-cooldown-workaround) — Version suffixes bypassing 4-week template deletion bans
+- [Template Syncing](mem://features/message-templates/automated-status-sync) — 5-minute cron syncing HSM status with Meta
+- [AI Copilot Chat](mem://features/chat/ai-copilot-integration) — GPT-4o-mini contextual chat, auto-Bling CPF order lookups
+- [Execution Cutoff](mem://features/automations/execution-cutoff) — Processing only triggers starting from the activation date
+- [Conversation Management](mem://features/chat/conversation-management) — Chat states, archiving, custom_attributes persistence
+- [Bling Integration](mem://integrations/bling-v3-oauth) — OAuth2 logic, real-time CPF lookup, multi-level order tracing
+- [Automation Triggers](mem://features/automations/event-triggers) — Event-based execution and daily temporal processing (NPS, Birthday)
+- [Copilot Multimodal](mem://features/chat/ai-copilot-multimodal) — Vision analysis and raw URL output format guidelines
+- [Reporting Analytics](mem://features/analytics/reporting-logic) — pt-BR, startOfDay logic, and metrics calculations
+- [WhatsApp Template Specs](mem://tech/whatsapp-template/compliance) — Forced {{1}} for dynamic URLs and variable logic validation
+- [Yampi Scaling](mem://integrations/yampi/scaling) — Batch size constraints and incremental updated_at_min syncs
+- [React Flow Rendering](mem://tech/react-flow-rendering) — Skipping memo() for NodeConfigPanel strict comparator updates
+- [Data Pagination](mem://tech/data-pagination) — Using `.range()` on Edge Functions to prevent memory bloat
+- [OpenAI Config](mem://integrations/openai-config) — Key, tone, prompt saved in 'integrations' table
+- [Gemini AI](mem://integrations/gemini-ai) — Multimodal copilot via Lovable AI Gateway, priority over OpenAI, no API key
+- [RFM Segmentation](mem://features/customers/rfm-segmentation-logic) — SQL quintile scoring for Recency, Frequency, Monetary value
+- [RFM Architecture](mem://tech/rfm-processing-architecture) — Edge function isolation for mass RFM calculations
+- [Bling URI](mem://integrations/bling-v3-config) — Development callback endpoint definition
+- [Delivery Safety](mem://features/automations/delivery-safety-logic) — Last-minute Pix/Boleto payment verification blocking sends
+- [Data Constraints](mem://tech/performance/ux-data-constraints) — Server-side pagination and startOfDay filters for UX
+- [Pix Detection](mem://integrations/yampi/pix-detection-logic) — Parameter requirement to track Yampi Pix payments
+- [Execution Limits](mem://features/campaign-management/execution-constraints) — Enforcing valid orders for templates using order variables
+- [Graph Walker](mem://tech/automation-graph-walker) — Graph executor managing flow logic, wait nodes, and tags
+- [Tracking Domain](mem://features/tracking/maxfem-tracking-domain) — Standardized `rastreio.maxfem.com.br` tracking links
+- [São Paulo Timezone](mem://preferences/timezone) — All dates must use America/Sao_Paulo, use formatSP/localeSP helpers

@@ -68,19 +68,40 @@ export default function Lists() {
     enabled: !!currentTenant,
   });
 
-  const { data: customers = [] } = useQuery({
-    queryKey: ["all_customers", currentTenant?.id],
+  // Count-only query for total contacts (no data transfer)
+  const { data: totalContacts = 0 } = useQuery({
+    queryKey: ["customers_count", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return 0;
+      const { count, error } = await supabase
+        .from("customers")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", currentTenant.id);
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!currentTenant,
+  });
+
+  // Server-side search for add members dialog (lazy, only when open)
+  const { data: searchedCustomers = [], isLoading: isSearchingCustomers } = useQuery({
+    queryKey: ["customers_search", currentTenant?.id, customerSearch, addMembersOpen],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from("customers")
         .select("id, name, email, phone")
         .eq("tenant_id", currentTenant.id)
-        .order("name");
+        .order("name")
+        .limit(100);
+      if (customerSearch.trim()) {
+        query = query.or(`name.ilike.%${customerSearch}%,email.ilike.%${customerSearch}%,phone.ilike.%${customerSearch}%`);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
-    enabled: !!currentTenant,
+    enabled: !!currentTenant && addMembersOpen,
   });
 
   const { data: listMembers = [] } = useQuery({
@@ -279,12 +300,8 @@ export default function Lists() {
     l.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredCustomers = customers.filter(
-    (c) =>
-      !listMembers.some((m: any) => m.customer_id === c.id) &&
-      (c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-        c.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-        c.phone?.includes(customerSearch))
+  const filteredCustomers = searchedCustomers.filter(
+    (c) => !listMembers.some((m: any) => m.customer_id === c.id)
   );
 
   const typeLabels: Record<string, string> = {
@@ -490,7 +507,7 @@ export default function Lists() {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{customers.length}</p>
+                <p className="text-2xl font-bold">{totalContacts.toLocaleString("pt-BR")}</p>
                 <p className="text-xs text-muted-foreground">Total de contatos</p>
               </div>
             </CardContent>
@@ -536,7 +553,7 @@ export default function Lists() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">Inclui todos os clientes cadastrados</p>
-              <p className="text-lg font-bold mt-2">{customers.length} contatos</p>
+              <p className="text-lg font-bold mt-2">{totalContacts.toLocaleString("pt-BR")} contatos</p>
             </CardContent>
           </Card>
 

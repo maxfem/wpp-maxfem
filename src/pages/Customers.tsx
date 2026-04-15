@@ -67,21 +67,30 @@ export default function Customers() {
   const totalCustomers = customersData?.total || 0;
   const totalPages = Math.ceil(totalCustomers / PAGE_SIZE);
 
-  const { data: leads = [] } = useQuery({
-    queryKey: ["leads", currentTenant?.id],
+  const [leadsPage, setLeadsPage] = useState(0);
+
+  const { data: leadsData } = useQuery({
+    queryKey: ["leads", currentTenant?.id, leadsPage],
     queryFn: async () => {
-      if (!currentTenant) return [];
-      const { data, error } = await supabase
+      if (!currentTenant) return { rows: [], total: 0 };
+      const from = leadsPage * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error, count } = await supabase
         .from("customers")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("tenant_id", currentTenant.id)
         .eq("is_lead", true)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(from, to);
       if (error) throw error;
-      return data;
+      return { rows: data || [], total: count || 0 };
     },
     enabled: !!currentTenant,
   });
+
+  const leads = leadsData?.rows || [];
+  const totalLeads = leadsData?.total || 0;
+  const totalLeadsPages = Math.ceil(totalLeads / PAGE_SIZE);
 
   const { data: groups = [] } = useQuery({
     queryKey: ["customer_groups", currentTenant?.id],
@@ -152,7 +161,7 @@ export default function Customers() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {totalCustomers} clientes • {leads.length} leads
+              {totalCustomers} clientes • {totalLeads} leads
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -393,9 +402,36 @@ export default function Customers() {
                       ))
                     )}
                   </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Leads Pagination */}
+          {totalLeadsPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-muted-foreground">
+                Página {leadsPage + 1} de {totalLeadsPages}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={leadsPage === 0}
+                  onClick={() => setLeadsPage((p) => p - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={leadsPage >= totalLeadsPages - 1}
+                  onClick={() => setLeadsPage((p) => p + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
           </TabsContent>
         </Tabs>
       </div>

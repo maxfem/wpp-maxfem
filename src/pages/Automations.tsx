@@ -89,11 +89,21 @@ export default function Automations() {
     queryKey: ["automation-activities-raw", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("campaign_id, status, clicked_at, conversion_value, created_at")
-        .eq("tenant_id", currentTenant.id);
-      return (data as CampaignActivity[]) || [];
+      const allData: CampaignActivity[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data } = await supabase
+          .from("campaign_activities")
+          .select("campaign_id, status, clicked_at, conversion_value, created_at")
+          .eq("tenant_id", currentTenant.id)
+          .range(from, from + batchSize - 1);
+        if (!data || data.length === 0) break;
+        allData.push(...(data as CampaignActivity[]));
+        if (data.length < batchSize) break;
+        from += batchSize;
+      }
+      return allData;
     },
     enabled: !!currentTenant,
   });

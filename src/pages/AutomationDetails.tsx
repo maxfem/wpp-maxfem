@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
@@ -18,11 +18,17 @@ import {
   ChartContainer, ChartTooltip, ChartTooltipContent,
 } from "@/components/ui/chart";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Trash2,
 } from "lucide-react";
 import { formatSP } from "@/lib/utils";
+import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -36,9 +42,46 @@ export default function AutomationDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
+  const queryClient = useQueryClient();
 
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(0);
+
+  // Pending queue count
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ["automation-queue-count", id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("automation_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", id!)
+        .eq("status", "pending");
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!id,
+  });
+
+  // Clear queue mutation
+  const clearQueue = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase
+        .from("automation_queue")
+        .update({ status: "skipped", processed_at: new Date().toISOString() })
+        .eq("campaign_id", id!)
+        .eq("status", "pending")
+        .select("id");
+      if (error) throw error;
+      return data?.length || 0;
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} item(ns) removido(s) da fila`);
+      queryClient.invalidateQueries({ queryKey: ["automation-queue-count", id] });
+    },
+    onError: () => {
+      toast.error("Erro ao limpar a fila");
+    },
+  });
 
   const { data: campaign, isLoading: loadingCampaign } = useQuery({
     queryKey: ["automation", id],
@@ -168,6 +211,35 @@ export default function AutomationDetails() {
               Criada em {formatSP(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm")}
             </p>
           </div>
+          {pendingCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Limpar fila ({pendingCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Limpar fila de execução?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Isso vai descartar {pendingCount} item(ns) pendente(s) na fila desta automação.
+                    Apenas novos eventos disparados a partir de agora serão processados.
+                    Esta ação não pode ser desfeita.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => clearQueue.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Limpar fila
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         {/* Error banner */}

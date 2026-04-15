@@ -28,6 +28,7 @@ const SettingsIntegrations = lazy(() => import("./pages/SettingsIntegrations"));
 const SettingsYampi = lazy(() => import("./pages/SettingsYampi"));
 const SettingsOpenAI = lazy(() => import("./pages/SettingsOpenAI"));
 const SettingsBling = lazy(() => import("./pages/SettingsBling"));
+const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
 
 const queryClient = new QueryClient();

@@ -340,6 +340,7 @@ export default function Automations() {
               const StIcon = st.icon;
               const typeLabel = c.trigger_type ? getTriggerLabel(c.trigger_type) : (automationTypes.find((t) => t.value === c.type)?.label || c.type);
               const metrics = metricsMap[c.id];
+              const pendingCount = pendingQueueCounts[c.id] || 0;
 
               return (
                 <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">

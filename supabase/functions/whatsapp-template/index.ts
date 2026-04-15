@@ -180,7 +180,8 @@ Deno.serve(async (req) => {
             return { type: "PHONE_NUMBER", text: btn.text, phone_number: btn.phone_number };
           }
           if (btn.type === "COPY_CODE") {
-            return { type: "COPY_CODE", example: btn.example || "CÓDIGO123" };
+            // Meta requires a static alphanumeric example, not a variable name
+            return { type: "COPY_CODE", example: "CODIGO123" };
           }
           return { type: "QUICK_REPLY", text: btn.text };
         }),

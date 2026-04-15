@@ -124,11 +124,18 @@ export default function Customers() {
   const addCustomer = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("No tenant");
+      const name = newCustomer.name.trim();
+      const email = newCustomer.email.trim();
+      const phone = newCustomer.phone.trim();
+      if (!name || name.length < 2 || name.length > 255) throw new Error("Nome deve ter entre 2 e 255 caracteres");
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("E-mail inválido");
+      if (email && email.length > 255) throw new Error("E-mail muito longo");
+      if (phone && (phone.replace(/\D/g, "").length < 10 || phone.replace(/\D/g, "").length > 15)) throw new Error("Telefone deve ter entre 10 e 15 dígitos");
       const { error } = await supabase.from("customers").insert({
         tenant_id: currentTenant.id,
-        name: newCustomer.name,
-        email: newCustomer.email || null,
-        phone: newCustomer.phone || null,
+        name,
+        email: email || null,
+        phone: phone || null,
       });
       if (error) throw error;
     },

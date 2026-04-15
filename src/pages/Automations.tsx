@@ -366,7 +366,7 @@ export default function Automations() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => navigate(`/automations/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => navigate(`/automations/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-                          <DropdownMenuItem><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => duplicateCampaign.mutate(c)}><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}>
                             <Trash2 className="h-4 w-4 mr-2" />Excluir
                           </DropdownMenuItem>

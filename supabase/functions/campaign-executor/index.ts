@@ -512,7 +512,20 @@ async function processAutomationQueue(supabase: any) {
             let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
             if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
 
-            const ctx = { customer, order: null, campaign: campaignVars };
+            // Load order from trigger_data if available
+            let orderRecord: any = null;
+            const triggerData = (item.trigger_data || {}) as any;
+            const yampiOrderId = triggerData?.yampi_order_id;
+            const triggerOrderId = triggerData?.order_id;
+            if (yampiOrderId || triggerOrderId) {
+              let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
+              if (yampiOrderId) oq = oq.eq("external_id", `yampi_${yampiOrderId}`);
+              else oq = oq.eq("id", triggerOrderId);
+              const { data: ord } = await oq.limit(1).single();
+              orderRecord = ord;
+            }
+
+            const ctx = { customer, order: orderRecord, campaign: campaignVars };
 
             // Tracked link for dynamic URL button
             let buttonUrlCode: string | undefined;

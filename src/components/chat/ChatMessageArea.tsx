@@ -132,7 +132,7 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
     const filename = msg.content && !msg.content.startsWith("[") ? msg.content : "Documento";
     return (
       <a
-        href={msg.media_url}
+        href={url}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(

@@ -10,11 +10,18 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Authenticate cron requests via service_role key in Authorization header
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  // Authenticate cron requests: accept service_role JWT only
   const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!serviceRoleKey || authBearer !== serviceRoleKey) {
-    console.log(`[auth] Unauthorized: authBearer matches service_role: ${authBearer === serviceRoleKey}`);
+  if (!authBearer) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  try {
+    const payload = JSON.parse(atob(authBearer.split(".")[1]));
+    if (payload.role !== "service_role") {
+      console.log(`[auth] Rejected: role=${payload.role}, expected service_role`);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+  } catch {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 

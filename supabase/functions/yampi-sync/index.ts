@@ -465,6 +465,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       matchedTriggers.push("order_created");
       if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_pix");
       if (isBillet && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_boleto");
+
+      // Debug log for Pix orders
+      if (isPix) {
+        console.log(`[DEBUG] Pix order #${orderNum} (yampi ${o.id}): status=${orderStatus}, txStatus=${txStatus}, triggers=${matchedTriggers.join(",")}, rawDate=${o.created_at?.date || o.created_at}`);
+      }
       if (orderStatus === "paid" || txStatus === "captured") matchedTriggers.push("order_paid");
       if (isCreditCard && ["refused", "rejected", "cancelled"].includes(txStatus)) matchedTriggers.push("order_rejected_card");
       if (["approved", "invoiced", "paid"].includes(orderStatus)) matchedTriggers.push("order_approved");

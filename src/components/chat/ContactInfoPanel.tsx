@@ -231,7 +231,7 @@ function CopilotTab({
     }
   };
 
-  const isConfigured = !!openaiIntegration;
+  const isConfigured = !!aiIntegration;
 
   if (!isConfigured) {
     return (

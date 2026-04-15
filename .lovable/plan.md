@@ -1,40 +1,29 @@
 
 
-## Plano: Remover limite de 1.000 clientes
+## Plano: Botão "Limpar Fila" na página de Automação
 
 ### Problema
-A query de clientes na página `/lists` (linha 71-83 de `Lists.tsx`) busca todos os clientes sem paginação. O Supabase retorna no máximo 1.000 registros por padrão, por isso o "Total de contatos" trava em 1.000. O banco já tem 3.121 clientes — não há limite no banco, apenas nas queries do frontend.
+Não existe forma de limpar os itens pendentes na `automation_queue` de uma automação específica. O usuário quer poder escolher entre processar a fila acumulada ou descartá-la e processar apenas novos eventos dali em diante.
 
 ### O que será feito
 
-**1. `src/pages/Lists.tsx` — Usar contagem real do banco**
-- Substituir a query `customers` (que busca todos os registros só para exibir `customers.length`) por uma query com `count: 'exact'` e `head: true` — retorna apenas o número total sem transferir dados
-- Isso suporta até centenas de milhares de registros sem impacto de performance
-- Manter a query completa de clientes apenas quando o dialog de adicionar membros estiver aberto (lazy loading)
+**1. Botão no header da automação** (`src/pages/AutomationDetails.tsx`)
+- Adicionar um botão "Limpar fila" ao lado do badge de status no header
+- Exibir a contagem de itens pendentes na fila (query na `automation_queue` com `status = 'pending'` e `campaign_id = id`)
+- Ao clicar, abrir um `AlertDialog` de confirmação explicando que os itens pendentes serão descartados e apenas novos eventos serão processados
+- Após confirmação, marcar todos os itens pendentes como `status = 'skipped'` (ou deletar) via Supabase
 
-**2. `src/pages/Lists.tsx` — Paginar a query de clientes para o dialog de adicionar membros**
-- Quando o dialog `addMembersOpen` abrir, buscar clientes com paginação (batches de 1.000 usando `.range()`) ou buscar sob demanda com search server-side
+**2. Migração de banco** (se necessário)
+- Verificar se o status `skipped` já é suportado na `automation_queue`. Se não, não é necessária migração pois o campo `status` é `text` sem constraint — basta usar `'skipped'`
 
-**3. `src/pages/Customers.tsx` — Leads sem limite**  
-- A query de leads (linha 70-82) também não pagina. Aplicar a mesma lógica de `fetchAllRows` com `.range()` para garantir que leads acima de 1.000 sejam carregados.
+**3. Lógica de limpeza**
+- Query: `supabase.from('automation_queue').update({ status: 'skipped', processed_at: new Date().toISOString() }).eq('campaign_id', id).eq('status', 'pending')`
+- Toast de sucesso com contagem de itens limpos
+- Invalidar queries relacionadas para atualizar a UI
 
 ### Detalhes técnicos
-
-```text
-Lists.tsx (contagem total):
-  ANTES:  .select("id, name, email, phone") → customers.length
-  DEPOIS: .select("*", { count: "exact", head: true }) → count
-
-Lists.tsx (dialog de membros):
-  Busca lazy com .range(0, 999), .range(1000, 1999), etc.
-  Ou search server-side com .ilike("name", `%${search}%`)
-
-Customers.tsx (leads):
-  Mesma paginação server-side já usada para customers (PAGE_SIZE = 50)
-```
-
-### Resultado
-- Total de contatos exibirá o número real (3.121+, até 50.000+)
-- Zero impacto de performance — sem transferir 50k registros ao frontend
-- Dialog de adicionar membros funciona com busca server-side
+- Arquivo editado: `src/pages/AutomationDetails.tsx`
+- Imports adicionais: `AlertDialog` components, `Trash2` icon, `useMutation` + `useQueryClient`
+- Nova query `automation-queue-count` para exibir pendentes
+- Nenhuma migração de banco necessária (campo `status` é `text` livre)
 

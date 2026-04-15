@@ -98,6 +98,26 @@ export default function Automations() {
     enabled: !!currentTenant,
   });
 
+  const { data: pendingQueueCounts = {} } = useQuery<Record<string, number>>({
+    queryKey: ["automation-queue-counts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return {};
+      const { data } = await supabase
+        .from("automation_queue")
+        .select("campaign_id")
+        .eq("tenant_id", currentTenant.id)
+        .eq("status", "pending");
+      const counts: Record<string, number> = {};
+      (data || []).forEach((item) => {
+        if (item.campaign_id) {
+          counts[item.campaign_id] = (counts[item.campaign_id] || 0) + 1;
+        }
+      });
+      return counts;
+    },
+    enabled: !!currentTenant,
+  });
+
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
     if (datePreset >= 0) {

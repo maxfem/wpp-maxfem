@@ -528,7 +528,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
 
             // Tracked link for dynamic URL button
             let buttonUrlCode: string | undefined;

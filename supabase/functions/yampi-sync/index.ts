@@ -196,17 +196,16 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // ===== PHASE: ORDERS =====
-async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null) {
+async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null, sortBy: string = "-updated_at") {
   const { alias, user_token, user_secret_key } = config;
   
   // Use date filter for incremental sync (only fetch orders updated since last sync)
-  // IMPORTANT: Apply the filter on ALL pages, not just startPage===1
-  const extraParams: Record<string, string> = { "sort": "-updated_at" };
+  const extraParams: Record<string, string> = { "sort": sortBy };
   if (lastSyncedAt) {
     const sinceDate = new Date(new Date(lastSyncedAt).getTime() - 48 * 60 * 60 * 1000);
     extraParams["updated_at_min"] = sinceDate.toISOString().split("T")[0];
     if (startPage === 1) {
-      console.log(`Incremental sync: orders since ${extraParams["updated_at_min"]}`);
+      console.log(`Incremental sync (${sortBy}): orders since ${extraParams["updated_at_min"]}`);
     }
   }
   

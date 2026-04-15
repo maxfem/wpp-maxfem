@@ -155,14 +155,21 @@ Deno.serve(async (req) => {
 
     const buttons = (template.buttons as { type: string; text: string; url?: string; phone_number?: string; example?: string }[]) || [];
     if (buttons.length > 0) {
+      // Validate URL buttons before sending
+      for (const btn of buttons) {
+        if (btn.type === "URL" && btn.url && !/^https?:\/\//i.test(btn.url.replace(/\{\{\d+\}\}/g, ""))) {
+          return jsonResponse({
+            error: `A URL do botão "${btn.text}" não é válida. Use uma URL começando com https:// — para código Pix, use o tipo "Copiar código" ao invés de "URL".`,
+            field: "buttons",
+          }, 400);
+        }
+      }
+
       components.push({
         type: "BUTTONS",
         buttons: buttons.map((btn) => {
           if (btn.type === "URL") {
             const normalizedUrl = btn.url?.replace(/\{\{\d+\}\}/g, "{{1}}");
-            if (normalizedUrl && !/^https?:\/\//i.test(normalizedUrl.replace(/\{\{1\}\}/g, ""))) {
-              return null; // skip invalid URLs silently
-            }
             const urlObj: Record<string, unknown> = { type: "URL", text: btn.text, url: normalizedUrl };
             if (normalizedUrl?.includes("{{1}}")) {
               urlObj.example = ["https://example.com/checkout"];

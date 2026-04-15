@@ -334,7 +334,28 @@ const tools = [
 // ===== Download media from Supabase storage and convert to base64 =====
 async function downloadMediaAsBase64(mediaUrl: string, adminClient: any): Promise<{ data: string; mimeType: string } | null> {
   try {
-    // If it's a Supabase storage URL, use the client
+    // If it's a storage path (no protocol), download directly from the bucket
+    if (!mediaUrl.startsWith("http://") && !mediaUrl.startsWith("https://")) {
+      console.log("[copilot] Downloading from storage path:", mediaUrl);
+      const { data, error } = await adminClient.storage.from("whatsapp-media").download(mediaUrl);
+      if (error || !data) {
+        console.warn("[copilot] Storage download error:", error);
+        return null;
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const base64 = btoa(binary);
+      const mimeType = data.type || "application/octet-stream";
+      console.log("[copilot] Storage download OK, mimeType:", mimeType, "size:", uint8.length);
+      return { data: base64, mimeType };
+    }
+
+    // If it's a Supabase storage signed/public URL, extract path and download
     if (mediaUrl.includes("/storage/v1/object/")) {
       const pathMatch = mediaUrl.match(/\/storage\/v1\/object\/(?:sign|public)\/([^?]+)/);
       if (pathMatch) {
@@ -361,7 +382,7 @@ async function downloadMediaAsBase64(mediaUrl: string, adminClient: any): Promis
       }
     }
 
-    // For signed URLs or external URLs, fetch directly
+    // For external URLs, fetch directly
     const res = await fetch(mediaUrl);
     if (!res.ok) {
       console.warn("[copilot] Media fetch error:", res.status);

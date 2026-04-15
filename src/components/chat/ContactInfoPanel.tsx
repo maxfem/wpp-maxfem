@@ -98,18 +98,28 @@ function CopilotTab({
   const [savedTone, setSavedTone] = useState("default");
   const [savedContext, setSavedContext] = useState("");
 
-  const { data: openaiIntegration } = useQuery({
-    queryKey: ["integration-openai", currentTenant?.id],
+  const { data: aiIntegration } = useQuery({
+    queryKey: ["integration-ai", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return null;
-      const { data } = await supabase
+      // Check Gemini first (priority), then OpenAI
+      const { data: gemini } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .eq("provider", "gemini")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (gemini) return gemini;
+
+      const { data: openai } = await supabase
         .from("integrations")
         .select("*")
         .eq("tenant_id", currentTenant.id)
         .eq("provider", "openai")
         .eq("is_active", true)
         .maybeSingle();
-      return data;
+      return openai;
     },
     enabled: !!currentTenant,
   });

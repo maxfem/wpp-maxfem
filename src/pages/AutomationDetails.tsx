@@ -97,16 +97,26 @@ export default function AutomationDetails() {
     enabled: !!id,
   });
 
-  // Metrics query — all activities, no pagination
+  // Metrics query — paginated to avoid 1000 row limit
   const { data: metricsData } = useQuery({
     queryKey: ["automation-metrics", id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("campaign_activities")
-        .select("sent_at, delivered_at, read_at, clicked_at, replied_at, converted_at, conversion_value")
-        .eq("campaign_id", id!);
-      if (error) throw error;
-      return data || [];
+      const allData: any[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from("campaign_activities")
+          .select("sent_at, delivered_at, read_at, clicked_at, replied_at, converted_at, conversion_value")
+          .eq("campaign_id", id!)
+          .range(from, from + batchSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allData.push(...data);
+        if (data.length < batchSize) break;
+        from += batchSize;
+      }
+      return allData;
     },
     enabled: !!id,
   });

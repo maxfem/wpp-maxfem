@@ -210,7 +210,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     }
   }
   
-  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
+  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items,customer", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
 
   // Build customer lookup: load all customers in single paginated query (minimal columns)
   const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();

@@ -450,7 +450,22 @@ export default function MessageTemplates() {
     setSampleValues([]);
   };
 
-  const openEdit = (template: (typeof templates)[0]) => {
+  const duplicateTemplate = (template: (typeof templates)[0]) => {
+    setEditingId(null);
+    setForm({
+      name: template.name + "_copia",
+      category: template.category,
+      language: template.language,
+      header_type: template.header_type || "none",
+      header_content: template.header_content || "",
+      body: template.body,
+      footer: template.footer || "",
+      buttons: (template.buttons as unknown as TemplateButton[]) || [],
+    });
+    setSampleValues((template.sample_values as string[]) || []);
+    setDialogOpen(true);
+  };
+
     setEditingId(template.id);
     setForm({
       name: template.name,

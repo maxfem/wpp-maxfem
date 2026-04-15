@@ -69,11 +69,10 @@ export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenan
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(filePath);
-
+      // Store the path — media will be served via signed URLs
       onSendMedia(
         pendingFile.type,
-        urlData.publicUrl,
+        filePath,
         message.trim(),
         pendingFile.type === "document" ? pendingFile.file.name : undefined
       );

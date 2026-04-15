@@ -382,10 +382,18 @@ export default function Automations() {
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-1 border-t border-border">
-                      <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
-                        <StIcon className="h-3 w-3" />
-                        {st.label}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                          <StIcon className="h-3 w-3" />
+                          {st.label}
+                        </Badge>
+                        {pendingCount > 0 && (
+                          <Badge variant="outline" className="text-[10px] gap-1 bg-orange-100 text-orange-700 border-orange-200">
+                            <Clock className="h-3 w-3" />
+                            {pendingCount} na fila
+                          </Badge>
+                        )}
+                      </div>
                       <Switch
                         className="scale-75"
                         checked={c.status === "running"}

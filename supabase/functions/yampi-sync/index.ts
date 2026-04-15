@@ -478,7 +478,11 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
         if (!matchedTriggers.includes(automation.trigger_type)) continue;
         // Only enqueue events that happened AFTER the automation was activated
         const activationDate = automation.start_date || automation.created_at;
-        const orderDate = o.created_at?.date || o.created_at || "";
+        // Yampi returns created_at.date as naive São Paulo time — append timezone offset
+        const rawOrderDate = o.created_at?.date || o.created_at || "";
+        const orderDate = typeof rawOrderDate === "string" && !rawOrderDate.includes("+") && !rawOrderDate.includes("Z")
+          ? rawOrderDate.replace(" ", "T") + "-03:00"
+          : rawOrderDate;
         if (activationDate && orderDate && new Date(orderDate) < new Date(activationDate)) continue;
         const { error: qErr } = await supabase.from("automation_queue").insert({
           tenant_id,

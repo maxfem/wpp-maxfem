@@ -61,6 +61,7 @@ interface TemplateButton {
   text: string;
   url?: string;
   phone_number?: string;
+  example?: string;
 }
 
 interface TemplateForm {
@@ -729,6 +730,7 @@ export default function MessageTemplates() {
                             <SelectItem value="QUICK_REPLY">Resposta rápida</SelectItem>
                             <SelectItem value="URL">Link</SelectItem>
                             <SelectItem value="PHONE_NUMBER">Telefone</SelectItem>
+                            <SelectItem value="COPY_CODE">Copiar código</SelectItem>
                           </SelectContent>
                         </Select>
                         <Input
@@ -751,6 +753,14 @@ export default function MessageTemplates() {
                             placeholder="+5511999..."
                             value={btn.phone_number || ""}
                             onChange={(e) => updateButton(i, "phone_number", e.target.value)}
+                            className="flex-1"
+                          />
+                        )}
+                        {btn.type === "COPY_CODE" && (
+                          <Input
+                            placeholder="Exemplo: PIX123ABC"
+                            value={btn.example || ""}
+                            onChange={(e) => updateButton(i, "example", e.target.value)}
                             className="flex-1"
                           />
                         )}

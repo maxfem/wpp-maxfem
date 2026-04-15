@@ -211,6 +211,35 @@ export default function AutomationDetails() {
               Criada em {formatSP(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm")}
             </p>
           </div>
+          {pendingCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Limpar fila ({pendingCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Limpar fila de execução?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Isso vai descartar {pendingCount} item(ns) pendente(s) na fila desta automação.
+                    Apenas novos eventos disparados a partir de agora serão processados.
+                    Esta ação não pode ser desfeita.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => clearQueue.mutate()}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Limpar fila
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         {/* Error banner */}

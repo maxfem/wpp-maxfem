@@ -691,13 +691,11 @@ function isRateLimited(ip: string): boolean {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Authenticate cron requests via CRON_SECRET
-  const cronSecret = Deno.env.get("CRON_SECRET");
-  const requestCronHeader = req.headers.get("x-cron-secret");
+  // Authenticate cron requests via service_role key in Authorization header
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
-  const requestSecret = requestCronHeader || authBearer;
-  console.log(`[auth] cronSecret set: ${!!cronSecret}, cronSecret len: ${cronSecret?.length}, x-cron-secret header set: ${!!requestCronHeader}, authBearer len: ${authBearer?.length}, match: ${requestSecret === cronSecret}`);
-  if (!cronSecret || requestSecret !== cronSecret) {
+  if (!serviceRoleKey || authBearer !== serviceRoleKey) {
+    console.log(`[auth] Unauthorized: authBearer matches service_role: ${authBearer === serviceRoleKey}`);
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 

@@ -10,10 +10,11 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Authenticate cron requests via CRON_SECRET
-  const cronSecret = Deno.env.get("CRON_SECRET");
-  const requestSecret = req.headers.get("x-cron-secret") || req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!cronSecret || requestSecret !== cronSecret) {
+  // Authenticate cron requests via service_role key in Authorization header
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!serviceRoleKey || authBearer !== serviceRoleKey) {
+    console.log(`[auth] Unauthorized: authBearer matches service_role: ${authBearer === serviceRoleKey}`);
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 

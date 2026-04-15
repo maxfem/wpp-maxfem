@@ -933,7 +933,50 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      whatsapp_accounts_safe: {
+        Row: {
+          created_at: string | null
+          display_phone: string | null
+          id: string | null
+          is_active: boolean | null
+          phone_number_id: string | null
+          quality_rating: string | null
+          tenant_id: string | null
+          updated_at: string | null
+          verified_name: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          display_phone?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          phone_number_id?: string | null
+          quality_rating?: string | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          verified_name?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          display_phone?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          phone_number_id?: string | null
+          quality_rating?: string | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          verified_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_accounts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       calculate_rfm_scores: { Args: { _tenant_id: string }; Returns: undefined }

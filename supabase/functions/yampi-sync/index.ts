@@ -650,14 +650,13 @@ Deno.serve(async (req) => {
           const MAX_CRON_PAGES = 1;
 
           if (syncSettings?.orders !== false) {
-            let orderPage: number | null = 1;
-            let orderPages = 0;
-            while (orderPage && orderPages < MAX_CRON_PAGES) {
-              const result = await syncOrders(supabase, int.tenant_id, cfg, orderPage, int.last_synced_at);
-              ordersSynced += result.synced;
-              orderPage = result.nextPage;
-              orderPages++;
-            }
+            // Pass 1: Newest orders first (catches new Pix/Boleto for automation triggers)
+            const newOrdersResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-id");
+            ordersSynced += newOrdersResult.synced;
+
+            // Pass 2: Recently updated orders (catches status changes like shipped, delivered)
+            const updatedResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-updated_at");
+            ordersSynced += updatedResult.synced;
           }
 
           if (syncSettings?.abandoned_carts !== false) {

@@ -97,19 +97,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get phone_number_id
+    // Get phone_number_id and access_token per tenant
     let phoneNumberId = WHATSAPP_PHONE_NUMBER_ID;
+    let tenantAccessToken = WHATSAPP_ACCESS_TOKEN;
     const { data: waAccount } = await supabase
       .from("whatsapp_accounts")
-      .select("phone_number_id")
+      .select("phone_number_id, access_token")
       .eq("tenant_id", tenant_id)
       .eq("is_active", true)
       .limit(1)
       .single();
 
-    if (waAccount?.phone_number_id) {
-      phoneNumberId = waAccount.phone_number_id;
-    }
+    if (waAccount?.phone_number_id) phoneNumberId = waAccount.phone_number_id;
+    if (waAccount?.access_token) tenantAccessToken = waAccount.access_token;
 
     // Resolve customers
     let customers: { id: string; phone: string | null; name: string }[] = [];
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
           const waResponse = await fetch(GRAPH_API, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+              Authorization: `Bearer ${tenantAccessToken}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(waPayload),

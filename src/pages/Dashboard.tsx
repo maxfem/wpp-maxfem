@@ -1,7 +1,11 @@
+import { useState, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -13,7 +17,7 @@ import {
   Clock,
   Target,
   BarChart3,
-  MousePointerClick,
+  CalendarIcon,
 } from "lucide-react";
 import {
   BarChart,
@@ -26,9 +30,11 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { subDays } from "date-fns";
+import { subDays, startOfDay, endOfDay, differenceInDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { formatSP } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
+import type { DateRange } from "react-day-picker";
 
 // Fetch all rows bypassing the 1000-row default limit
 async function fetchAll<T>(query: any): Promise<T[]> {
@@ -46,9 +52,38 @@ async function fetchAll<T>(query: any): Promise<T[]> {
   return all;
 }
 
+type PeriodKey = "today" | "yesterday" | "7d" | "30d" | "custom";
 
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: "today", label: "Hoje" },
+  { key: "yesterday", label: "Ontem" },
+  { key: "7d", label: "7 dias" },
+  { key: "30d", label: "30 dias" },
+  { key: "custom", label: "Personalizado" },
+];
 
-const PERIOD_DAYS = 14;
+function getPeriodRange(key: PeriodKey, customRange?: DateRange): { from: Date; to: Date; days: number } {
+  const now = new Date();
+  switch (key) {
+    case "today":
+      return { from: startOfDay(now), to: endOfDay(now), days: 1 };
+    case "yesterday": {
+      const y = subDays(now, 1);
+      return { from: startOfDay(y), to: endOfDay(y), days: 1 };
+    }
+    case "7d":
+      return { from: startOfDay(subDays(now, 6)), to: endOfDay(now), days: 7 };
+    case "30d":
+      return { from: startOfDay(subDays(now, 29)), to: endOfDay(now), days: 30 };
+    case "custom": {
+      if (customRange?.from && customRange?.to) {
+        const days = differenceInDays(customRange.to, customRange.from) + 1;
+        return { from: startOfDay(customRange.from), to: endOfDay(customRange.to), days };
+      }
+      return { from: startOfDay(subDays(now, 6)), to: endOfDay(now), days: 7 };
+    }
+  }
+}
 
 // Brazilian number formatting helpers
 const fmtNumber = (v: number) => {
@@ -67,10 +102,12 @@ const fmtMoneyShort = (v: number) => {
 };
 
 // Build ordered day keys for the period
-function buildDayEntries(days: number) {
+function buildDayEntries(from: Date, to: Date) {
   const entries: { key: string; label: string }[] = [];
+  const days = differenceInDays(to, from) + 1;
   for (let i = 0; i < days; i++) {
-    const d = subDays(new Date(), days - 1 - i);
+    const d = new Date(from);
+    d.setDate(d.getDate() + i);
     entries.push({ key: formatSP(d, "yyyy-MM-dd"), label: formatSP(d, "dd/MM") });
   }
   return entries;
@@ -79,17 +116,36 @@ function buildDayEntries(days: number) {
 export default function Dashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
-  const periodStart = subDays(new Date(), PERIOD_DAYS).toISOString();
+
+  const [periodKey, setPeriodKey] = useState<PeriodKey>("7d");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  const { from: periodFrom, to: periodTo, days: periodDays } = useMemo(
+    () => getPeriodRange(periodKey, customRange),
+    [periodKey, customRange]
+  );
+
+  const periodStartISO = periodFrom.toISOString();
+  const periodEndISO = periodTo.toISOString();
+
+  const periodLabel = useMemo(() => {
+    if (periodKey === "custom" && customRange?.from && customRange?.to) {
+      return `${formatSP(customRange.from, "dd/MM/yyyy")} — ${formatSP(customRange.to, "dd/MM/yyyy")}`;
+    }
+    return PERIOD_OPTIONS.find((p) => p.key === periodKey)?.label || "";
+  }, [periodKey, customRange]);
 
   const { data: orders = [] } = useQuery({
-    queryKey: ["dashboard-orders", tenantId],
+    queryKey: ["dashboard-orders", tenantId, periodStartISO, periodEndISO],
     queryFn: () =>
       fetchAll<{ total: number; created_at: string; customer_id: string }>(
         supabase
           .from("orders")
           .select("total, created_at, customer_id")
           .eq("tenant_id", tenantId!)
-          .gte("created_at", periodStart)
+          .gte("created_at", periodStartISO)
+          .lte("created_at", periodEndISO)
           .order("created_at")
       ),
     enabled: !!tenantId,
@@ -108,14 +164,15 @@ export default function Dashboard() {
   });
 
   const { data: activities = [] } = useQuery({
-    queryKey: ["dashboard-activities", tenantId],
+    queryKey: ["dashboard-activities", tenantId, periodStartISO, periodEndISO],
     queryFn: () =>
       fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
         supabase
           .from("campaign_activities")
           .select("status, clicked_at, converted_at, conversion_value, created_at")
           .eq("tenant_id", tenantId!)
-          .gte("created_at", periodStart)
+          .gte("created_at", periodStartISO)
+          .lte("created_at", periodEndISO)
       ),
     enabled: !!tenantId,
   });
@@ -123,8 +180,8 @@ export default function Dashboard() {
   // Compute KPIs
   const totalRevenue = orders.reduce((s, o) => s + Number(o.total || 0), 0);
   const martzRevenue = activities
-    .filter((a: any) => a.converted_at)
-    .reduce((s: number, a: any) => s + Number(a.conversion_value || 0), 0);
+    .filter((a) => a.converted_at)
+    .reduce((s, a) => s + Number(a.conversion_value || 0), 0);
   const totalCustomers = customers.length;
   const totalOrders = orders.length;
   const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -140,8 +197,8 @@ export default function Dashboard() {
   const customersWithMultiple = activeCustomers.filter((c) => (c.total_orders || 0) > 1 && c.last_order_at && c.created_at);
   const avgDaysBetween = customersWithMultiple.length > 0
     ? customersWithMultiple.reduce((s, c) => {
-        const days = (new Date(c.last_order_at!).getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24);
-        return s + days / ((c.total_orders || 2) - 1);
+        const d = (new Date(c.last_order_at!).getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24);
+        return s + d / ((c.total_orders || 2) - 1);
       }, 0) / customersWithMultiple.length
     : 0;
 
@@ -156,8 +213,8 @@ export default function Dashboard() {
     { label: "Tempo entre Pedidos", value: avgDaysBetween > 0 ? `${Math.round(avgDaysBetween)} dias` : "—", icon: Clock },
   ];
 
-  // Chart data: group orders by day using full date key
-  const dayEntries = buildDayEntries(PERIOD_DAYS);
+  // Chart data
+  const dayEntries = buildDayEntries(periodFrom, periodTo);
   const dayMap: Record<string, { label: string; receita: number; pedidos: number }> = {};
   dayEntries.forEach(({ key, label }) => {
     dayMap[key] = { label, receita: 0, pedidos: 0 };
@@ -175,10 +232,10 @@ export default function Dashboard() {
     pedidos: dayMap[key].pedidos,
   }));
 
-  // Chart data: new vs returning by day
+  // New vs returning
   const newCustomerIds = new Set(
     customers
-      .filter((c) => new Date(c.created_at) >= new Date(periodStart))
+      .filter((c) => new Date(c.created_at) >= periodFrom)
       .map((c) => c.id)
   );
   const customerDayMap: Record<string, { label: string; novos: number; recorrentes: number }> = {};
@@ -204,11 +261,60 @@ export default function Dashboard() {
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Indicadores</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Visão geral de {currentTenant?.name || "sua loja"} • Últimos {PERIOD_DAYS} dias
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Indicadores</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Visão geral de {currentTenant?.name || "sua loja"} • {periodLabel}
+            </p>
+          </div>
+
+          {/* Period selector */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {PERIOD_OPTIONS.map((opt) =>
+              opt.key === "custom" ? (
+                <Popover key={opt.key} open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={periodKey === "custom" ? "default" : "outline"}
+                      size="sm"
+                      className="gap-1.5"
+                    >
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                      {periodKey === "custom" && customRange?.from && customRange?.to
+                        ? `${formatSP(customRange.from, "dd/MM")} — ${formatSP(customRange.to, "dd/MM")}`
+                        : opt.label}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="range"
+                      selected={customRange}
+                      onSelect={(range) => {
+                        setCustomRange(range);
+                        if (range?.from && range?.to) {
+                          setPeriodKey("custom");
+                          setCalendarOpen(false);
+                        }
+                      }}
+                      locale={ptBR}
+                      numberOfMonths={2}
+                      disabled={{ after: new Date() }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <Button
+                  key={opt.key}
+                  variant={periodKey === opt.key ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPeriodKey(opt.key)}
+                >
+                  {opt.label}
+                </Button>
+              )
+            )}
+          </div>
         </div>
 
         <Tabs defaultValue="overview" className="w-full">

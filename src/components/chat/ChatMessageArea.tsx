@@ -6,7 +6,8 @@ import { Check, CheckCheck, Image, FileText, Video, Search, X, ArrowDown, Play, 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 // Resolve media_url: if it's a storage path (no protocol), generate a signed URL
 function useSignedUrl(mediaUrl: string | null | undefined): string | null {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);

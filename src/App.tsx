@@ -6,6 +6,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -58,44 +59,46 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-                <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
-                <Route path="/campaigns/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
-                <Route path="/campaigns/:id" element={<ProtectedRoute><CampaignDetails /></ProtectedRoute>} />
-                <Route path="/automations" element={<ProtectedRoute><Automations /></ProtectedRoute>} />
-                <Route path="/automations/:id" element={<ProtectedRoute><AutomationDetails /></ProtectedRoute>} />
-                <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
-                <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
-                <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-                <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
-                <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
-                <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-                <Route path="/settings/whatsapp" element={<ProtectedRoute><SettingsWhatsApp /></ProtectedRoute>} />
-                <Route path="/settings/integrations" element={<ProtectedRoute><SettingsIntegrations /></ProtectedRoute>} />
-                <Route path="/settings/integrations/yampi" element={<ProtectedRoute><SettingsYampi /></ProtectedRoute>} />
-                <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
-                <Route path="/settings/integrations/bling" element={<ProtectedRoute><SettingsBling /></ProtectedRoute>} />
-                <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
-                <Route path="/r/:code" element={<LinkRedirect />} />
-                <Route path="/privacy" element={<PrivacyPolicy />} />
-                <Route path="/terms" element={<TermsOfUse />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
+                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+                  <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
+                  <Route path="/campaigns/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
+                  <Route path="/campaigns/:id" element={<ProtectedRoute><CampaignDetails /></ProtectedRoute>} />
+                  <Route path="/automations" element={<ProtectedRoute><Automations /></ProtectedRoute>} />
+                  <Route path="/automations/:id" element={<ProtectedRoute><AutomationDetails /></ProtectedRoute>} />
+                  <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
+                  <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
+                  <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+                  <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
+                  <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
+                  <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                  <Route path="/settings/whatsapp" element={<ProtectedRoute><SettingsWhatsApp /></ProtectedRoute>} />
+                  <Route path="/settings/integrations" element={<ProtectedRoute><SettingsIntegrations /></ProtectedRoute>} />
+                  <Route path="/settings/integrations/yampi" element={<ProtectedRoute><SettingsYampi /></ProtectedRoute>} />
+                  <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
+                  <Route path="/settings/integrations/bling" element={<ProtectedRoute><SettingsBling /></ProtectedRoute>} />
+                  <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
+                  <Route path="/r/:code" element={<LinkRedirect />} />
+                  <Route path="/privacy" element={<PrivacyPolicy />} />
+                  <Route path="/terms" element={<TermsOfUse />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>
 );

@@ -1,18 +1,19 @@
 # Project Memory
 
 ## Core
-- **Stack**: React, TypeScript, Tailwind, Recharts, @xyflow/react, Supabase (RLS, Auth, DB, Edge Functions).
+- **Stack**: React, TypeScript, Tailwind, Recharts, @xyflow/react, Supabase (RLS, Auth, DB, Edge Functions), Framer Motion.
 - **Domain**: Maxfem CRM, SaaS for e-commerce retention (Yampi, Nuvemshop, Bling) in Brazil.
-- **Design**: Minimalist. Pink (#ED2B75, #FCE4EF), Dark neutral (#1A1A2E). Poppins (headings), Inter (body).
+- **Design**: Dark-first cyberpunk/neon. Purple (#8B5CF6), Magenta (#FF2D92), Cyan (#40E0D0). Space Grotesk (headings), Inter (body). Glassmorphism cards.
+- **Theme**: Dark/Light toggle via ThemeContext, persisted in localStorage (crm-theme). Dark is default.
 - **Timezone**: All dates use America/Sao_Paulo. Use `formatSP()` and `localeSP()` from `@/lib/utils`.
 - **WhatsApp API**: Cloud API v22.0. 24h window for free-form messages, otherwise requires pre-approved HSM templates.
 - **Meta Constraints**: Template body variables cannot be isolated at start/end. Buttons must use {{1}} and include examples.
-- **AI Copilot**: Gemini (priority) or GPT-4o-mini. Must use raw URLs (no Markdown). Preserve special chars in tracking codes.
+- **AI Copilot**: GPT-4o-mini. Must use raw URLs (no Markdown). Preserve special chars (e.g., `_`) in tracking codes.
 - **Tracking**: Use `https://rastreio.maxfem.com.br/` and `/r/:code` for shortlinks. UTMs injected and tracked via DB.
 
 ## Memories
 - [Project Overview](mem://project/overview) — Core CRM functionalities: RFM segmentation, LTV, multichannel automated campaigns
-- [Design Direction](mem://style/design-direction) — Visual identity, colors, typography, minimal sidebar styling
+- [Design Direction](mem://style/design-direction) — Cyberpunk neon dark-first design, glassmorphism, gradient KPI cards, Space Grotesk
 - [Multi-tenancy](mem://tech/multi-tenancy) — Supabase RLS isolation for distinct store accounts
 - [Core Functionalities](mem://features/core-functionality) — RFM segmentation, LTV, automated campaigns triggered by events
 - [Onboarding](mem://auth/onboarding-automation) — Auto user creation and tenant provisioning via handle_new_user trigger
@@ -64,7 +65,6 @@
 - [React Flow Rendering](mem://tech/react-flow-rendering) — Skipping memo() for NodeConfigPanel strict comparator updates
 - [Data Pagination](mem://tech/data-pagination) — Using `.range()` on Edge Functions to prevent memory bloat
 - [OpenAI Config](mem://integrations/openai-config) — Key, tone, prompt saved in 'integrations' table
-- [Gemini AI](mem://integrations/gemini-ai) — Multimodal copilot via Lovable AI Gateway, priority over OpenAI, no API key
 - [RFM Segmentation](mem://features/customers/rfm-segmentation-logic) — SQL quintile scoring for Recency, Frequency, Monetary value
 - [RFM Architecture](mem://tech/rfm-processing-architecture) — Edge function isolation for mass RFM calculations
 - [Bling URI](mem://integrations/bling-v3-config) — Development callback endpoint definition

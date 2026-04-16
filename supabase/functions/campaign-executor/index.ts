@@ -347,6 +347,9 @@ async function processAutomationQueue(supabase: any) {
             const templateButtons = (templateRecord?.buttons as any[]) || [];
             const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
             const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+            const copyCodeBtnIndices = templateButtons
+              .map((b: any, i: number) => b.type === "COPY_CODE" ? { index: i, example: b.example || "" } : null)
+              .filter(Boolean) as { index: number; example: string }[];
 
             const { data: customer } = await supabase.from("customers")
               .select("id, name, phone, email, custom_attributes").eq("id", item.customer_id).single();

@@ -58,7 +58,7 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
   const formattedOrders = orders.map((o: any) => {
     const trackingCode = o.tracking_code || null;
     const trackingUrl = trackingCode
-      ? `https://rastreio.maxfem.com.br/${trackingCode}`
+      ? `http://rastreio.maxfem.com.br/${trackingCode}`
       : (o.tracking_url || null);
 
     return {
@@ -250,7 +250,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       }
 
       if (trackingCode) {
-        trackingUrl = `https://rastreio.maxfem.com.br/${trackingCode}`;
+        trackingUrl = `http://rastreio.maxfem.com.br/${trackingCode}`;
       }
 
       const payments = (d.parcelas || []).map((p: any) => ({
@@ -584,18 +584,26 @@ serve(async (req) => {
 
       orderInstructions = `\n\nVocê tem acesso às seguintes funções para consultar pedidos: ${toolNames.join(", ")}.
 Quando o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento ou compras, solicite o CPF.
-${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling. Nunca use lookup_orders_by_cpf para rastreio se o Bling estiver disponível." : ""}
+${hasBling ? "SEMPRE use lookup_orders_bling como fonte PRIMÁRIA e ÚNICA para rastreio — ele busca dados em tempo real direto do ERP Bling. Nunca use lookup_orders_by_cpf para rastreio se o Bling estiver disponível." : ""}
 ${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para consultar dados sincronizados localmente." : ""}
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) de forma clara e direta.
-- Se houver dados de pagamento (payments), informe o método e status do pagamento.
-- Formate a resposta com: número do pedido, status, código de rastreio (se houver), link de rastreio (se houver), transportadora, e valor.
+
+FORMATO OBRIGATÓRIO de resposta quando houver dados de rastreio:
+- Número do pedido: {order_number}
+- Status: {status}
+- Código de rastreio: {tracking_code}
+- Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}
+
+Use EXATAMENTE esse formato. Substitua {order_number}, {status} e {tracking_code} pelos valores reais retornados pela função.
+
+- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio usando o formato acima.
+- Se houver dados de pagamento (payments), informe o método e status do pagamento APÓS o bloco de rastreio.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações. Use apenas os dados retornados pela função.
-- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs. Exemplo correto: "Acompanhe pelo link: https://rastreio.maxfem.com.br/ABC123". Exemplos ERRADOS: "[clique aqui](url)", "(https://url)", "* [Acompanhar pedido](url)".
-- O link de rastreio é SEMPRE no formato https://rastreio.maxfem.com.br/CODIGO_RASTREIO — use exatamente o tracking_url retornado pela função, sem modificar, sem adicionar parênteses, colchetes ou qualquer caractere ao redor.
-- CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI_16023873836", escreva "BLI_16023873836" e NÃO "BLI16023873836".`;
+- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs.
+- CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI1_6032154318", escreva "BLI1_6032154318" e NÃO "BLI16032154318".
+- O link de rastreamento usa SEMPRE http:// (não https://). Formato: http://rastreio.maxfem.com.br/{tracking_code}`;
     }
 
     const mediaInstructions = useGemini

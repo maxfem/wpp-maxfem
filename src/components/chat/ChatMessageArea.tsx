@@ -263,8 +263,15 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
 
                 // For media-only messages, don't show "[image]" text
                 let displayContent = "";
+                let resolvedTemplateBody: string | null = null;
                 if (isTemplate) {
-                  displayContent = msg.content || `[Template: ${msg.template_name || msg.message_type}]`;
+                  // Try to resolve real template body
+                  const tpl = msg.template_name ? templateMap.get(msg.template_name) : null;
+                  if (tpl) {
+                    resolvedTemplateBody = tpl.body;
+                  } else {
+                    displayContent = msg.content || `[Template: ${msg.template_name || msg.message_type}]`;
+                  }
                 } else if (isMedia && hasMedia) {
                   // Show caption if it's actual text, not a placeholder
                   const c = msg.content || "";
@@ -294,19 +301,35 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
                         hasMedia && (msg.message_type === "image" || msg.message_type === "video") && "max-w-[55%] p-1.5"
                       )}
                     >
-                      {isTemplate && (
-                        <span className={cn("text-[10px] font-medium block mb-0.5", isOutbound ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                          📋 Template
-                        </span>
-                      )}
                       <MediaPreview msg={msg} isOutbound={isOutbound} />
-                      {displayContent && (
-                        <p className={cn(
-                          "whitespace-pre-wrap break-words leading-relaxed",
-                          hasMedia && (msg.message_type === "image" || msg.message_type === "video") && "px-1.5 pb-0.5"
-                        )}>
-                          {chatSearch ? highlightText(displayContent) : renderFormattedText(displayContent)}
-                        </p>
+                      {resolvedTemplateBody ? (
+                        <>
+                          <p className="whitespace-pre-wrap break-words leading-relaxed">
+                            {chatSearch ? highlightText(resolvedTemplateBody) : renderFormattedText(resolvedTemplateBody)}
+                          </p>
+                          <span className={cn(
+                            "inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full font-medium",
+                            isOutbound ? "bg-primary-foreground/15 text-primary-foreground/60" : "bg-muted text-muted-foreground"
+                          )}>
+                            📋 {msg.template_name}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {isTemplate && (
+                            <span className={cn("text-[10px] font-medium block mb-0.5", isOutbound ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                              📋 Template
+                            </span>
+                          )}
+                          {displayContent && (
+                            <p className={cn(
+                              "whitespace-pre-wrap break-words leading-relaxed",
+                              hasMedia && (msg.message_type === "image" || msg.message_type === "video") && "px-1.5 pb-0.5"
+                            )}>
+                              {chatSearch ? highlightText(displayContent) : renderFormattedText(displayContent)}
+                            </p>
+                          )}
+                        </>
                       )}
                       <div className={cn(
                         "flex items-center gap-1 mt-0.5",

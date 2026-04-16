@@ -794,7 +794,13 @@ export default function MessageTemplates() {
                         <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
+                        {getFieldErrors(`button_${i}`).map((e, ei) => (
+                          <p key={ei} className={`text-xs w-full ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                        ))}
                       </div>
+                    ))}
+                    {getFieldErrors("buttons").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
                     ))}
                   </div>
 

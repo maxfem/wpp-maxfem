@@ -301,11 +301,20 @@ export default function MessageTemplates() {
       const template = templates.find((item) => item.id === id);
       if (!template) throw new Error("Template não encontrado");
 
-      const headerValidationError = getTemplateHeaderValidationError(template.header_type, template.header_content);
-      if (headerValidationError) throw new Error(headerValidationError);
-
-      const validationError = getTemplateBodyValidationError(template.body);
-      if (validationError) throw new Error(validationError);
+      const tplButtons = (template.buttons as unknown as TemplateButton[]) || [];
+      const errors = validateTemplate({
+        name: template.name,
+        category: template.category,
+        language: template.language,
+        header_type: template.header_type || "none",
+        header_content: template.header_content || "",
+        body: template.body,
+        footer: template.footer || "",
+        buttons: tplButtons,
+        sample_values: (template.sample_values as string[]) || [],
+      });
+      const critical = errors.filter((e) => e.severity === "error");
+      if (critical.length > 0) throw new Error(critical[0].message);
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Não autenticado");

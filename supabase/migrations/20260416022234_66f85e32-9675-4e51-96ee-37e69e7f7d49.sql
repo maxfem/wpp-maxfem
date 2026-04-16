@@ -1,0 +1,1 @@
+UPDATE automation_queue SET status = 'pending', processed_at = NULL, current_node_id = NULL WHERE id = 'f9f3e03a-983a-4b16-a1d6-f1cb206c6b73'

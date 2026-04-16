@@ -1,0 +1,1 @@
+UPDATE automation_queue SET status = 'pending', processed_at = NULL, current_node_id = NULL WHERE campaign_id = 'f9826029-cf2b-486f-968b-7b1ea9ce8e18' AND status = 'failed' AND created_at >= '2026-04-16T02:00:00Z'

@@ -69,9 +69,10 @@ function getCustomerDynamicUrl(customer: any, templateName: string): string | nu
 // ===== TEMPLATE BUILDER =====
 
 function buildTemplateComponents(
-  variableMappings: string[], ctx: { customer: any; order: any; campaign: any },
+  variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any },
   bodyVarCount: number, hasHeaderVar: boolean,
   buttonUrlCode?: string, buttonUrlIndex?: number,
+  copyCodeButtons?: { index: number; value: string }[],
 ) {
   const components: any[] = [];
   if (hasHeaderVar) {
@@ -87,6 +88,14 @@ function buildTemplateComponents(
   }
   if (buttonUrlCode !== undefined && buttonUrlIndex !== undefined) {
     components.push({ type: "button", sub_type: "url", index: String(buttonUrlIndex), parameters: [{ type: "text", text: buttonUrlCode }] });
+  }
+  if (copyCodeButtons) {
+    for (const btn of copyCodeButtons) {
+      // Meta limits coupon_code to 15 characters
+      if (btn.value && btn.value.length <= 15) {
+        components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: btn.value }] });
+      }
+    }
   }
   return components;
 }
@@ -341,6 +350,9 @@ async function processAutomationQueue(supabase: any) {
             const templateButtons = (templateRecord?.buttons as any[]) || [];
             const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
             const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+            const copyCodeBtnIndices = templateButtons
+              .map((b: any, i: number) => b.type === "COPY_CODE" ? { index: i, example: b.example || "" } : null)
+              .filter(Boolean) as { index: number; example: string }[];
 
             const { data: customer } = await supabase.from("customers")
               .select("id, name, phone, email, custom_attributes").eq("id", item.customer_id).single();
@@ -378,6 +390,12 @@ async function processAutomationQueue(supabase: any) {
               }
             }
 
+            // Resolve COPY_CODE button values
+            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => ({
+              index: btn.index,
+              value: btn.example ? resolveVariable(btn.example, ctx) : "-",
+            }));
+
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
               method: "POST",
               headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -385,7 +403,7 @@ async function processAutomationQueue(supabase: any) {
                 messaging_product: "whatsapp", to: phone, type: "template",
                 template: {
                   name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
                 },
               }),
             });

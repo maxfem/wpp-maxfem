@@ -56,6 +56,7 @@ import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
+import { validateTemplate, type TemplateValidationError } from "@/lib/templateValidation";
 
 interface TemplateButton {
   type: string;
@@ -129,6 +130,7 @@ export default function MessageTemplates() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [formErrors, setFormErrors] = useState<TemplateValidationError[]>([]);
 
   const tenantId = currentTenant?.id;
 
@@ -299,11 +301,20 @@ export default function MessageTemplates() {
       const template = templates.find((item) => item.id === id);
       if (!template) throw new Error("Template não encontrado");
 
-      const headerValidationError = getTemplateHeaderValidationError(template.header_type, template.header_content);
-      if (headerValidationError) throw new Error(headerValidationError);
-
-      const validationError = getTemplateBodyValidationError(template.body);
-      if (validationError) throw new Error(validationError);
+      const tplButtons = (template.buttons as unknown as TemplateButton[]) || [];
+      const errors = validateTemplate({
+        name: template.name,
+        category: template.category,
+        language: template.language,
+        header_type: template.header_type || "none",
+        header_content: template.header_content || "",
+        body: template.body,
+        footer: template.footer || "",
+        buttons: tplButtons,
+        sample_values: (template.sample_values as string[]) || [],
+      });
+      const critical = errors.filter((e) => e.severity === "error");
+      if (critical.length > 0) throw new Error(critical[0].message);
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Não autenticado");
@@ -362,17 +373,17 @@ export default function MessageTemplates() {
         continue;
       }
 
-      const headerValidationError = getTemplateHeaderValidationError(tpl.header_type, tpl.header_content);
-      if (headerValidationError) {
+      const tplButtons = (tpl.buttons as unknown as TemplateButton[]) || [];
+      const errors = validateTemplate({
+        name: tpl.name, category: tpl.category, language: tpl.language,
+        header_type: tpl.header_type || "none", header_content: tpl.header_content || "",
+        body: tpl.body, footer: tpl.footer || "", buttons: tplButtons,
+        sample_values: (tpl.sample_values as string[]) || [],
+      });
+      const critical = errors.filter((e) => e.severity === "error");
+      if (critical.length > 0) {
         failed++;
-        failedTemplates.push(`${tpl.name}: ${headerValidationError}`);
-        continue;
-      }
-
-      const validationError = getTemplateBodyValidationError(tpl.body);
-      if (validationError) {
-        failed++;
-        failedTemplates.push(`${tpl.name}: ${validationError}`);
+        failedTemplates.push(`${tpl.name}: ${critical[0].message}`);
         continue;
       }
 
@@ -421,8 +432,19 @@ export default function MessageTemplates() {
     [templates, statusFilter]
   );
 
+  const templateHasErrors = (t: typeof templates[0]) => {
+    const tplButtons = (t.buttons as unknown as TemplateButton[]) || [];
+    const errors = validateTemplate({
+      name: t.name, category: t.category, language: t.language,
+      header_type: t.header_type || "none", header_content: t.header_content || "",
+      body: t.body, footer: t.footer || "", buttons: tplButtons,
+      sample_values: (t.sample_values as string[]) || [],
+    });
+    return errors.filter((e) => e.severity === "error").length > 0;
+  };
+
   const eligibleForMeta = useMemo(
-    () => filteredTemplates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
+    () => filteredTemplates.filter((t) => t.status !== "approved" && !templateHasErrors(t)),
     [filteredTemplates]
   );
 
@@ -448,6 +470,7 @@ export default function MessageTemplates() {
     setEditingId(null);
     setForm(emptyForm);
     setSampleValues([]);
+    setFormErrors([]);
   };
 
   const duplicateTemplate = (template: (typeof templates)[0]) => {
@@ -521,25 +544,21 @@ export default function MessageTemplates() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.body.trim()) {
-      toast.error("Nome e corpo são obrigatórios");
-      return;
-    }
 
-    const headerValidationError = getTemplateHeaderValidationError(form.header_type, form.header_content);
-    if (headerValidationError) {
-      toast.error(headerValidationError);
-      return;
-    }
+    const errors = validateTemplate({ ...form, sample_values: sampleValues });
+    setFormErrors(errors);
 
-    const bodyValidationError = getTemplateBodyValidationError(form.body);
-    if (bodyValidationError) {
-      toast.error(bodyValidationError);
+    const criticalErrors = errors.filter((err) => err.severity === "error");
+    if (criticalErrors.length > 0) {
+      toast.error(criticalErrors[0].message);
       return;
     }
 
     saveMutation.mutate(form);
   };
+
+  const getFieldErrors = (field: string) =>
+    formErrors.filter((e) => e.field === field);
 
   // Count variables in body like {{1}}, {{2}}
   const detectedVars = form.body.match(/\{\{(\d+)\}\}/g) || [];
@@ -595,8 +614,11 @@ export default function MessageTemplates() {
                         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Apenas letras minúsculas, números e _
+                        {form.name.length}/512 — Apenas letras minúsculas, números e _
                       </p>
+                      {getFieldErrors("name").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                     <div className="space-y-2">
                       <Label>Categoria</Label>
@@ -654,11 +676,9 @@ export default function MessageTemplates() {
                         maxLength={60}
                       />
                       <p className="text-xs text-muted-foreground">{form.header_content.length}/60 caracteres</p>
-                      {getTemplateHeaderValidationError(form.header_type, form.header_content) && (
-                        <p className="text-xs text-destructive">
-                          {getTemplateHeaderValidationError(form.header_type, form.header_content)}
-                        </p>
-                      )}
+                      {getFieldErrors("header_content").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                   )}
 
@@ -686,6 +706,9 @@ export default function MessageTemplates() {
                       <span>{variableCount} variável(is) detectada(s)</span>
                       <span>{form.body.length}/1024</span>
                     </div>
+                    {getFieldErrors("body").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                    ))}
                   </div>
 
                   {/* Sample values for variables */}
@@ -714,6 +737,9 @@ export default function MessageTemplates() {
                           </div>
                         ))}
                       </div>
+                      {getFieldErrors("sample_values").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                   )}
 
@@ -725,6 +751,10 @@ export default function MessageTemplates() {
                       onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))}
                       maxLength={60}
                     />
+                    <p className="text-xs text-muted-foreground">{form.footer.length}/60 caracteres</p>
+                    {getFieldErrors("footer").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                    ))}
                   </div>
 
                   {/* Buttons */}
@@ -784,7 +814,13 @@ export default function MessageTemplates() {
                         <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
+                        {getFieldErrors(`button_${i}`).map((e, ei) => (
+                          <p key={ei} className={`text-xs w-full ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                        ))}
                       </div>
+                    ))}
+                    {getFieldErrors("buttons").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
                     ))}
                   </div>
 
@@ -937,17 +973,14 @@ export default function MessageTemplates() {
                 <TableBody>
                   {filteredTemplates.map((t) => {
                     const st = statusConfig[t.status] || statusConfig.draft;
+                    const hasErrors = templateHasErrors(t);
                     return (
                       <TableRow key={t.id}>
                         <TableCell>
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
-                            disabled={
-                              t.status === "approved" ||
-                              !!getTemplateBodyValidationError(t.body) ||
-                              !!getTemplateHeaderValidationError(t.header_type, t.header_content)
-                            }
+                            disabled={t.status === "approved" || hasErrors}
                           />
                         </TableCell>
                         <TableCell className="font-medium">
@@ -961,11 +994,8 @@ export default function MessageTemplates() {
                         <TableCell>
                           <div className="flex items-center justify-start gap-2">
                             <Badge variant={st.variant}>{st.label}</Badge>
-                            {getTemplateHeaderValidationError(t.header_type, t.header_content) && (
-                              <Badge variant="outline">Cabeçalho inválido</Badge>
-                            )}
-                            {getTemplateBodyValidationError(t.body) && (
-                              <Badge variant="outline">Body inválido</Badge>
+                            {hasErrors && (
+                              <Badge variant="outline" className="text-destructive border-destructive/50">Inválido</Badge>
                             )}
                           </div>
                         </TableCell>
@@ -992,14 +1022,9 @@ export default function MessageTemplates() {
                               disabled={
                                 submitToMetaMutation.isPending ||
                                 t.status === "approved" ||
-                                !!getTemplateBodyValidationError(t.body) ||
-                                !!getTemplateHeaderValidationError(t.header_type, t.header_content)
+                                hasErrors
                               }
-                              title={
-                                getTemplateHeaderValidationError(t.header_type, t.header_content) ||
-                                getTemplateBodyValidationError(t.body) ||
-                                "Enviar à Meta para aprovação"
-                              }
+                              title={hasErrors ? "Template com erros de validação" : "Enviar à Meta para aprovação"}
                             >
                               {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

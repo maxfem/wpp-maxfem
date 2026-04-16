@@ -29,10 +29,146 @@ function sanitizeForMeta(input: string): string {
     .trim();
 }
 
-function hasVariableAtBodyEdges(input: string): boolean {
-  const trimmed = input.trim();
-  // Meta rejects variables at start/end even if followed/preceded by only punctuation
-  return /^[^a-zA-Z0-9]*\{\{\d+\}\}/.test(trimmed) || /\{\{\d+\}\}[^a-zA-Z0-9]*$/.test(trimmed);
+// ── Server-side validation ──────────────────────────────────────
+const EMOJI_RE = /[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{200D}\u{FE0E}\u{FE0F}\u{20E3}]/gu;
+const MD_RE = /[*_~]/;
+const VAR_RE = /\{\{(\d+)\}\}/g;
+
+interface ValidationError { error: string; field?: string; code?: string }
+
+function validateServerSide(template: Record<string, unknown>): ValidationError | null {
+  const name = template.name as string;
+  const body = template.body as string;
+  const footer = template.footer as string | null;
+  const headerType = template.header_type as string | null;
+  const headerContent = template.header_content as string | null;
+  const buttons = (template.buttons as { type: string; text?: string; url?: string; phone_number?: string; example?: string }[]) || [];
+
+  // Name
+  if (!name || !/^[a-z][a-z0-9_]*$/.test(name)) {
+    return { error: "Nome do template inválido. Use apenas letras minúsculas, números e underscore, começando com letra.", field: "name" };
+  }
+  if (name.length > 512) {
+    return { error: "Nome excede 512 caracteres.", field: "name" };
+  }
+
+  // Header text
+  if (headerType === "text" && headerContent) {
+    if (headerContent.length > 60) {
+      return { error: "Cabeçalho excede 60 caracteres.", field: "header_content" };
+    }
+    if (EMOJI_RE.test(headerContent)) {
+      return { error: "Cabeçalho não pode conter emojis.", field: "header_content" };
+    }
+    if (MD_RE.test(headerContent)) {
+      return { error: "Cabeçalho não pode conter formatação (* _ ~).", field: "header_content" };
+    }
+    const sanitized = sanitizeForMeta(headerContent);
+    if (!sanitized) {
+      return { error: "O cabeçalho ficou vazio após remover emojis e formatação. Use apenas texto simples.", field: "header_content" };
+    }
+    const headerVars = headerContent.match(VAR_RE) || [];
+    if (headerVars.length > 1) {
+      return { error: "Cabeçalho permite no máximo 1 variável.", field: "header_content" };
+    }
+  }
+
+  if (["image", "video", "document"].includes(headerType || "") && !headerContent?.trim()) {
+    return { error: "URL de mídia é obrigatória para cabeçalho de mídia.", field: "header_content" };
+  }
+
+  // Body
+  if (!body?.trim()) {
+    return { error: "O corpo do template é obrigatório.", field: "body" };
+  }
+  if (body.length > 1024) {
+    return { error: "Corpo excede 1024 caracteres.", field: "body" };
+  }
+
+  const trimmedBody = body.trim();
+  if (/^[^a-zA-Z0-9]*\{\{\d+\}\}/.test(trimmedBody) || /\{\{\d+\}\}[^a-zA-Z0-9]*$/.test(trimmedBody)) {
+    return { error: "Variáveis não podem estar no início ou no fim do corpo. Adicione texto fixo antes e depois.", field: "body", code: "META_TEMPLATE_EDGE_VARIABLE" };
+  }
+
+  const bodyVars = [...body.matchAll(VAR_RE)].map((m) => parseInt(m[1], 10));
+  if (bodyVars.length > 0) {
+    const sorted = [...new Set(bodyVars)].sort((a, b) => a - b);
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i] !== i + 1) {
+        return { error: `Variáveis devem ser sequenciais: {{1}}, {{2}}, {{3}}... Encontrado {{${sorted[i]}}} mas esperado {{${i + 1}}}.`, field: "body" };
+      }
+    }
+    const fixedText = body.replace(VAR_RE, "").trim();
+    const fixedWords = fixedText.split(/\s+/).filter(Boolean).length;
+    if (fixedWords < bodyVars.length) {
+      return { error: "O corpo deve conter mais texto fixo do que variáveis.", field: "body" };
+    }
+  }
+
+  // Footer
+  if (footer) {
+    if (footer.length > 60) {
+      return { error: "Rodapé excede 60 caracteres.", field: "footer" };
+    }
+    if (VAR_RE.test(footer)) {
+      return { error: "Rodapé não pode conter variáveis.", field: "footer" };
+    }
+    if (EMOJI_RE.test(footer)) {
+      return { error: "Rodapé não pode conter emojis.", field: "footer" };
+    }
+    if (MD_RE.test(footer)) {
+      return { error: "Rodapé não pode conter formatação (* _ ~).", field: "footer" };
+    }
+  }
+
+  // Buttons
+  if (buttons.length > 10) {
+    return { error: "Máximo de 10 botões permitidos.", field: "buttons" };
+  }
+  const urlCount = buttons.filter((b) => b.type === "URL").length;
+  const phoneCount = buttons.filter((b) => b.type === "PHONE_NUMBER").length;
+  const copyCodeCount = buttons.filter((b) => b.type === "COPY_CODE").length;
+  if (urlCount > 2) return { error: "Máximo de 2 botões de URL.", field: "buttons" };
+  if (phoneCount > 1) return { error: "Máximo de 1 botão de telefone.", field: "buttons" };
+  if (copyCodeCount > 1) return { error: "Máximo de 1 botão 'Copiar código'.", field: "buttons" };
+
+  for (const btn of buttons) {
+    if (btn.text && btn.text.length > 25) {
+      return { error: `Texto do botão "${btn.text}" excede 25 caracteres.`, field: "buttons" };
+    }
+    if (btn.type === "URL" && btn.url) {
+      if (btn.url.length > 2000) return { error: `URL do botão "${btn.text}" excede 2000 caracteres.`, field: "buttons" };
+      if (!/^https?:\/\//i.test(btn.url.replace(/\{\{\d+\}\}/g, ""))) {
+        return { error: `A URL do botão "${btn.text}" deve começar com https://. Para código Pix, use "Copiar código".`, field: "buttons" };
+      }
+    }
+    if (btn.type === "PHONE_NUMBER" && btn.phone_number && btn.phone_number.length > 20) {
+      return { error: `Telefone do botão "${btn.text}" excede 20 caracteres.`, field: "buttons" };
+    }
+    if (btn.type === "COPY_CODE" && btn.example && btn.example.length > 15) {
+      return { error: `Exemplo do botão "Copiar código" excede 15 caracteres.`, field: "buttons" };
+    }
+  }
+
+  return null;
+}
+
+// ── Meta error subcode mapping ──────────────────────────────────
+function mapMetaSubcode(subcode: number | undefined): string | null {
+  if (!subcode) return null;
+  const map: Record<number, string> = {
+    2388023: "Não é possível criar template neste idioma enquanto o conteúdo anterior está sendo excluído. Tente novamente em 4 semanas ou crie com nome diferente.",
+    2388024: "Template já existe na Meta com este nome e idioma. Renomeie ou altere o idioma.",
+    2388019: "Limite de 250 templates atingido na conta WABA. Exclua templates antigos.",
+    2388040: "Um ou mais campos excedem o limite de caracteres da Meta.",
+    2388047: "Cabeçalho contém conteúdo inválido. Remova emojis, formatação e quebras de linha.",
+    2388072: "Corpo do template contém formatação ou estrutura inválida.",
+    2388073: "Rodapé contém conteúdo inválido. Use apenas texto simples.",
+    2388293: "Corpo tem muitas variáveis em relação ao texto fixo.",
+    2388299: "Variáveis não podem estar no início ou fim do corpo.",
+    80008: "Limite de requisições atingido (100 templates/hora). Aguarde e tente novamente.",
+  };
+  return map[subcode] || null;
 }
 
 Deno.serve(async (req) => {
@@ -84,33 +220,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Template not found" }, 404);
     }
 
+    // ── Server-side validation ────────────────────────────────
+    const validationError = validateServerSide(template);
+    if (validationError) {
+      return jsonResponse(validationError, 400);
+    }
+
     const sanitizedHeader =
       template.header_type === "text" && template.header_content
         ? sanitizeForMeta(template.header_content)
         : null;
 
-    if (template.header_type === "text" && template.header_content && !sanitizedHeader) {
-      return jsonResponse({
-        error: "O cabeçalho do template ficou vazio após remover emojis e formatação. Use apenas texto simples no título.",
-        field: "header_content",
-      }, 400);
-    }
-
-    if (typeof template.body !== "string" || !template.body.trim()) {
-      return jsonResponse({
-        error: "O corpo do template é obrigatório.",
-        field: "body",
-      }, 400);
-    }
-
-    if (hasVariableAtBodyEdges(template.body)) {
-      return jsonResponse({
-        error: "A Meta não permite variáveis no início ou no fim do corpo do template. Adicione texto antes e depois das variáveis.",
-        field: "body",
-        code: "META_TEMPLATE_EDGE_VARIABLE",
-      }, 400);
-    }
-
+    // ── Build components ──────────────────────────────────────
     const components: Record<string, unknown>[] = [];
 
     if (template.header_type && template.header_type !== "none") {
@@ -155,16 +276,6 @@ Deno.serve(async (req) => {
 
     const buttons = (template.buttons as { type: string; text: string; url?: string; phone_number?: string; example?: string }[]) || [];
     if (buttons.length > 0) {
-      // Validate URL buttons before sending
-      for (const btn of buttons) {
-        if (btn.type === "URL" && btn.url && !/^https?:\/\//i.test(btn.url.replace(/\{\{\d+\}\}/g, ""))) {
-          return jsonResponse({
-            error: `A URL do botão "${btn.text}" não é válida. Use uma URL começando com https:// — para código Pix, use o tipo "Copiar código" ao invés de "URL".`,
-            field: "buttons",
-          }, 400);
-        }
-      }
-
       components.push({
         type: "BUTTONS",
         buttons: buttons.map((btn) => {
@@ -180,7 +291,6 @@ Deno.serve(async (req) => {
             return { type: "PHONE_NUMBER", text: btn.text, phone_number: btn.phone_number };
           }
           if (btn.type === "COPY_CODE") {
-            // Meta requires a static alphanumeric example, not a variable name
             return { type: "COPY_CODE", example: "CODIGO123" };
           }
           return { type: "QUICK_REPLY", text: btn.text };
@@ -212,35 +322,18 @@ Deno.serve(async (req) => {
       console.error("Meta API error:", metaResult);
       const subcode = metaResult?.error?.error_subcode;
 
-      if (subcode === 2388023) {
+      // Map known subcodes to user-friendly messages
+      const mappedMessage = mapMetaSubcode(subcode);
+      if (mappedMessage) {
+        const statusCode = [2388023, 2388024].includes(subcode) ? 409 : 400;
         return jsonResponse({
-          error: "Não é possível adicionar novo conteúdo em Portuguese (BR) enquanto o conteúdo existente está sendo excluído. Tente novamente em 4 semanas ou crie outro modelo com nome diferente.",
-          language_deleting: true,
-        }, 409);
-      }
-
-      if (subcode === 2388024) {
-        return jsonResponse({
-          error: "Template já existe na Meta com este nome e idioma. Renomeie o template ou altere o idioma.",
-          already_exists: true,
-        }, 409);
-      }
-
-      if (subcode === 2388072) {
-        return jsonResponse({
-          error: "A Meta rejeitou o cabeçalho do template. Remova emojis, asteriscos, quebras de linha e formatação do título.",
-          field: "header_content",
+          error: mappedMessage,
+          field: subcode === 2388047 ? "header_content" : subcode === 2388073 ? "footer" : subcode === 2388299 ? "body" : undefined,
+          code: subcode === 2388299 ? "META_TEMPLATE_EDGE_VARIABLE" : undefined,
+          ...(subcode === 2388023 ? { language_deleting: true } : {}),
+          ...(subcode === 2388024 ? { already_exists: true } : {}),
           details: metaResult,
-        }, 400);
-      }
-
-      if (subcode === 2388299) {
-        return jsonResponse({
-          error: "A Meta não permite variáveis no início ou no fim do corpo do template. Ajuste o texto para ter conteúdo fixo antes e depois das variáveis.",
-          field: "body",
-          code: "META_TEMPLATE_EDGE_VARIABLE",
-          details: metaResult,
-        }, 400);
+        }, statusCode);
       }
 
       return jsonResponse({ error: "Meta API error", details: metaResult }, 502);

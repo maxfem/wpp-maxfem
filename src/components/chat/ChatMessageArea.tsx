@@ -161,10 +161,39 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [chatSearch, setChatSearch] = useState("");
   const [showScrollDown, setShowScrollDown] = useState(false);
+  const { currentTenant } = useAuth();
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  // Fetch template bodies to resolve template messages
+  const templateNames = useMemo(() => {
+    const names = new Set<string>();
+    messages.forEach(m => {
+      if (m.message_type === "template" && m.template_name) {
+        names.add(m.template_name);
+      }
+    });
+    return Array.from(names);
+  }, [messages]);
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ["chat-templates", currentTenant?.id, templateNames],
+    queryFn: async () => {
+      if (!currentTenant?.id || templateNames.length === 0) return [];
+      const { data } = await supabase
+        .from("message_templates")
+        .select("name, body, header_type, header_content, footer")
+        .eq("tenant_id", currentTenant.id)
+        .in("name", templateNames);
+      return data || [];
+    },
+    enabled: !!currentTenant?.id && templateNames.length > 0,
+    staleTime: 60000,
+  });
+
+  const templateMap = useMemo(() => {
+    const map = new Map<string, { body: string; header_content?: string | null; footer?: string | null }>();
+    templates.forEach(t => map.set(t.name, t));
+    return map;
+  }, [templates]);
 
   const groupedMessages: { date: string; msgs: Message[] }[] = [];
   let currentDate = "";

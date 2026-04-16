@@ -117,7 +117,7 @@ export default function Dashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
 
-  const [periodKey, setPeriodKey] = useState<PeriodKey>("7d");
+  const [periodKey, setPeriodKey] = useState<PeriodKey>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
 

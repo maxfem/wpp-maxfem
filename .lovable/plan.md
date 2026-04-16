@@ -1,98 +1,44 @@
 
 
-# Validação Completa de Templates Antes do Envio à Meta
+# Copilot: Rastreio via Bling com formato padronizado
 
 ## Contexto
 
-Atualmente, o sistema valida apenas 3 regras antes de enviar o template à Meta (corpo vazio, variáveis nas bordas, URL de botão inválida). Erros da Meta (subcodes 2388xxx) são tratados reactivamente na edge function. O objetivo é mapear **todas** as regras da documentação oficial e validar **antes** de submeter, dando feedback claro ao usuário.
+O copilot já busca pedidos no Bling via `lookup_orders_bling`, mas a resposta não segue o formato padronizado solicitado. Precisamos garantir que:
+1. O Bling seja SEMPRE a fonte primária para rastreio
+2. O formato de resposta siga o modelo exato fornecido
+3. Códigos de rastreio e URLs nunca sejam modificados
 
-## Regras Mapeadas da Documentação Meta
+## Mudanças
 
-Com base na documentação oficial (Graph API v22-25, error codes page, components page):
+### 1. Atualizar instruções do sistema no `ai-copilot/index.ts`
 
-### Limites de Caracteres (error 2388040)
-| Campo | Máximo |
-|-------|--------|
-| Template name | Apenas lowercase, underscore, números. Máx 512 chars |
-| Header (text) | 60 caracteres |
-| Body | 1024 caracteres |
-| Footer | 60 caracteres |
-| Botão label (todos tipos) | 25 caracteres |
-| Botão URL | 2000 caracteres |
-| Botão phone_number | 20 caracteres |
-| COPY_CODE example | 15 caracteres |
+Reforçar no `orderInstructions` (linhas ~579-598):
 
-### Formatação do Header (error 2388047)
-- Sem emojis, markdown (*_~), quebras de linha
-- Máximo 1 variável no header texto
-- Header de mídia (image/video/document) requer `header_handle`
+- Adicionar o template de resposta obrigatório:
+```
+- Número do pedido: {order_number}
+- Status: {status}
+- Código de rastreio: {tracking_code}
+- Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}
+```
 
-### Formatação do Body (error 2388072)
-- Variáveis devem ser sequenciais: {{1}}, {{2}}, {{3}}...
-- Não pode ter variáveis duplicadas ou fora de ordem
+- Reforçar que a URL deve ser escrita diretamente, sem parênteses, colchetes ou markdown
+- Reforçar que o código de rastreio deve ser copiado EXATAMENTE como retornado (underscores, hífens etc.)
+- Priorizar `lookup_orders_bling` como ÚNICA fonte para rastreio quando Bling está ativo
 
-### Formatação do Footer (error 2388073)
-- Sem variáveis, sem formatação markdown, sem emojis
+### 2. Ajustar `lookupOrdersBling` para usar `http://` no tracking URL
 
-### Proporção de Variáveis (error 2388293)
-- Variáveis não podem dominar o texto; precisa ter conteúdo fixo significativo
-- Regra prática: texto fixo deve ter mais palavras que variáveis
+Linha 253: mudar de `https://rastreio.maxfem.com.br/` para `http://rastreio.maxfem.com.br/` conforme o modelo fornecido pelo usuário.
 
-### Variáveis nas Bordas (error 2388299)
-- Variável não pode ser o primeiro ou último elemento do body (já validado)
+### 3. Ajustar `lookupOrdersByCpf` para consistência
 
-### Regras de Botões
-- Máx 10 botões no total
-- Máx 2 botões URL
-- Máx 1 botão PHONE_NUMBER
-- Máx 1 botão COPY_CODE
-- Máx 10 QUICK_REPLY
-- Quick reply deve ser agrupado junto (não intercalar com outros tipos)
-- URL com variável deve usar `{{1}}` e ter `example`
+Linha 61: mesma mudança de `https://` para `http://` no tracking URL.
 
-### Template Name
-- Apenas letras minúsculas, números e underscore
-- Não pode começar com número
+### 4. Sanitização final (linhas 770-777)
 
-### Outros Erros de Criação (tratados na resposta)
-- 2388023: Idioma em processo de exclusão (4 semanas)
-- 2388024: Template já existe com mesmo nome+idioma
-- 2388019: Limite de 250 templates na WABA
-- 80008: Rate limit (100 templates/hora)
+Manter a sanitização existente que já remove markdown links e parênteses ao redor de URLs.
 
-## Plano de Implementação
-
-### 1. Criar função de validação compartilhada
-
-Adicionar uma função `validateTemplate(form)` em `src/pages/MessageTemplates.tsx` que retorna um array de erros com `field` e `message`. Executar no `onSubmit` do formulário de criação/edição (salvar rascunho) e no botão de envio à Meta.
-
-Validações client-side (antes de salvar):
-- Nome: regex `/^[a-z][a-z0-9_]*$/`, máx 512
-- Header text: máx 60 chars, máx 1 variável, sem emoji/markdown
-- Body: obrigatório, máx 1024 chars, variáveis sequenciais, sem variáveis nas bordas
-- Footer: máx 60 chars, sem variáveis, sem emoji
-- Botão labels: máx 25 chars cada
-- Botão URL: máx 2000 chars, deve começar com https://
-- Botão phone: máx 20 chars
-- COPY_CODE: máx 15 chars no example
-- Máx 10 botões, máx 2 URL, máx 1 phone, máx 1 copy_code
-- Quick reply agrupamento válido
-- Proporção variáveis vs texto fixo
-
-### 2. Validação visual no formulário
-
-Mostrar erros inline abaixo de cada campo com texto vermelho. Bloquear o botão "Salvar" se houver erros críticos. Mostrar contadores de caracteres nos campos (60/60, 1024/1024).
-
-### 3. Reforçar validação na Edge Function
-
-Adicionar os mesmos checks no `whatsapp-template/index.ts` como segunda camada de segurança, e mapear os subcodes restantes (2388040, 2388047, 2388073, 2388293, 80008, 2388019) com mensagens em português.
-
-### 4. Sample values obrigatórios
-
-Se o body/header tem variáveis, exigir `sample_values` preenchidos antes de permitir envio à Meta.
-
-## Arquivos Modificados
-
-- `src/pages/MessageTemplates.tsx` — função `validateTemplate()`, contadores de chars, erros inline, bloqueio de submit
-- `supabase/functions/whatsapp-template/index.ts` — validações server-side adicionais + mapeamento completo de subcodes
+### Arquivo modificado
+- `supabase/functions/ai-copilot/index.ts`
 

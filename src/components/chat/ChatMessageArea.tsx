@@ -268,7 +268,17 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
                   // Try to resolve real template body
                   const tpl = msg.template_name ? templateMap.get(msg.template_name) : null;
                   if (tpl) {
-                    resolvedTemplateBody = tpl.body;
+                    // Replace {{1}}, {{2}} etc with values from metadata
+                    let body = tpl.body;
+                    const meta = msg.metadata as any;
+                    const params: string[] = meta?.template_params || meta?.parameters || meta?.sample_values || [];
+                    if (params.length > 0) {
+                      body = body.replace(/\{\{(\d+)\}\}/g, (match: string, num: string) => {
+                        const idx = parseInt(num, 10) - 1;
+                        return params[idx] || match;
+                      });
+                    }
+                    resolvedTemplateBody = body;
                   } else {
                     displayContent = msg.content || `[Template: ${msg.template_name || msg.message_type}]`;
                   }

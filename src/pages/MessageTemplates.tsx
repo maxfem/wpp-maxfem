@@ -1022,14 +1022,9 @@ export default function MessageTemplates() {
                               disabled={
                                 submitToMetaMutation.isPending ||
                                 t.status === "approved" ||
-                                !!getTemplateBodyValidationError(t.body) ||
-                                !!getTemplateHeaderValidationError(t.header_type, t.header_content)
+                                hasErrors
                               }
-                              title={
-                                getTemplateHeaderValidationError(t.header_type, t.header_content) ||
-                                getTemplateBodyValidationError(t.body) ||
-                                "Enviar à Meta para aprovação"
-                              }
+                              title={hasErrors ? "Template com erros de validação" : "Enviar à Meta para aprovação"}
                             >
                               {submitToMetaMutation.isPending && submitToMetaMutation.variables === t.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -373,17 +373,17 @@ export default function MessageTemplates() {
         continue;
       }
 
-      const headerValidationError = getTemplateHeaderValidationError(tpl.header_type, tpl.header_content);
-      if (headerValidationError) {
+      const tplButtons = (tpl.buttons as unknown as TemplateButton[]) || [];
+      const errors = validateTemplate({
+        name: tpl.name, category: tpl.category, language: tpl.language,
+        header_type: tpl.header_type || "none", header_content: tpl.header_content || "",
+        body: tpl.body, footer: tpl.footer || "", buttons: tplButtons,
+        sample_values: (tpl.sample_values as string[]) || [],
+      });
+      const critical = errors.filter((e) => e.severity === "error");
+      if (critical.length > 0) {
         failed++;
-        failedTemplates.push(`${tpl.name}: ${headerValidationError}`);
-        continue;
-      }
-
-      const validationError = getTemplateBodyValidationError(tpl.body);
-      if (validationError) {
-        failed++;
-        failedTemplates.push(`${tpl.name}: ${validationError}`);
+        failedTemplates.push(`${tpl.name}: ${critical[0].message}`);
         continue;
       }
 

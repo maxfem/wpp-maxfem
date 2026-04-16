@@ -594,8 +594,11 @@ export default function MessageTemplates() {
                         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Apenas letras minúsculas, números e _
+                        {form.name.length}/512 — Apenas letras minúsculas, números e _
                       </p>
+                      {getFieldErrors("name").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                     <div className="space-y-2">
                       <Label>Categoria</Label>
@@ -653,11 +656,9 @@ export default function MessageTemplates() {
                         maxLength={60}
                       />
                       <p className="text-xs text-muted-foreground">{form.header_content.length}/60 caracteres</p>
-                      {getTemplateHeaderValidationError(form.header_type, form.header_content) && (
-                        <p className="text-xs text-destructive">
-                          {getTemplateHeaderValidationError(form.header_type, form.header_content)}
-                        </p>
-                      )}
+                      {getFieldErrors("header_content").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                   )}
 
@@ -685,6 +686,9 @@ export default function MessageTemplates() {
                       <span>{variableCount} variável(is) detectada(s)</span>
                       <span>{form.body.length}/1024</span>
                     </div>
+                    {getFieldErrors("body").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                    ))}
                   </div>
 
                   {/* Sample values for variables */}

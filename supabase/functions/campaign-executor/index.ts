@@ -91,7 +91,10 @@ function buildTemplateComponents(
   }
   if (copyCodeButtons) {
     for (const btn of copyCodeButtons) {
-      components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: btn.value }] });
+      // Meta limits coupon_code to 15 characters
+      if (btn.value && btn.value.length <= 15) {
+        components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: btn.value }] });
+      }
     }
   }
   return components;

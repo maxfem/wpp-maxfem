@@ -56,6 +56,7 @@ import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
+import { validateTemplate, type TemplateValidationError } from "@/lib/templateValidation";
 
 interface TemplateButton {
   type: string;
@@ -129,6 +130,7 @@ export default function MessageTemplates() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [formErrors, setFormErrors] = useState<TemplateValidationError[]>([]);
 
   const tenantId = currentTenant?.id;
 

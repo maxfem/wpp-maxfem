@@ -450,6 +450,7 @@ export default function MessageTemplates() {
     setEditingId(null);
     setForm(emptyForm);
     setSampleValues([]);
+    setFormErrors([]);
   };
 
   const duplicateTemplate = (template: (typeof templates)[0]) => {
@@ -523,25 +524,21 @@ export default function MessageTemplates() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.body.trim()) {
-      toast.error("Nome e corpo são obrigatórios");
-      return;
-    }
 
-    const headerValidationError = getTemplateHeaderValidationError(form.header_type, form.header_content);
-    if (headerValidationError) {
-      toast.error(headerValidationError);
-      return;
-    }
+    const errors = validateTemplate({ ...form, sample_values: sampleValues });
+    setFormErrors(errors);
 
-    const bodyValidationError = getTemplateBodyValidationError(form.body);
-    if (bodyValidationError) {
-      toast.error(bodyValidationError);
+    const criticalErrors = errors.filter((err) => err.severity === "error");
+    if (criticalErrors.length > 0) {
+      toast.error(criticalErrors[0].message);
       return;
     }
 
     saveMutation.mutate(form);
   };
+
+  const getFieldErrors = (field: string) =>
+    formErrors.filter((e) => e.field === field);
 
   // Count variables in body like {{1}}, {{2}}
   const detectedVars = form.body.match(/\{\{(\d+)\}\}/g) || [];

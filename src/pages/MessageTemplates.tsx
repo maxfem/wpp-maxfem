@@ -728,6 +728,10 @@ export default function MessageTemplates() {
                       onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))}
                       maxLength={60}
                     />
+                    <p className="text-xs text-muted-foreground">{form.footer.length}/60 caracteres</p>
+                    {getFieldErrors("footer").map((e, i) => (
+                      <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                    ))}
                   </div>
 
                   {/* Buttons */}

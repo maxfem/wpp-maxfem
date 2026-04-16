@@ -717,6 +717,9 @@ export default function MessageTemplates() {
                           </div>
                         ))}
                       </div>
+                      {getFieldErrors("sample_values").map((e, i) => (
+                        <p key={i} className={`text-xs ${e.severity === "error" ? "text-destructive" : "text-yellow-600"}`}>{e.message}</p>
+                      ))}
                     </div>
                   )}
 

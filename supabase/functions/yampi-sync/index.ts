@@ -302,7 +302,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     const mappedStatus = STATUS_MAP[orderStatus] || orderStatus;
     const txData = o.transactions?.data;
     const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
-    const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && tx.status !== "captured");
+    const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && !["captured", "paid", "approved"].includes(tx.status));
 
     const paymentSummary = txList.map((tx: any) => ({
       method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
@@ -339,7 +339,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       external_id: `yampi_${o.id}`,
       total: o.value_total || 0,
       status: mappedStatus,
-      mapped_status: isPix ? "pix_pending" : mappedStatus,
+      mapped_status: isPix && !["paid", "invoiced", "shipped", "on_carriage", "in_transit", "delivered"].includes(mappedStatus) ? "pix_pending" : mappedStatus,
       order_number: String(o.number || o.id),
       status_alias: orderStatus,
       tracking_code: trackingCode,

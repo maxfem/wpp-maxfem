@@ -387,6 +387,12 @@ async function processAutomationQueue(supabase: any) {
               }
             }
 
+            // Resolve COPY_CODE button values
+            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => ({
+              index: btn.index,
+              value: btn.example ? resolveVariable(btn.example, ctx) : "-",
+            }));
+
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
               method: "POST",
               headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -394,7 +400,7 @@ async function processAutomationQueue(supabase: any) {
                 messaging_product: "whatsapp", to: phone, type: "template",
                 template: {
                   name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
                 },
               }),
             });

@@ -195,6 +195,10 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
     return map;
   }, [templates]);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
   const groupedMessages: { date: string; msgs: Message[] }[] = [];
   let currentDate = "";
   for (const msg of messages) {

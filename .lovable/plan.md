@@ -1,73 +1,44 @@
 
 
-# Plano: Integrar Gemini no Atendimento (Imagem, Vídeo e Áudio)
+# Fix: Pedidos Pix aparecendo como "Pendente" mesmo já pagos
 
-## Situação Atual
+## Problema
 
-O copilot do chat usa **OpenAI** com chave do usuário. Imagens são enviadas via Vision, mas **vídeo e áudio são apenas mencionados como texto** — o modelo não os processa de fato.
-
-## O Que Muda
-
-Adicionar **Gemini** como provedor de IA alternativo (via Lovable AI Gateway, sem necessidade de API key). O Gemini tem suporte nativo a multimodal: imagem, vídeo e áudio. O usuário escolhe o provedor na página de integrações.
-
----
-
-## Etapas
-
-### 1. Nova página de configuração: Gemini Integration
-
-Criar `src/pages/SettingsGemini.tsx` seguindo o padrão do `SettingsOpenAI.tsx`:
-- Sem campo de API Key (usa Lovable AI Gateway automaticamente)
-- Seleção de modelo: `gemini-2.5-flash` (padrão), `gemini-2.5-pro`
-- Tom de voz e prompt do sistema (mesmos campos do OpenAI)
-- Salva na tabela `integrations` com `provider: "gemini"`
-
-### 2. Adicionar Gemini no catálogo de integrações
-
-Atualizar `SettingsIntegrations.tsx`: adicionar entrada "Gemini" no array `PROVIDERS` com cor, features (Imagem, Vídeo, Áudio, Copilot), link para `/settings/integrations/gemini`.
-
-### 3. Adicionar rota
-
-Registrar `/settings/integrations/gemini` no `App.tsx` apontando para `SettingsGemini`.
-
-### 4. Atualizar Edge Function `ai-copilot`
-
-Modificar `supabase/functions/ai-copilot/index.ts`:
-- Verificar se existe integração `gemini` ativa para o tenant (prioridade sobre OpenAI)
-- Se Gemini ativo: chamar `https://ai.gateway.lovable.dev/v1/chat/completions` com `LOVABLE_API_KEY`
-- Para **imagens**: enviar como `image_url` no formato multimodal (já suportado pelo gateway)
-- Para **áudio**: baixar o arquivo do storage, converter para base64, enviar como `input_audio` no payload
-- Para **vídeo**: baixar, converter para base64, enviar como conteúdo multimodal
-- Manter fallback para OpenAI se Gemini não estiver configurado
-- Manter todas as tools existentes (lookup_orders_by_cpf, lookup_orders_bling)
-
-### 5. Transcrição de áudio real
-
-Quando um áudio é recebido no chat e o Gemini está ativo:
-- O copilot envia o áudio como conteúdo multimodal para o Gemini
-- O Gemini transcreve e interpreta o áudio nativamente
-- A sugestão de resposta considera o conteúdo do áudio
-
----
-
-## Detalhes Técnicos
-
-**Formato multimodal para Gemini via gateway:**
+Na `yampi-sync`, linha 305, a lógica que determina se um Pix está pendente é:
 ```typescript
-// Imagem
-{ type: "image_url", image_url: { url: signedUrl } }
-
-// Áudio (base64)
-{ type: "input_audio", input_audio: { data: base64, format: "mp3" } }
+const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && tx.status !== "captured");
 ```
 
-**Prioridade de provedor:** Gemini > OpenAI. Se ambos estiverem ativos, usa Gemini.
+O problema é que a Yampi usa **"paid"** (não "captured") para Pix confirmado. Como `"paid" !== "captured"` é `true`, **todo pedido Pix é marcado como `pix_pending`**, mesmo os já pagos.
 
-**Sem custo de API key para o usuário:** Gemini usa `LOVABLE_API_KEY` já disponível no projeto.
+Na linha 342:
+```typescript
+mapped_status: isPix ? "pix_pending" : mappedStatus,
+```
 
-**Arquivos modificados:**
-- `src/pages/SettingsGemini.tsx` (novo)
-- `src/pages/SettingsIntegrations.tsx` (adicionar Gemini ao catálogo)
-- `src/App.tsx` (nova rota)
-- `supabase/functions/ai-copilot/index.ts` (lógica dual OpenAI/Gemini + multimodal real)
+Resultado: `mapped_status` fica eternamente `"pix_pending"`.
+
+## Solução
+
+1. **Corrigir a condição `isPix` em `yampi-sync/index.ts`** — considerar que Pix está pendente apenas quando o status da transação indica pagamento não confirmado. Trocar para:
+```typescript
+const isPix = txList.some((tx: any) => 
+  tx.payment?.data?.is_pix && 
+  !["captured", "paid", "approved"].includes(tx.status)
+);
+```
+
+2. **Corrigir também a lógica de `mapped_status`** — quando o order status já indica pagamento (paid, invoiced, shipped, delivered), o `mapped_status` deve refletir isso, não ficar em `pix_pending`:
+```typescript
+const paidStatuses = ["paid", "invoiced", "shipped", "on_carriage", "in_transit", "delivered"];
+mapped_status: isPix && !paidStatuses.includes(mappedStatus) ? "pix_pending" : mappedStatus,
+```
+
+3. **Corrigir os pedidos existentes no banco** — executar um UPDATE nos pedidos onde `mapped_status = 'pix_pending'` mas o `status` ou `payment_summary` já indica pagamento confirmado.
+
+4. **Redeployar a edge function** `yampi-sync`.
+
+## Arquivos modificados
+- `supabase/functions/yampi-sync/index.ts` (linhas 305 e 342)
+- Migration SQL para corrigir dados existentes
 

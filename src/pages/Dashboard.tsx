@@ -30,6 +30,22 @@ import { subDays } from "date-fns";
 import { formatSP } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 
+// Fetch all rows bypassing the 1000-row default limit
+async function fetchAll<T>(query: any): Promise<T[]> {
+  const PAGE = 1000;
+  let from = 0;
+  let all: T[] = [];
+  while (true) {
+    const { data, error } = await query.range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 
 
 const PERIOD_DAYS = 14;
@@ -67,40 +83,40 @@ export default function Dashboard() {
 
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-orders", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select("total, created_at, customer_id")
-        .eq("tenant_id", tenantId!)
-        .gte("created_at", periodStart)
-        .order("created_at");
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll<{ total: number; created_at: string; customer_id: string }>(
+        supabase
+          .from("orders")
+          .select("total, created_at, customer_id")
+          .eq("tenant_id", tenantId!)
+          .gte("created_at", periodStart)
+          .order("created_at")
+      ),
     enabled: !!tenantId,
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ["dashboard-customers", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
-        .eq("tenant_id", tenantId!);
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll<{ id: string; total_spent: number | null; total_orders: number | null; avg_ticket: number | null; last_order_at: string | null; created_at: string }>(
+        supabase
+          .from("customers")
+          .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
+          .eq("tenant_id", tenantId!)
+      ),
     enabled: !!tenantId,
   });
 
   const { data: activities = [] } = useQuery({
     queryKey: ["dashboard-activities", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("status, clicked_at, converted_at, conversion_value, created_at")
-        .eq("tenant_id", tenantId!)
-        .gte("created_at", periodStart);
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
+        supabase
+          .from("campaign_activities")
+          .select("status, clicked_at, converted_at, conversion_value, created_at")
+          .eq("tenant_id", tenantId!)
+          .gte("created_at", periodStart)
+      ),
     enabled: !!tenantId,
   });
 

@@ -30,6 +30,22 @@ import { subDays } from "date-fns";
 import { formatSP } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 
+// Fetch all rows bypassing the 1000-row default limit
+async function fetchAll<T>(query: any): Promise<T[]> {
+  const PAGE = 1000;
+  let from = 0;
+  let all: T[] = [];
+  while (true) {
+    const { data, error } = await query.range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 
 
 const PERIOD_DAYS = 14;

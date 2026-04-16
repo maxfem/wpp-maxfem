@@ -973,17 +973,14 @@ export default function MessageTemplates() {
                 <TableBody>
                   {filteredTemplates.map((t) => {
                     const st = statusConfig[t.status] || statusConfig.draft;
+                    const hasErrors = templateHasErrors(t);
                     return (
                       <TableRow key={t.id}>
                         <TableCell>
                           <Checkbox
                             checked={selectedIds.has(t.id)}
                             onCheckedChange={() => toggleSelect(t.id)}
-                            disabled={
-                              t.status === "approved" ||
-                              !!getTemplateBodyValidationError(t.body) ||
-                              !!getTemplateHeaderValidationError(t.header_type, t.header_content)
-                            }
+                            disabled={t.status === "approved" || hasErrors}
                           />
                         </TableCell>
                         <TableCell className="font-medium">
@@ -997,11 +994,8 @@ export default function MessageTemplates() {
                         <TableCell>
                           <div className="flex items-center justify-start gap-2">
                             <Badge variant={st.variant}>{st.label}</Badge>
-                            {getTemplateHeaderValidationError(t.header_type, t.header_content) && (
-                              <Badge variant="outline">Cabeçalho inválido</Badge>
-                            )}
-                            {getTemplateBodyValidationError(t.body) && (
-                              <Badge variant="outline">Body inválido</Badge>
+                            {hasErrors && (
+                              <Badge variant="outline" className="text-destructive border-destructive/50">Inválido</Badge>
                             )}
                           </div>
                         </TableCell>

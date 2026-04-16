@@ -432,8 +432,19 @@ export default function MessageTemplates() {
     [templates, statusFilter]
   );
 
+  const templateHasErrors = (t: typeof templates[0]) => {
+    const tplButtons = (t.buttons as unknown as TemplateButton[]) || [];
+    const errors = validateTemplate({
+      name: t.name, category: t.category, language: t.language,
+      header_type: t.header_type || "none", header_content: t.header_content || "",
+      body: t.body, footer: t.footer || "", buttons: tplButtons,
+      sample_values: (t.sample_values as string[]) || [],
+    });
+    return errors.filter((e) => e.severity === "error").length > 0;
+  };
+
   const eligibleForMeta = useMemo(
-    () => filteredTemplates.filter((t) => t.status !== "approved" && !getTemplateBodyValidationError(t.body) && !getTemplateHeaderValidationError(t.header_type, t.header_content)),
+    () => filteredTemplates.filter((t) => t.status !== "approved" && !templateHasErrors(t)),
     [filteredTemplates]
   );
 

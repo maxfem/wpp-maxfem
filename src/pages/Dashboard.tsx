@@ -83,40 +83,40 @@ export default function Dashboard() {
 
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-orders", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("orders")
-        .select("total, created_at, customer_id")
-        .eq("tenant_id", tenantId!)
-        .gte("created_at", periodStart)
-        .order("created_at");
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll(
+        supabase
+          .from("orders")
+          .select("total, created_at, customer_id")
+          .eq("tenant_id", tenantId!)
+          .gte("created_at", periodStart)
+          .order("created_at")
+      ),
     enabled: !!tenantId,
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ["dashboard-customers", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
-        .eq("tenant_id", tenantId!);
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll(
+        supabase
+          .from("customers")
+          .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
+          .eq("tenant_id", tenantId!)
+      ),
     enabled: !!tenantId,
   });
 
   const { data: activities = [] } = useQuery({
     queryKey: ["dashboard-activities", tenantId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("status, clicked_at, converted_at, conversion_value, created_at")
-        .eq("tenant_id", tenantId!)
-        .gte("created_at", periodStart);
-      return data || [];
-    },
+    queryFn: () =>
+      fetchAll(
+        supabase
+          .from("campaign_activities")
+          .select("status, clicked_at, converted_at, conversion_value, created_at")
+          .eq("tenant_id", tenantId!)
+          .gte("created_at", periodStart)
+      ),
     enabled: !!tenantId,
   });
 

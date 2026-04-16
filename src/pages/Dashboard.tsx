@@ -84,7 +84,7 @@ export default function Dashboard() {
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-orders", tenantId],
     queryFn: () =>
-      fetchAll(
+      fetchAll<{ total: number; created_at: string; customer_id: string }>(
         supabase
           .from("orders")
           .select("total, created_at, customer_id")
@@ -98,7 +98,7 @@ export default function Dashboard() {
   const { data: customers = [] } = useQuery({
     queryKey: ["dashboard-customers", tenantId],
     queryFn: () =>
-      fetchAll(
+      fetchAll<{ id: string; total_spent: number | null; total_orders: number | null; avg_ticket: number | null; last_order_at: string | null; created_at: string }>(
         supabase
           .from("customers")
           .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
@@ -110,7 +110,7 @@ export default function Dashboard() {
   const { data: activities = [] } = useQuery({
     queryKey: ["dashboard-activities", tenantId],
     queryFn: () =>
-      fetchAll(
+      fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
         supabase
           .from("campaign_activities")
           .select("status, clicked_at, converted_at, conversion_value, created_at")

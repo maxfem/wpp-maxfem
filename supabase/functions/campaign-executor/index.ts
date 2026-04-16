@@ -348,7 +348,7 @@ async function processAutomationQueue(supabase: any) {
             const hasHeaderVar = templateRecord?.header_type === "text" && templateRecord?.header_content?.includes("{{");
             const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
             const templateButtons = (templateRecord?.buttons as any[]) || [];
-            const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
+            const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{"));
             const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
             const copyCodeBtnIndices = templateButtons
               .map((b: any, i: number) => b.type === "COPY_CODE" ? { index: i, example: b.example || "" } : null)
@@ -381,12 +381,39 @@ async function processAutomationQueue(supabase: any) {
             if (hasDynamicUrlButton) {
               const dynamicUrl = getCustomerDynamicUrl(customer, templateName);
               if (dynamicUrl) {
+                // Create tracked shortlink for cart/pix URLs
                 const code = generateCode(10);
                 await supabase.from("tracked_links").insert({
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                   original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation", utm_campaign: campaign.name,
                 });
                 buttonUrlCode = code;
+              } else {
+                // Resolve button URL variable from template variable mappings
+                // Button URLs in Meta always use {{1}}, but our DB may store {{N}} referencing body var index
+                const btnUrl = templateButtons[dynamicUrlBtnIndex]?.url || "";
+                const varMatch = btnUrl.match(/\{\{(\d+)\}\}/);
+                if (varMatch) {
+                  const varIdx = parseInt(varMatch[1], 10) - 1;
+                  const varKey = variableMappings[varIdx] || "";
+                  const resolvedValue = resolveVariable(varKey, ctx);
+                  if (resolvedValue && resolvedValue !== "-") {
+                    // If trackClicks is enabled, create a tracked link
+                    const nodeTrackClicks = node.data?.trackClicks;
+                    if (nodeTrackClicks) {
+                      const code = generateCode(10);
+                      await supabase.from("tracked_links").insert({
+                        tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                        original_url: btnUrl.replace(varMatch[0], resolvedValue), code,
+                        utm_source: "whatsapp", utm_medium: "automation", utm_campaign: campaign.name,
+                      });
+                      buttonUrlCode = code;
+                    } else {
+                      // Pass the resolved value directly as button parameter
+                      buttonUrlCode = resolvedValue;
+                    }
+                  }
+                }
               }
             }
 

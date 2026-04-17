@@ -224,6 +224,48 @@ export default function Chat() {
     return () => { supabase.removeChannel(channel); };
   }, [tenantId, queryClient]);
 
+  // Helper to extract structured error from edge function FunctionsHttpError
+  const extractFnError = async (err: any): Promise<{ code?: string; message?: string }> => {
+    try {
+      const ctx = err?.context;
+      if (ctx && typeof ctx.json === "function") {
+        const body = await ctx.json();
+        return { code: body?.error_code || body?.error, message: body?.message };
+      }
+      if (ctx && typeof ctx.text === "function") {
+        const txt = await ctx.text();
+        try {
+          const body = JSON.parse(txt);
+          return { code: body?.error_code || body?.error, message: body?.message };
+        } catch {
+          return { message: txt };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return { message: (err as Error)?.message };
+  };
+
+  const handleSendError = async (err: any) => {
+    const { code, message } = await extractFnError(err);
+    if (code === "WHATSAPP_24H_WINDOW_EXPIRED" || code === "window_expired") {
+      toast.error("Janela de 24h expirada", {
+        description:
+          "Não é possível enviar mensagens livres após 24h sem resposta. Envie um template HSM aprovado para reengajar este contato.",
+        duration: 8000,
+        action: {
+          label: "Ver templates",
+          onClick: () => window.open("/templates", "_blank"),
+        },
+      });
+      return;
+    }
+    toast.error("Erro ao enviar mensagem", {
+      description: message || "Tente novamente em instantes.",
+    });
+  };
+
   // Send text message
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
@@ -243,9 +285,7 @@ export default function Chat() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", tenantId] });
     },
-    onError: (err) => {
-      toast.error("Erro ao enviar mensagem: " + (err as Error).message);
-    },
+    onError: handleSendError,
   });
 
   // Send media message
@@ -271,9 +311,7 @@ export default function Chat() {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", tenantId] });
       toast.success("Mídia enviada!");
     },
-    onError: (err) => {
-      toast.error("Erro ao enviar mídia: " + (err as Error).message);
-    },
+    onError: handleSendError,
   });
 
   // Update customer attributes helper

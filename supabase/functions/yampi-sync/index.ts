@@ -316,7 +316,8 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     }));
 
     const trackingCode = o.track_code || o.tracking_code || null;
-    const trackingUrl = o.track_url || o.tracking_url || null;
+    // SEMPRE usar domínio próprio Maxfem; nunca persistir URL de transportadora
+    const trackingUrl = trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : null;
     const carrier = o.shipment_service || o.carrier || null;
     let deliveryEstimate: string | null = null;
     if (o.date_delivery) {
@@ -375,7 +376,8 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       if (!d) continue;
 
       const trackCode = d.track_code || null;
-      const trackUrl = d.track_url || null;
+      // SEMPRE usar domínio próprio Maxfem; nunca persistir URL de transportadora
+      const trackUrl = trackCode ? `http://rastreio.maxfem.com.br/${trackCode}` : null;
       const trackCarrier = d.shipment_service || null;
 
       const txData = d.transactions?.data;

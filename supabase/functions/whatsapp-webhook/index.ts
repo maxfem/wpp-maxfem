@@ -178,14 +178,18 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
     delivered: "Entregue", cancelled: "Cancelado", refunded: "Reembolsado",
   };
 
-  const formattedOrders = orders.map((o: any) => ({
-    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
-    status: statusLabels[o.status_alias || o.status] || o.status,
-    status_alias: o.status_alias || o.status,
-    total: o.total, created_at: o.created_at,
-    tracking_code: o.tracking_code || null, tracking_url: o.tracking_url || null,
-    carrier: o.carrier || null, payments: o.payment_summary || [], items: o.items_summary || [],
-  }));
+  const formattedOrders = orders.map((o: any) => {
+    const trackingCode = o.tracking_code || null;
+    return {
+      order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+      status: statusLabels[o.status_alias || o.status] || o.status,
+      status_alias: o.status_alias || o.status,
+      total: o.total, created_at: o.created_at,
+      tracking_code: trackingCode,
+      tracking_url: trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : null,
+      carrier: o.carrier || null, payments: o.payment_summary || [], items: o.items_summary || [],
+    };
+  });
 
   return JSON.stringify({ customer_name: customer.name, cpf: cleanCpf, orders_count: formattedOrders.length, orders: formattedOrders,
     note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem." });
@@ -318,10 +322,11 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
         } catch (_) { /* ignore */ }
       }
 
-      if (trackingCode && !trackingUrl) {
-        if (/^BLI[_-]/i.test(trackingCode)) trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
-        else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
-        else trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      // SEMPRE usar domínio próprio Maxfem; NUNCA expor URL de transportadora
+      if (trackingCode) {
+        trackingUrl = `http://rastreio.maxfem.com.br/${trackingCode}`;
+      } else {
+        trackingUrl = null;
       }
 
       detailedOrders.push({
@@ -413,10 +418,14 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
 ${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling." : ""}
 ${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
 
-REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) ao cliente.
-- Formate: número do pedido, status, rastreio (se houver), link de rastreio, transportadora, valor.
-- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
+REGRAS sobre rastreio (INEGOCIÁVEIS):
+- Quando informar rastreio, escreva apenas: "Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}"
+- NUNCA use Markdown como [texto](url). Sempre URL CRUA.
+- NUNCA envolva a URL com parênteses, colchetes ou aspas.
+- NUNCA use URLs de transportadoras (Loggi, Correios, Jadlog, FM, Melhor Envio).
+- Use SEMPRE http://rastreio.maxfem.com.br/{tracking_code} (note: http, não https).
+- NUNCA modifique o tracking_code. Copie-o EXATAMENTE como veio (incluindo "_" e "-").
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null.
 - Nunca invente informações.`;
     }
 
@@ -465,8 +474,20 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    const aiReply = assistantMessage?.content?.trim();
-    if (!aiReply) return;
+    const rawReply = assistantMessage?.content?.trim();
+    if (!rawReply) return;
+
+    // Sanitização canônica de tracking (mesma regra do ai-copilot)
+    const aiReply = rawReply
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2")
+      .replace(/\((https?:\/\/[^)\s]+)\)/g, "$1")
+      .replace(/\[(https?:\/\/[^\]\s]+)\]/g, "$1")
+      .replace(/[*\-]\s*(https?:\/\/)/g, "$1")
+      .replace(
+        /https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br|melhorenvio\.com\.br|linkcorreios\.com\.br|fmtransportes\.com\.br)\/[^\s)]*?([A-Za-z0-9_-]{8,})[^\s)]*/gi,
+        "http://rastreio.maxfem.com.br/$1",
+      )
+      .replace(/(https?:\/\/[^\s]+?)[)\]\.,;:!?*]+(?=\s|$)/g, "$1");
 
     const token = await resolveAccessToken(tenantId);
     let phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";

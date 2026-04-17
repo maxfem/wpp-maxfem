@@ -57,15 +57,18 @@ const formatDateSeparator = (dateStr: string) => {
 };
 
 function renderFormattedText(text: string) {
-  const parts = text.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
+  // Primeiro remove markdown link [texto](url) deixando só a URL crua
+  const cleaned = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2");
+  const parts = cleaned.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
   return parts.map((part, i) => {
     if (part.startsWith("*") && part.endsWith("*")) return <strong key={i}>{part.slice(1, -1)}</strong>;
     if (part.startsWith("_") && part.endsWith("_")) return <em key={i}>{part.slice(1, -1)}</em>;
     if (part.startsWith("~") && part.endsWith("~")) return <s key={i}>{part.slice(1, -1)}</s>;
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    // URL regex que NÃO captura ) ] . , ; : ! ? no final
+    const urlRegex = /(https?:\/\/[^\s<>)\]]+[^\s<>)\].,;:!?*])/g;
     if (urlRegex.test(part)) {
       return part.split(urlRegex).map((seg, j) =>
-        urlRegex.test(seg) ? (
+        /^https?:\/\//.test(seg) ? (
           <a key={`${i}-${j}`} href={seg} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 hover:opacity-100">{seg}</a>
         ) : seg
       );

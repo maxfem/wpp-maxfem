@@ -36,10 +36,36 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const {
-      phone, message, tenant_id, customer_id,
+      phone, tenant_id, customer_id,
       template_name, template_language, template_components,
       media_type, media_url, filename,
     } = body;
+    let { message } = body;
+
+    // ===== Sanitização canônica de tracking (defesa em profundidade) =====
+    // Garante que QUALQUER mensagem manual ou caption nunca saia com markdown,
+    // parênteses ao redor da URL ou apontando para transportadora.
+    const sanitizeTracking = (text: string | undefined | null): string => {
+      if (!text) return text || "";
+      return text
+        // Markdown links [texto](url) -> url crua
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2")
+        // URL entre parênteses (url) -> url
+        .replace(/\((https?:\/\/[^)\s]+)\)/g, "$1")
+        // URL entre colchetes [url] -> url
+        .replace(/\[(https?:\/\/[^\]\s]+)\]/g, "$1")
+        // Substituir URLs de transportadora pelo domínio próprio (preservando o código)
+        .replace(
+          /https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br|melhorenvio\.com\.br|linkcorreios\.com\.br|fmtransportes\.com\.br)\/[^\s)]*?([A-Za-z0-9_-]{8,})[^\s)]*/gi,
+          "http://rastreio.maxfem.com.br/$1",
+        )
+        // Remover pontuação grudada no final da URL
+        .replace(/(https?:\/\/[^\s]+?)[)\]\.,;:!?*]+(?=\s|$)/g, "$1");
+    };
+
+    if (typeof message === "string") {
+      message = sanitizeTracking(message);
+    }
 
     if (!phone || !tenant_id) {
       return new Response(JSON.stringify({ error: "phone and tenant_id are required" }), {

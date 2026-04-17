@@ -470,8 +470,20 @@ REGRAS IMPORTANTES para resposta sobre pedidos:
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    const aiReply = assistantMessage?.content?.trim();
-    if (!aiReply) return;
+    const rawReply = assistantMessage?.content?.trim();
+    if (!rawReply) return;
+
+    // Sanitização canônica de tracking (mesma regra do ai-copilot)
+    const aiReply = rawReply
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2")
+      .replace(/\((https?:\/\/[^)\s]+)\)/g, "$1")
+      .replace(/\[(https?:\/\/[^\]\s]+)\]/g, "$1")
+      .replace(/[*\-]\s*(https?:\/\/)/g, "$1")
+      .replace(
+        /https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br|melhorenvio\.com\.br|linkcorreios\.com\.br|fmtransportes\.com\.br)\/[^\s)]*?([A-Za-z0-9_-]{8,})[^\s)]*/gi,
+        "http://rastreio.maxfem.com.br/$1",
+      )
+      .replace(/(https?:\/\/[^\s]+?)[)\]\.,;:!?*]+(?=\s|$)/g, "$1");
 
     const token = await resolveAccessToken(tenantId);
     let phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";

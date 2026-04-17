@@ -128,9 +128,46 @@ Deno.serve(async (req) => {
 
     if (!waResponse.ok) {
       console.error("WhatsApp API error:", waResult);
-      return new Response(JSON.stringify({ error: "WhatsApp API error", details: waResult }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+      // Detect 24h window expiration (Meta error code 131047 / 131026 / "re-engagement")
+      const metaError = waResult?.error || {};
+      const metaCode = metaError.code;
+      const metaSubcode = metaError.error_subcode;
+      const metaMsg = (metaError.message || "").toLowerCase();
+      const is24hWindow =
+        metaCode === 131047 ||
+        metaSubcode === 131047 ||
+        metaMsg.includes("re-engagement") ||
+        metaMsg.includes("outside the allowed window") ||
+        metaMsg.includes("24 hours");
+
+      if (is24hWindow) {
+        return new Response(
+          JSON.stringify({
+            error: "window_expired",
+            error_code: "WHATSAPP_24H_WINDOW_EXPIRED",
+            message:
+              "A janela de 24h para mensagens livres expirou. Para reengajar este contato, envie um template HSM aprovado (ex: pelo botão de Templates).",
+            details: metaError,
+          }),
+          {
+            status: 422,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: "whatsapp_api_error",
+          message: metaError.message || "Erro ao enviar mensagem pelo WhatsApp.",
+          details: waResult,
+        }),
+        {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const wamid = waResult.messages?.[0]?.id;

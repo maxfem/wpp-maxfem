@@ -1,69 +1,93 @@
 
+Objetivo: corrigir em definitivo o envio de links de rastreio errados. O problema não está só no Copilot. Hoje existem múltiplos caminhos gerando ou reaproveitando URL errada:
 
-## Análise
+1. `ai-copilot` já foi ajustado.
+2. `whatsapp-webhook` ainda tem lógica antiga que monta `loggi.com/correios/...` e continua com prompt antigo.
+3. `campaign-executor` envia templates/automação usando dados do pedido e pode continuar alimentando variáveis com `tracking_url` antiga.
+4. `yampi-sync` continua gravando `tracking_url` original da transportadora no banco.
+5. A UI do chat (`ChatMessageArea`) ainda transforma URLs com regex simples e pode incluir `)` no link clicável.
+6. O print indica fortemente que há template/mensagem de automação com conteúdo já salvo usando Markdown tipo `[Rastrear pedido](...)`.
 
-A captura mostra a mensagem enviada às 07:14 com:
+Plano de correção definitiva:
+
+### 1. Criar uma regra única e central para rastreio
+Implementar um helper backend para normalizar rastreio:
+- se existir `tracking_code`, a URL final deve ser sempre `http://rastreio.maxfem.com.br/{tracking_code}`
+- nunca usar `tracking_url` de Loggi/Correios/Jadlog
+- nunca alterar o `tracking_code`
+- nunca devolver markdown, colchetes, parênteses ou pontuação colada na URL
+
+### 2. Aplicar essa regra em TODOS os fluxos que enviam mensagem
+Atualizar estes arquivos para usar exatamente a mesma regra:
+- `supabase/functions/ai-copilot/index.ts`
+- `supabase/functions/whatsapp-webhook/index.ts`
+- `supabase/functions/campaign-executor/index.ts`
+- `supabase/functions/whatsapp-send/index.ts`
+
+Trabalho em cada um:
+- `whatsapp-webhook`: remover geração de links de transportadora e alinhar o prompt/regras com o `ai-copilot`
+- `campaign-executor`: garantir que qualquer variável/template de rastreio use a URL canônica Maxfem
+- `whatsapp-send`: adicionar sanitização final de saída, para que mesmo um texto/manual/template malformado seja reescrito antes do envio
+
+### 3. Parar de recontaminar o banco com links errados
+Corrigir os pontos que salvam `tracking_url` na tabela `orders`:
+- `supabase/functions/yampi-sync/index.ts`
+- qualquer lookup de Bling/webhook que ainda monte URL externa
+
+Também incluir uma migração de dados para corrigir registros já existentes:
+- para todo pedido com `tracking_code`, sobrescrever `tracking_url` com `http://rastreio.maxfem.com.br/{tracking_code}`
+
+Isso é importante porque hoje mesmo com código novo, mensagens futuras podem continuar puxando `tracking_url` antiga do banco.
+
+### 4. Corrigir a origem mais provável do print: template/automação
+Auditar os templates ativos usados no atendimento e automações, principalmente os de pedido/rastreio:
+- exemplo provável: `pedido_aprovado_v2` e fluxos de “Pedido Enviado + Rastreio”
+
+Ajustes:
+- remover qualquer conteúdo do tipo `[Rastrear pedido](...)`
+- remover qualquer URL direta de transportadora
+- padronizar para texto puro:
+```text
+Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}
 ```
-[Clique aqui para rastrear o pedido](https://www.loggi.com/rastreador/BLI_16033293224)
+Se o template usar variável, garantir que a variável receba a URL canônica e não a original.
+
+### 5. Blindar a renderização no chat
+Ajustar `src/components/chat/ChatMessageArea.tsx` para:
+- detectar URL sem capturar `)`/`]`/`,`/`.` no final
+- não transformar markdown em link quebrado
+- exibir corretamente links crus no painel do atendimento
+
+Isso não resolve a origem sozinho, mas evita que a UI continue “quebrando” links quando houver texto com pontuação ao redor.
+
+### 6. Validação end-to-end obrigatória
+Depois da implementação, validar 4 cenários separadamente:
+1. Copilot buscando rastreio por CPF
+2. Resposta automática via `whatsapp-webhook`
+3. Automação/template de pedido enviado
+4. Envio manual pelo `/atendimento`
+
+Critérios de aceite:
+- URL sempre começa com `http://rastreio.maxfem.com.br/`
+- nunca aparece `loggi.com`, `correios`, `jadlog` no texto enviado
+- nunca aparece markdown `[texto](url)`
+- nunca aparece `)` colado no final do link
+- `tracking_code` sai exatamente como veio do Bling
+
+### Arquivos que devem entrar no escopo
+- `supabase/functions/ai-copilot/index.ts`
+- `supabase/functions/whatsapp-webhook/index.ts`
+- `supabase/functions/campaign-executor/index.ts`
+- `supabase/functions/whatsapp-send/index.ts`
+- `supabase/functions/yampi-sync/index.ts`
+- `src/components/chat/ChatMessageArea.tsx`
+
+### Detalhe técnico importante
+O problema real é de arquitetura de consistência: a correção anterior tratou apenas um emissor (`ai-copilot`), mas o sistema tem outros emissores e ainda persiste links de transportadora no banco. A solução definitiva é:
+```text
+uma única regra canônica de tracking
++ aplicar em todos os emissores
++ corrigir dados já salvos
++ auditar templates existentes
++ blindar a renderização
 ```
-
-Dois problemas claros:
-
-1. **A URL ainda aponta para `loggi.com` direto**, não para `rastreio.maxfem.com.br`. Isso significa que a IA está usando o `tracking_url` original do Bling (linkRastreamento da Loggi) ao invés do código. Essa mensagem provavelmente foi gerada **antes** do último deploy, ou o modelo ignorou a instrução porque o JSON do tool ainda contém o campo `tracking_url` da Loggi.
-
-2. **A URL está em formato Markdown** `[texto](url)` — quando o WhatsApp renderiza, o `)` final fica colado na URL, quebrando o link.
-
-A sanitização atual (linhas 770-777) **deveria** converter Markdown para URL crua, mas pelo screenshot vemos que a mensagem foi enviada com Markdown intacto. Possíveis causas: deploy não pegou, ou regex não cobriu o caso.
-
-## Solução definitiva (3 camadas)
-
-### Camada 1 — Eliminar fonte do problema na função `lookupOrdersBling`
-
-Na construção da resposta do tool, **remover completamente** o `tracking_url` original (Loggi/Correios) do JSON retornado para a IA. Devolver apenas:
-- `tracking_code` (puro, sem modificação)
-- `tracking_url` = `http://rastreio.maxfem.com.br/{tracking_code}` (só esse campo, sobrescrito)
-
-Se não há `tracking_code`, devolver `tracking_url: null`. Assim a IA **nunca vê** a URL da Loggi e não tem como inseri-la na resposta.
-
-### Camada 2 — Sanitização robusta no pós-processamento
-
-Reforçar a regex de sanitização para garantir que QUALQUER formato seja convertido para URL crua:
-
-```ts
-suggestion = suggestion
-  // 1. Markdown links [texto](url) -> url
-  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$2')
-  // 2. URL entre parênteses (url) -> url (sem parênteses)
-  .replace(/\((https?:\/\/[^)\s]+)\)/g, '$1')
-  // 3. URL entre colchetes [url] -> url
-  .replace(/\[(https?:\/\/[^\]\s]+)\]/g, '$1')
-  // 4. Remover pontuação grudada no final da URL
-  .replace(/(https?:\/\/[^\s]+?)[)\].,;:!?]+(?=\s|$)/g, '$1')
-  // 5. Substituir QUALQUER URL não-maxfem de rastreio por rastreio.maxfem.com.br
-  //    (catch-all para URLs Loggi/Correios/Jadlog que escaparem)
-  .replace(/https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br)\/[^\s]*?([A-Z0-9_-]{8,})[^\s]*/gi,
-           'http://rastreio.maxfem.com.br/$1');
-```
-
-### Camada 3 — Reforçar prompt do sistema
-
-Adicionar exemplo negativo explícito no `orderInstructions`:
-
-```
-EXEMPLOS DO QUE NÃO FAZER:
-❌ [Clique aqui](https://www.loggi.com/rastreador/BLI_xxx)
-❌ Link: (http://rastreio.maxfem.com.br/BLI_xxx)
-❌ http://rastreio.maxfem.com.br/BLI_xxx)
-
-EXEMPLO CORRETO:
-✅ Link para rastreamento: http://rastreio.maxfem.com.br/BLI1_6033293224
-```
-
-E remover a frase confusa "Link de Rastreamento*: [Clique aqui...]" — instruir para escrever apenas a URL crua precedida de `Link para rastreamento:`.
-
-## Arquivo modificado
-
-- `supabase/functions/ai-copilot/index.ts` (3 trechos: `lookupOrdersBling` retorno, `orderInstructions` prompt, regex de sanitização final)
-
-Após o deploy, peço para você abrir uma conversa nova e pedir rastreio para confirmar que a URL sai limpa, sem parênteses e apontando para `rastreio.maxfem.com.br`.
-

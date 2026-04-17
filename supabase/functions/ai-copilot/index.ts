@@ -265,12 +265,13 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
         value: i.valor,
       }));
 
+      // SEMPRE sobrescrever tracking_url para o domínio próprio (nunca expor URLs de transportadoras)
       detailedOrders.push({
         order_number: d.numero,
         total: d.total,
         date: d.data,
         tracking_code: trackingCode,
-        tracking_url: trackingUrl,
+        tracking_url: trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : null,
         carrier,
         payments,
         items,
@@ -589,21 +590,35 @@ ${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para consultar dados sincron
 
 REGRAS IMPORTANTES para resposta sobre pedidos:
 
-FORMATO OBRIGATÓRIO de resposta quando houver dados de rastreio:
+FORMATO OBRIGATÓRIO de resposta quando houver dados de rastreio (use EXATAMENTE este formato, uma linha por item):
 - Número do pedido: {order_number}
 - Status: {status}
 - Código de rastreio: {tracking_code}
 - Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}
 
-Use EXATAMENTE esse formato. Substitua {order_number}, {status} e {tracking_code} pelos valores reais retornados pela função.
+REGRAS ABSOLUTAS sobre o LINK de rastreamento (INEGOCIÁVEIS):
+1. Escreva a URL CRUA, sem nenhuma formatação. NUNCA use Markdown.
+2. NUNCA envolva a URL com parênteses, colchetes ou aspas.
+3. NUNCA coloque pontuação (vírgula, ponto, parênteses) imediatamente após a URL.
+4. Use SEMPRE o domínio http://rastreio.maxfem.com.br/{tracking_code} — NUNCA escreva URLs de transportadoras (Loggi, Correios, Jadlog, etc).
+5. Use SEMPRE http:// (não https://).
 
-- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código de rastreio e o link de rastreio usando o formato acima.
+EXEMPLOS DO QUE NÃO FAZER:
+❌ [Clique aqui](http://rastreio.maxfem.com.br/BLI_xxx)
+❌ Link: (http://rastreio.maxfem.com.br/BLI_xxx)
+❌ http://rastreio.maxfem.com.br/BLI_xxx)
+❌ https://www.loggi.com/rastreador/BLI_xxx
+❌ Link de Rastreamento*: [Clique aqui para rastrear](...)
+
+EXEMPLO CORRETO:
+✅ Link para rastreamento: http://rastreio.maxfem.com.br/BLI1_6033293224
+
+Outras regras:
+- Se o campo tracking_code existir nos dados retornados, SEMPRE informe o código e o link no formato acima.
 - Se houver dados de pagamento (payments), informe o método e status do pagamento APÓS o bloco de rastreio.
 - SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
 - Nunca invente informações. Use apenas os dados retornados pela função.
-- IMPORTANTE: NÃO use formatação Markdown para links. Escreva a URL diretamente no texto, sem colchetes, parênteses ou formatação especial. NUNCA coloque parênteses ao redor de URLs.
-- CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio nos dados, incluindo underscores, hífens e outros caracteres especiais. Exemplo: se o código é "BLI1_6032154318", escreva "BLI1_6032154318" e NÃO "BLI16032154318".
-- O link de rastreamento usa SEMPRE http:// (não https://). Formato: http://rastreio.maxfem.com.br/{tracking_code}`;
+- CRÍTICO: NUNCA modifique o código de rastreamento. Copie-o EXATAMENTE como veio (incluindo underscores e hífens). Exemplo: se o código é "BLI1_6032154318", escreva "BLI1_6032154318" e NÃO "BLI16032154318".`;
     }
 
     const mediaInstructions = useGemini
@@ -775,14 +790,24 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    // Sanitize: convert Markdown links to plain URLs and strip wrapping parens
+    // Sanitize: garantir URLs cruas e domínio próprio (defesa em profundidade)
     const rawSuggestion = assistantMessage?.content || "";
     let suggestion = rawSuggestion
-      .replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_: string, _text: string, url: string) => url)
-      .replace(/\((https?:\/\/[^\s)]+)\)/g, (_: string, url: string) => url)
-      .replace(/[*\-]\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
-      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""))
-      .replace(/[\[(](https?:\/\/[^\s\])]+)[\])]/g, (_: string, url: string) => url);
+      // 1. Markdown links [texto](url) -> url crua
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2")
+      // 2. URL entre parênteses (url) -> url
+      .replace(/\((https?:\/\/[^)\s]+)\)/g, "$1")
+      // 3. URL entre colchetes [url] -> url
+      .replace(/\[(https?:\/\/[^\]\s]+)\]/g, "$1")
+      // 4. Remover marcadores Markdown antes da URL
+      .replace(/[*\-]\s*(https?:\/\/)/g, "$1")
+      // 5. Substituir QUALQUER URL de transportadora pelo domínio próprio (catch-all)
+      .replace(
+        /https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br|melhorenvio\.com\.br|linkcorreios\.com\.br)\/[^\s)]*?([A-Za-z0-9_-]{8,})[^\s)]*/gi,
+        "http://rastreio.maxfem.com.br/$1",
+      )
+      // 6. Remover pontuação grudada no final da URL
+      .replace(/(https?:\/\/[^\s]+?)[)\]\.,;:!?*]+(?=\s|$)/g, "$1");
 
     return new Response(JSON.stringify({ suggestion, provider: useGemini ? "gemini" : "openai" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

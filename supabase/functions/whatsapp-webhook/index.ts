@@ -418,10 +418,14 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
 ${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling." : ""}
 ${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
 
-REGRAS IMPORTANTES para resposta sobre pedidos:
-- Se o campo tracking_code existir, SEMPRE informe o código de rastreio e o link de rastreio (tracking_url) ao cliente.
-- Formate: número do pedido, status, rastreio (se houver), link de rastreio, transportadora, valor.
-- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null ou vazio.
+REGRAS sobre rastreio (INEGOCIÁVEIS):
+- Quando informar rastreio, escreva apenas: "Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}"
+- NUNCA use Markdown como [texto](url). Sempre URL CRUA.
+- NUNCA envolva a URL com parênteses, colchetes ou aspas.
+- NUNCA use URLs de transportadoras (Loggi, Correios, Jadlog, FM, Melhor Envio).
+- Use SEMPRE http://rastreio.maxfem.com.br/{tracking_code} (note: http, não https).
+- NUNCA modifique o tracking_code. Copie-o EXATAMENTE como veio (incluindo "_" e "-").
+- SOMENTE diga "código de rastreio ainda não disponível" quando tracking_code for null.
 - Nunca invente informações.`;
     }
 

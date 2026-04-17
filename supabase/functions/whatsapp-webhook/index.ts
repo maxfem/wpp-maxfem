@@ -178,14 +178,18 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
     delivered: "Entregue", cancelled: "Cancelado", refunded: "Reembolsado",
   };
 
-  const formattedOrders = orders.map((o: any) => ({
-    order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
-    status: statusLabels[o.status_alias || o.status] || o.status,
-    status_alias: o.status_alias || o.status,
-    total: o.total, created_at: o.created_at,
-    tracking_code: o.tracking_code || null, tracking_url: o.tracking_url || null,
-    carrier: o.carrier || null, payments: o.payment_summary || [], items: o.items_summary || [],
-  }));
+  const formattedOrders = orders.map((o: any) => {
+    const trackingCode = o.tracking_code || null;
+    return {
+      order_number: o.order_number || o.external_id?.replace("yampi_", "") || o.id,
+      status: statusLabels[o.status_alias || o.status] || o.status,
+      status_alias: o.status_alias || o.status,
+      total: o.total, created_at: o.created_at,
+      tracking_code: trackingCode,
+      tracking_url: trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : null,
+      carrier: o.carrier || null, payments: o.payment_summary || [], items: o.items_summary || [],
+    };
+  });
 
   return JSON.stringify({ customer_name: customer.name, cpf: cleanCpf, orders_count: formattedOrders.length, orders: formattedOrders,
     note: "Dados sincronizados da plataforma. Se o rastreio não aparece, pode estar pendente de atualização na origem." });
@@ -318,10 +322,11 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
         } catch (_) { /* ignore */ }
       }
 
-      if (trackingCode && !trackingUrl) {
-        if (/^BLI[_-]/i.test(trackingCode)) trackingUrl = `https://www.loggi.com/rastreador/${trackingCode}`;
-        else if (/^\d{5,}[A-Z]{2}\d?[A-Z0-9]+$/i.test(trackingCode)) trackingUrl = `https://rastreio.fmtransportes.com.br/#/${trackingCode}`;
-        else trackingUrl = `https://rastreamento.correios.com.br/app/index.php?objetos=${trackingCode}`;
+      // SEMPRE usar domínio próprio Maxfem; NUNCA expor URL de transportadora
+      if (trackingCode) {
+        trackingUrl = `http://rastreio.maxfem.com.br/${trackingCode}`;
+      } else {
+        trackingUrl = null;
       }
 
       detailedOrders.push({

@@ -265,12 +265,13 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
         value: i.valor,
       }));
 
+      // SEMPRE sobrescrever tracking_url para o domínio próprio (nunca expor URLs de transportadoras)
       detailedOrders.push({
         order_number: d.numero,
         total: d.total,
         date: d.data,
         tracking_code: trackingCode,
-        tracking_url: trackingUrl,
+        tracking_url: trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : null,
         carrier,
         payments,
         items,

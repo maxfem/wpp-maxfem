@@ -790,14 +790,24 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       assistantMessage = result.choices?.[0]?.message;
     }
 
-    // Sanitize: convert Markdown links to plain URLs and strip wrapping parens
+    // Sanitize: garantir URLs cruas e domínio próprio (defesa em profundidade)
     const rawSuggestion = assistantMessage?.content || "";
     let suggestion = rawSuggestion
-      .replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_: string, _text: string, url: string) => url)
-      .replace(/\((https?:\/\/[^\s)]+)\)/g, (_: string, url: string) => url)
-      .replace(/[*\-]\s*(https?:\/\/)/g, (_: string, proto: string) => proto)
-      .replace(/(https?:\/\/[^\s]+)/g, (url: string) => url.replace(/[)}\].,;:!?*]+$/, ""))
-      .replace(/[\[(](https?:\/\/[^\s\])]+)[\])]/g, (_: string, url: string) => url);
+      // 1. Markdown links [texto](url) -> url crua
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2")
+      // 2. URL entre parênteses (url) -> url
+      .replace(/\((https?:\/\/[^)\s]+)\)/g, "$1")
+      // 3. URL entre colchetes [url] -> url
+      .replace(/\[(https?:\/\/[^\]\s]+)\]/g, "$1")
+      // 4. Remover marcadores Markdown antes da URL
+      .replace(/[*\-]\s*(https?:\/\/)/g, "$1")
+      // 5. Substituir QUALQUER URL de transportadora pelo domínio próprio (catch-all)
+      .replace(
+        /https?:\/\/(?:www\.)?(?:loggi\.com|correios\.com\.br|jadlog\.com\.br|melhorenvio\.com\.br|linkcorreios\.com\.br)\/[^\s)]*?([A-Za-z0-9_-]{8,})[^\s)]*/gi,
+        "http://rastreio.maxfem.com.br/$1",
+      )
+      // 6. Remover pontuação grudada no final da URL
+      .replace(/(https?:\/\/[^\s]+?)[)\]\.,;:!?*]+(?=\s|$)/g, "$1");
 
     return new Response(JSON.stringify({ suggestion, provider: useGemini ? "gemini" : "openai" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

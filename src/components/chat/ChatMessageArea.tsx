@@ -57,23 +57,38 @@ const formatDateSeparator = (dateStr: string) => {
 };
 
 function renderFormattedText(text: string) {
-  // Primeiro remove markdown link [texto](url) deixando só a URL crua
+  // 1) Remove markdown link [texto](url) deixando só a URL crua
   const cleaned = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$2");
-  const parts = cleaned.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("*") && part.endsWith("*")) return <strong key={i}>{part.slice(1, -1)}</strong>;
-    if (part.startsWith("_") && part.endsWith("_")) return <em key={i}>{part.slice(1, -1)}</em>;
-    if (part.startsWith("~") && part.endsWith("~")) return <s key={i}>{part.slice(1, -1)}</s>;
-    // URL regex que NÃO captura ) ] . , ; : ! ? no final
-    const urlRegex = /(https?:\/\/[^\s<>)\]]+[^\s<>)\].,;:!?*])/g;
-    if (urlRegex.test(part)) {
-      return part.split(urlRegex).map((seg, j) =>
-        /^https?:\/\//.test(seg) ? (
-          <a key={`${i}-${j}`} href={seg} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 hover:opacity-100">{seg}</a>
-        ) : seg
+
+  // 2) Tokeniza URLs PRIMEIRO (preservando _ . - dentro do path) para que
+  //    nenhum parser de markdown abaixo capture underscores que fazem parte
+  //    de códigos de rastreio (ex.: BLI_16033192248).
+  //    A URL termina antes de espaço/<>/)/]/, e nunca consome pontuação final.
+  const urlRegex = /(https?:\/\/[^\s<>)\]]+[^\s<>)\].,;:!?*])/g;
+  const urlParts = cleaned.split(urlRegex);
+
+  return urlParts.map((chunk, ui) => {
+    if (/^https?:\/\//.test(chunk)) {
+      return (
+        <a
+          key={`u-${ui}`}
+          href={chunk}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline text-inherit opacity-90 hover:opacity-100 break-all"
+        >
+          {chunk}
+        </a>
       );
     }
-    return part;
+    // 3) Aplica markdown (negrito, itálico, riscado) apenas FORA das URLs
+    const mdParts = chunk.split(/(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~)/g);
+    return mdParts.map((part, i) => {
+      if (part.startsWith("*") && part.endsWith("*")) return <strong key={`b-${ui}-${i}`}>{part.slice(1, -1)}</strong>;
+      if (part.startsWith("_") && part.endsWith("_")) return <em key={`i-${ui}-${i}`}>{part.slice(1, -1)}</em>;
+      if (part.startsWith("~") && part.endsWith("~")) return <s key={`s-${ui}-${i}`}>{part.slice(1, -1)}</s>;
+      return <Fragment key={`t-${ui}-${i}`}>{part}</Fragment>;
+    });
   });
 }
 

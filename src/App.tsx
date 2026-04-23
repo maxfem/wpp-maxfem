@@ -90,6 +90,7 @@ const App = () => (
                   <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
                   <Route path="/settings/integrations/bling" element={<ProtectedRoute><SettingsBling /></ProtectedRoute>} />
                   <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
+                  <Route path="/settings/instagram" element={<ProtectedRoute><SettingsInstagram /></ProtectedRoute>} />
                   <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsOfUse />} />

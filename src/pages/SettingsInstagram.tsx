@@ -45,15 +45,19 @@ export default function SettingsInstagram() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  useEffect(() => {
+    const refreshAccounts = () => {
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    };
+
+    window.addEventListener("focus", refreshAccounts);
+    return () => window.removeEventListener("focus", refreshAccounts);
+  }, [queryClient]);
+
   async function handleOAuthCallback(code: string, state: string) {
     setConnecting(true);
     try {
       const redirect_uri = `${window.location.origin}/settings/instagram`;
-      const { data, error } = await supabase.functions.invoke("instagram-register", {
-        body: { code, state, redirect_uri },
-        method: "POST",
-      });
-      // The function uses query param ?action=callback — we need to call manually
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-register?action=callback`;
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(url, {
@@ -72,7 +76,6 @@ export default function SettingsInstagram() {
         toast.warning(`${result.pages_without_ig.length} página(s) sem conta IG vinculada foram ignoradas`);
       }
       queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
-      // clean URL
       navigate("/settings/instagram", { replace: true });
     } catch (e: any) {
       toast.error("Erro ao conectar Instagram", { description: e.message });
@@ -115,9 +118,21 @@ export default function SettingsInstagram() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao iniciar conexão");
+
+      const isEmbeddedPreview = window.self !== window.top;
+      if (isEmbeddedPreview) {
+        const popup = window.open(data.oauth_url, "_blank", "noopener,noreferrer");
+        if (!popup) {
+          throw new Error("O navegador bloqueou a abertura da Meta em nova aba. Libere pop-ups e tente novamente.");
+        }
+        toast.success("Autorização aberta em nova aba");
+        return;
+      }
+
       window.location.href = data.oauth_url;
     } catch (e: any) {
       toast.error("Erro ao iniciar conexão", { description: e.message });
+    } finally {
       setConnecting(false);
     }
   };

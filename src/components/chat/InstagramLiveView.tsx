@@ -93,8 +93,8 @@ export function InstagramLiveView({ tenantId }: Props) {
       <div className="flex-1 flex flex-col bg-background">
         <div className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center">
-              <Radio className="h-4 w-4 text-red-500" />
+            <div className="w-9 h-9 rounded-lg bg-destructive/10 flex items-center justify-center">
+              <Radio className="h-4 w-4 text-destructive" />
             </div>
             <div>
               <h2 className="text-base font-semibold">Lives ao vivo</h2>
@@ -122,8 +122,8 @@ export function InstagramLiveView({ tenantId }: Props) {
     <div className="flex-1 flex flex-col bg-background min-w-0">
       <div className="border-b border-border px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-red-500 flex items-center justify-center animate-pulse">
-            <Radio className="h-4 w-4 text-white" />
+          <div className="w-9 h-9 rounded-lg bg-destructive flex items-center justify-center animate-pulse">
+            <Radio className="h-4 w-4 text-destructive-foreground" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -186,7 +186,7 @@ export function InstagramLiveView({ tenantId }: Props) {
                     <Badge variant="outline" className="text-xs">Filtrado</Badge>
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground">{formatSP(c.created_at)}</span>
+                <span className="text-xs text-muted-foreground">{formatSP(c.created_at, "HH:mm:ss")}</span>
               </div>
               <p className="text-sm">{c.content}</p>
               {c.reply_content && (

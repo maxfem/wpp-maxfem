@@ -101,8 +101,8 @@ export function InstagramCommentsView({ tenantId }: Props) {
     <div className="flex-1 flex flex-col bg-background min-w-0">
       <div className="border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-            <MessageCircle className="h-4 w-4 text-white" />
+          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+            <MessageCircle className="h-4 w-4 text-primary-foreground" />
           </div>
           <div>
             <h2 className="text-base font-semibold">Comentários do Instagram</h2>
@@ -142,7 +142,7 @@ export function InstagramCommentsView({ tenantId }: Props) {
                     <Badge variant="outline" className="text-xs">Resposta</Badge>
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground">{formatSP(c.created_at)}</span>
+                <span className="text-xs text-muted-foreground">{formatSP(c.created_at, "dd/MM HH:mm")}</span>
               </div>
               <p className="text-sm mb-3">{c.content || <span className="text-muted-foreground italic">[sem texto]</span>}</p>
               <div className="flex items-center gap-2 flex-wrap">

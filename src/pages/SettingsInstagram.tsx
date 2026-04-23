@@ -301,6 +301,37 @@ export default function SettingsInstagram() {
           )}
         </div>
 
+        <Card className="bg-amber-500/5 border-amber-500/30">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              Configuração obrigatória no Meta App
+            </CardTitle>
+            <CardDescription>
+              Antes de conectar, você precisa cadastrar este URL como <strong>Valid OAuth Redirect URI</strong> no painel da Meta.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="bg-background border rounded-md p-3 font-mono text-xs break-all select-all">
+              {window.location.origin}/settings/instagram
+            </div>
+            <div className="text-muted-foreground space-y-1">
+              <p>📍 Caminho no Meta Dashboard:</p>
+              <p className="pl-4">
+                <strong>Meu App</strong> → <strong>Login do Facebook para empresas</strong> → <strong>Configurações</strong> → <strong>URIs de redirecionamento OAuth válidos</strong>
+              </p>
+            </div>
+            <a
+              href="https://developers.facebook.com/apps/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              Abrir painel Meta for Developers <ExternalLink className="h-3 w-3" />
+            </a>
+          </CardContent>
+        </Card>
+
         <Card className="bg-muted/40">
           <CardHeader>
             <CardTitle className="text-base">Pré-requisitos</CardTitle>
@@ -309,6 +340,7 @@ export default function SettingsInstagram() {
             <p>1. Sua conta IG deve ser <strong>Business ou Creator</strong>.</p>
             <p>2. A conta IG precisa estar <strong>vinculada a uma Página do Facebook</strong>.</p>
             <p>3. As permissões da Meta precisam estar aprovadas: <code className="text-xs">instagram_basic</code>, <code className="text-xs">instagram_manage_messages</code>, <code className="text-xs">instagram_manage_comments</code>.</p>
+            <p>4. O produto <strong>Login do Facebook para empresas</strong> precisa estar adicionado ao app.</p>
             <a
               href="https://www.facebook.com/business/help/898752960195806"
               target="_blank"

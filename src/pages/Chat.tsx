@@ -498,89 +498,140 @@ export default function Chat() {
     toast.success(`Conversa ${labels[status].toLowerCase()}`);
   }, [selectedConv, updateCustomerAttr]);
 
+  const viewTabs: { id: ChatView; label: string; icon: typeof MessageSquare; badge?: number; live?: boolean }[] = [
+    { id: "conversations", label: "Conversas", icon: MessageSquare },
+    { id: "comments", label: "Comentários", icon: MessageCircle, badge: pendingCommentsCount },
+    { id: "live", label: "Live", icon: Radio, badge: liveActiveCount, live: liveActiveCount > 0 },
+  ];
+
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)] animate-fade-in">
-        {/* Sidebar: hide on mobile when a conversation is selected */}
-        {(!isMobile || !selectedPhoneKey) && (
-          <ChatSidebar
-            conversations={conversations}
-            selectedPhoneKey={selectedPhoneKey}
-            onSelectConversation={(key) => {
-              setSelectedPhoneKey(key);
-              setSearchInChat(false);
-            }}
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            dateFilter={dateFilter}
-            onDateFilterChange={setDateFilter}
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            channelFilter={channelFilter}
-            onChannelFilterChange={setChannelFilter}
-            channelCounts={channelCounts}
-            isMobile={isMobile}
-          />
-        )}
+      <div className="flex flex-col h-[calc(100vh-4rem)] animate-fade-in">
+        {/* View tabs (Conversas / Comentários / Live) */}
+        <div className="border-b border-border bg-card px-2 flex items-center gap-1 shrink-0">
+          {viewTabs.map((t) => {
+            const Icon = t.icon;
+            const isActive = view === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setView(t.id)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                  isActive
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Icon className={cn("h-4 w-4", t.live && "text-destructive animate-pulse")} />
+                {t.label}
+                {t.badge && t.badge > 0 ? (
+                  <span className={cn(
+                    "ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold",
+                    t.live ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"
+                  )}>
+                    {t.badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
 
-        {/* Chat area: on mobile only show when conversation selected */}
-        {(!isMobile || selectedPhoneKey) && (
-        <div className="flex-1 flex flex-col bg-background min-w-0">
-          {!selectedPhoneKey ? (
-            <div className="flex-1 flex items-center justify-center bg-accent/20">
-              <div className="text-center">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h2 className="text-lg font-semibold text-foreground mb-1">Atendimento</h2>
-                <p className="text-sm text-muted-foreground">
-                  Selecione uma conversa para começar
-                </p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  {conversations.length} conversas ativas
-                </p>
-              </div>
-            </div>
-          ) : (
+        <div className="flex flex-1 min-h-0">
+          {view === "conversations" && (
             <>
-              <ChatHeader
-                conversation={selectedConv}
-                showContactPanel={showContactPanel}
-                onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
-                onSearchInChat={() => setSearchInChat(!searchInChat)}
-                onToggleFavorite={handleToggleFavorite}
-                onToggleMute={handleToggleMute}
-                onArchive={handleArchive}
-                onSetStatus={handleSetStatus}
-                onBack={isMobile ? () => setSelectedPhoneKey(null) : undefined}
-              />
-              <ChatMessageArea
-                messages={selectedMessages}
-                searchInChat={searchInChat}
-                onCloseSearch={() => setSearchInChat(false)}
-              />
-              <ChatInput
-                onSend={(msg) => sendMutation.mutate(msg)}
-                onSendMedia={(mediaType, mediaUrl, caption, filename) =>
-                  sendMediaMutation.mutate({ mediaType, mediaUrl, caption, filename })
-                }
-                disabled={sendMutation.isPending || sendMediaMutation.isPending}
-                tenantId={tenantId}
-              />
+              {/* Sidebar: hide on mobile when a conversation is selected */}
+              {(!isMobile || !selectedPhoneKey) && (
+                <ChatSidebar
+                  conversations={conversations}
+                  selectedPhoneKey={selectedPhoneKey}
+                  onSelectConversation={(key) => {
+                    setSelectedPhoneKey(key);
+                    setSearchInChat(false);
+                  }}
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  dateFilter={dateFilter}
+                  onDateFilterChange={setDateFilter}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                  channelFilter={channelFilter}
+                  onChannelFilterChange={setChannelFilter}
+                  channelCounts={channelCounts}
+                  isMobile={isMobile}
+                />
+              )}
+
+              {/* Chat area: on mobile only show when conversation selected */}
+              {(!isMobile || selectedPhoneKey) && (
+              <div className="flex-1 flex flex-col bg-background min-w-0">
+                {!selectedPhoneKey ? (
+                  <div className="flex-1 flex items-center justify-center bg-accent/20">
+                    <div className="text-center">
+                      <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                        <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <h2 className="text-lg font-semibold text-foreground mb-1">Atendimento</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Selecione uma conversa para começar
+                      </p>
+                      <p className="text-xs text-muted-foreground/60 mt-1">
+                        {conversations.length} conversas ativas
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ChatHeader
+                      conversation={selectedConv}
+                      showContactPanel={showContactPanel}
+                      onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
+                      onSearchInChat={() => setSearchInChat(!searchInChat)}
+                      onToggleFavorite={handleToggleFavorite}
+                      onToggleMute={handleToggleMute}
+                      onArchive={handleArchive}
+                      onSetStatus={handleSetStatus}
+                      onBack={isMobile ? () => setSelectedPhoneKey(null) : undefined}
+                    />
+                    <ChatMessageArea
+                      messages={selectedMessages}
+                      searchInChat={searchInChat}
+                      onCloseSearch={() => setSearchInChat(false)}
+                    />
+                    <ChatInput
+                      onSend={(msg) => sendMutation.mutate(msg)}
+                      onSendMedia={(mediaType, mediaUrl, caption, filename) =>
+                        sendMediaMutation.mutate({ mediaType, mediaUrl, caption, filename })
+                      }
+                      disabled={sendMutation.isPending || sendMediaMutation.isPending}
+                      tenantId={tenantId}
+                    />
+                  </>
+                )}
+              </div>
+              )}
+
+              {/* Contact Info Panel */}
+              {showContactPanel && selectedPhoneKey && (
+                <ContactInfoPanel
+                  conversation={selectedConv}
+                  messages={selectedMessages}
+                  customer={selectedCustomer}
+                  orders={customerOrders}
+                />
+              )}
             </>
           )}
-        </div>
-        )}
 
-        {/* Contact Info Panel */}
-        {showContactPanel && selectedPhoneKey && (
-          <ContactInfoPanel
-            conversation={selectedConv}
-            messages={selectedMessages}
-            customer={selectedCustomer}
-            orders={customerOrders}
-          />
-        )}
+          {view === "comments" && tenantId && (
+            <InstagramCommentsView tenantId={tenantId} />
+          )}
+
+          {view === "live" && tenantId && (
+            <InstagramLiveView tenantId={tenantId} />
+          )}
+        </div>
       </div>
     </AppLayout>
   );

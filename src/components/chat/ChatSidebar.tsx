@@ -7,10 +7,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, MessageSquare, X, Inbox, Plus, MessagesSquare,
   AtSign, UserX, FolderOpen, Users, ChevronDown, ChevronRight,
-  SlidersHorizontal
+  SlidersHorizontal, Instagram
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Conversation, DateFilter, StatusFilter, SidebarTab } from "./types";
+import { Conversation, DateFilter, StatusFilter, SidebarTab, ChannelFilter } from "./types";
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +26,9 @@ interface ChatSidebarProps {
   onDateFilterChange: (value: DateFilter) => void;
   statusFilter: StatusFilter;
   onStatusFilterChange: (value: StatusFilter) => void;
+  channelFilter?: ChannelFilter;
+  onChannelFilterChange?: (value: ChannelFilter) => void;
+  channelCounts?: { all: number; whatsapp: number; instagram: number };
   onNewChat?: () => void;
   isMobile?: boolean;
 }

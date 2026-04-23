@@ -123,10 +123,11 @@ export default function SettingsInstagram() {
   };
 
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: boolean }) => {
+    mutationFn: async ({ id, field, value }: { id: string; field: "auto_reply_dms" | "auto_reply_comments" | "auto_reply_lives" | "is_active"; value: boolean }) => {
+      const update: Record<string, boolean> = { [field]: value };
       const { error } = await supabase
         .from("instagram_accounts")
-        .update({ [field]: value })
+        .update(update as any)
         .eq("id", id);
       if (error) throw error;
     },

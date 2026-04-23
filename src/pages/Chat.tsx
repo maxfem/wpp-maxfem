@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, MessageCircle, Radio } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
@@ -11,7 +11,12 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ContactInfoPanel } from "@/components/chat/ContactInfoPanel";
+import { InstagramCommentsView } from "@/components/chat/InstagramCommentsView";
+import { InstagramLiveView } from "@/components/chat/InstagramLiveView";
 import { Message, Conversation, DateFilter, StatusFilter, ChannelFilter } from "@/components/chat/types";
+import { cn } from "@/lib/utils";
+
+type ChatView = "conversations" | "comments" | "live";
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 
@@ -25,9 +30,43 @@ export default function Chat() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [searchInChat, setSearchInChat] = useState(false);
+  const [view, setView] = useState<ChatView>("conversations");
 
   const isMobile = useIsMobile();
   const tenantId = currentTenant?.id;
+
+  // Detect any active Instagram Live for this tenant (drives the "Live" tab badge)
+  const { data: liveActiveCount = 0 } = useQuery({
+    queryKey: ["ig-live-active-count", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return 0;
+      const { count } = await supabase
+        .from("instagram_accounts")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .not("live_active_id", "is", null);
+      return count || 0;
+    },
+    enabled: !!tenantId,
+    refetchInterval: 20000,
+  });
+
+  // Pending IG comments count
+  const { data: pendingCommentsCount = 0 } = useQuery({
+    queryKey: ["ig-pending-comments-count", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return 0;
+      const { count } = await supabase
+        .from("instagram_comments")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("replied", false);
+      return count || 0;
+    },
+    enabled: !!tenantId,
+    refetchInterval: 30000,
+  });
 
   // Fetch WhatsApp messages
   const { data: waMessages = [] } = useQuery({
@@ -459,89 +498,140 @@ export default function Chat() {
     toast.success(`Conversa ${labels[status].toLowerCase()}`);
   }, [selectedConv, updateCustomerAttr]);
 
+  const viewTabs: { id: ChatView; label: string; icon: typeof MessageSquare; badge?: number; live?: boolean }[] = [
+    { id: "conversations", label: "Conversas", icon: MessageSquare },
+    { id: "comments", label: "Comentários", icon: MessageCircle, badge: pendingCommentsCount },
+    { id: "live", label: "Live", icon: Radio, badge: liveActiveCount, live: liveActiveCount > 0 },
+  ];
+
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)] animate-fade-in">
-        {/* Sidebar: hide on mobile when a conversation is selected */}
-        {(!isMobile || !selectedPhoneKey) && (
-          <ChatSidebar
-            conversations={conversations}
-            selectedPhoneKey={selectedPhoneKey}
-            onSelectConversation={(key) => {
-              setSelectedPhoneKey(key);
-              setSearchInChat(false);
-            }}
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            dateFilter={dateFilter}
-            onDateFilterChange={setDateFilter}
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            channelFilter={channelFilter}
-            onChannelFilterChange={setChannelFilter}
-            channelCounts={channelCounts}
-            isMobile={isMobile}
-          />
-        )}
+      <div className="flex flex-col h-[calc(100vh-4rem)] animate-fade-in">
+        {/* View tabs (Conversas / Comentários / Live) */}
+        <div className="border-b border-border bg-card px-2 flex items-center gap-1 shrink-0">
+          {viewTabs.map((t) => {
+            const Icon = t.icon;
+            const isActive = view === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setView(t.id)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                  isActive
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Icon className={cn("h-4 w-4", t.live && "text-destructive animate-pulse")} />
+                {t.label}
+                {t.badge && t.badge > 0 ? (
+                  <span className={cn(
+                    "ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold",
+                    t.live ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"
+                  )}>
+                    {t.badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
 
-        {/* Chat area: on mobile only show when conversation selected */}
-        {(!isMobile || selectedPhoneKey) && (
-        <div className="flex-1 flex flex-col bg-background min-w-0">
-          {!selectedPhoneKey ? (
-            <div className="flex-1 flex items-center justify-center bg-accent/20">
-              <div className="text-center">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h2 className="text-lg font-semibold text-foreground mb-1">Atendimento</h2>
-                <p className="text-sm text-muted-foreground">
-                  Selecione uma conversa para começar
-                </p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  {conversations.length} conversas ativas
-                </p>
-              </div>
-            </div>
-          ) : (
+        <div className="flex flex-1 min-h-0">
+          {view === "conversations" && (
             <>
-              <ChatHeader
-                conversation={selectedConv}
-                showContactPanel={showContactPanel}
-                onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
-                onSearchInChat={() => setSearchInChat(!searchInChat)}
-                onToggleFavorite={handleToggleFavorite}
-                onToggleMute={handleToggleMute}
-                onArchive={handleArchive}
-                onSetStatus={handleSetStatus}
-                onBack={isMobile ? () => setSelectedPhoneKey(null) : undefined}
-              />
-              <ChatMessageArea
-                messages={selectedMessages}
-                searchInChat={searchInChat}
-                onCloseSearch={() => setSearchInChat(false)}
-              />
-              <ChatInput
-                onSend={(msg) => sendMutation.mutate(msg)}
-                onSendMedia={(mediaType, mediaUrl, caption, filename) =>
-                  sendMediaMutation.mutate({ mediaType, mediaUrl, caption, filename })
-                }
-                disabled={sendMutation.isPending || sendMediaMutation.isPending}
-                tenantId={tenantId}
-              />
+              {/* Sidebar: hide on mobile when a conversation is selected */}
+              {(!isMobile || !selectedPhoneKey) && (
+                <ChatSidebar
+                  conversations={conversations}
+                  selectedPhoneKey={selectedPhoneKey}
+                  onSelectConversation={(key) => {
+                    setSelectedPhoneKey(key);
+                    setSearchInChat(false);
+                  }}
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  dateFilter={dateFilter}
+                  onDateFilterChange={setDateFilter}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                  channelFilter={channelFilter}
+                  onChannelFilterChange={setChannelFilter}
+                  channelCounts={channelCounts}
+                  isMobile={isMobile}
+                />
+              )}
+
+              {/* Chat area: on mobile only show when conversation selected */}
+              {(!isMobile || selectedPhoneKey) && (
+              <div className="flex-1 flex flex-col bg-background min-w-0">
+                {!selectedPhoneKey ? (
+                  <div className="flex-1 flex items-center justify-center bg-accent/20">
+                    <div className="text-center">
+                      <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                        <MessageSquare className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                      <h2 className="text-lg font-semibold text-foreground mb-1">Atendimento</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Selecione uma conversa para começar
+                      </p>
+                      <p className="text-xs text-muted-foreground/60 mt-1">
+                        {conversations.length} conversas ativas
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ChatHeader
+                      conversation={selectedConv}
+                      showContactPanel={showContactPanel}
+                      onToggleContactPanel={() => setShowContactPanel(!showContactPanel)}
+                      onSearchInChat={() => setSearchInChat(!searchInChat)}
+                      onToggleFavorite={handleToggleFavorite}
+                      onToggleMute={handleToggleMute}
+                      onArchive={handleArchive}
+                      onSetStatus={handleSetStatus}
+                      onBack={isMobile ? () => setSelectedPhoneKey(null) : undefined}
+                    />
+                    <ChatMessageArea
+                      messages={selectedMessages}
+                      searchInChat={searchInChat}
+                      onCloseSearch={() => setSearchInChat(false)}
+                    />
+                    <ChatInput
+                      onSend={(msg) => sendMutation.mutate(msg)}
+                      onSendMedia={(mediaType, mediaUrl, caption, filename) =>
+                        sendMediaMutation.mutate({ mediaType, mediaUrl, caption, filename })
+                      }
+                      disabled={sendMutation.isPending || sendMediaMutation.isPending}
+                      tenantId={tenantId}
+                    />
+                  </>
+                )}
+              </div>
+              )}
+
+              {/* Contact Info Panel */}
+              {showContactPanel && selectedPhoneKey && (
+                <ContactInfoPanel
+                  conversation={selectedConv}
+                  messages={selectedMessages}
+                  customer={selectedCustomer}
+                  orders={customerOrders}
+                />
+              )}
             </>
           )}
-        </div>
-        )}
 
-        {/* Contact Info Panel */}
-        {showContactPanel && selectedPhoneKey && (
-          <ContactInfoPanel
-            conversation={selectedConv}
-            messages={selectedMessages}
-            customer={selectedCustomer}
-            orders={customerOrders}
-          />
-        )}
+          {view === "comments" && tenantId && (
+            <InstagramCommentsView tenantId={tenantId} />
+          )}
+
+          {view === "live" && tenantId && (
+            <InstagramLiveView tenantId={tenantId} />
+          )}
+        </div>
       </div>
     </AppLayout>
   );

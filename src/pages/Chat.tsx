@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, MessageCircle, Radio } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
@@ -11,7 +11,12 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ContactInfoPanel } from "@/components/chat/ContactInfoPanel";
+import { InstagramCommentsView } from "@/components/chat/InstagramCommentsView";
+import { InstagramLiveView } from "@/components/chat/InstagramLiveView";
 import { Message, Conversation, DateFilter, StatusFilter, ChannelFilter } from "@/components/chat/types";
+import { cn } from "@/lib/utils";
+
+type ChatView = "conversations" | "comments" | "live";
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 
@@ -25,9 +30,43 @@ export default function Chat() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [searchInChat, setSearchInChat] = useState(false);
+  const [view, setView] = useState<ChatView>("conversations");
 
   const isMobile = useIsMobile();
   const tenantId = currentTenant?.id;
+
+  // Detect any active Instagram Live for this tenant (drives the "Live" tab badge)
+  const { data: liveActiveCount = 0 } = useQuery({
+    queryKey: ["ig-live-active-count", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return 0;
+      const { count } = await supabase
+        .from("instagram_accounts")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .not("live_active_id", "is", null);
+      return count || 0;
+    },
+    enabled: !!tenantId,
+    refetchInterval: 20000,
+  });
+
+  // Pending IG comments count
+  const { data: pendingCommentsCount = 0 } = useQuery({
+    queryKey: ["ig-pending-comments-count", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return 0;
+      const { count } = await supabase
+        .from("instagram_comments")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("replied", false);
+      return count || 0;
+    },
+    enabled: !!tenantId,
+    refetchInterval: 30000,
+  });
 
   // Fetch WhatsApp messages
   const { data: waMessages = [] } = useQuery({

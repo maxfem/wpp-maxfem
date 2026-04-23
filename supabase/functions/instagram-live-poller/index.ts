@@ -158,13 +158,13 @@ Deno.serve(async (req) => {
       if (perAccountReplied > 0) await new Promise((r) => setTimeout(r, 5000));
 
       const ok = await callInstagramSend({
-        type: "live_reply",
+        mode: "auto_reply",
+        tenant_id: acc.tenant_id,
         ig_account_id: acc.id,
-        live_id: acc.live_active_id,
+        channel: "live",
         comment_id: c.id,
-        from_username: c.from?.username,
-        incoming: text,
-        use_copilot: true,
+        username: c.from?.username,
+        incoming_text: text,
       });
 
       if (ok) {

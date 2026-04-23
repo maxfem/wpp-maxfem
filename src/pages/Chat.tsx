@@ -11,7 +11,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ContactInfoPanel } from "@/components/chat/ContactInfoPanel";
-import { Message, Conversation, DateFilter, StatusFilter } from "@/components/chat/types";
+import { Message, Conversation, DateFilter, StatusFilter, ChannelFilter } from "@/components/chat/types";
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 
@@ -22,14 +22,15 @@ export default function Chat() {
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [searchInChat, setSearchInChat] = useState(false);
 
   const isMobile = useIsMobile();
   const tenantId = currentTenant?.id;
 
-  // Fetch messages
-  const { data: allMessages = [] } = useQuery({
+  // Fetch WhatsApp messages
+  const { data: waMessages = [] } = useQuery({
     queryKey: ["whatsapp-messages", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
@@ -40,12 +41,56 @@ export default function Chat() {
         .order("created_at", { ascending: false })
         .limit(1000);
       if (error) throw error;
-      return data as Message[];
+      return (data || []).map((m: any) => ({ ...m, channel: "whatsapp" as const })) as Message[];
     },
     enabled: !!tenantId,
     staleTime: 30000,
     refetchInterval: 30000,
   });
+
+  // Fetch Instagram DMs
+  const { data: igMessages = [] } = useQuery({
+    queryKey: ["instagram-messages", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const { data, error } = await supabase
+        .from("instagram_messages")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      if (error) {
+        console.error("ig messages fetch:", error);
+        return [];
+      }
+      // adapt IG msg shape to Message interface (use ig_user_id as phone-equivalent key)
+      return (data || []).map((m: any) => ({
+        id: m.id,
+        phone: m.ig_user_id, // used as conversation key
+        direction: m.direction,
+        message_type: m.message_type,
+        content: m.content,
+        status: m.status,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        customer_id: m.customer_id,
+        tenant_id: m.tenant_id,
+        wamid: m.message_id,
+        template_name: null,
+        media_url: m.media_url,
+        metadata: m.metadata,
+        channel: "instagram" as const,
+        ig_account_id: m.ig_account_id,
+        ig_user_id: m.ig_user_id,
+        username: m.username,
+      })) as Message[];
+    },
+    enabled: !!tenantId,
+    staleTime: 30000,
+    refetchInterval: 30000,
+  });
+
+  const allMessages = useMemo(() => [...waMessages, ...igMessages], [waMessages, igMessages]);
 
   // Fetch customers
   const { data: customers = [] } = useQuery({
@@ -61,18 +106,21 @@ export default function Chat() {
     enabled: !!tenantId,
   });
 
+  // Compute conversation key (phone for WA, ig_user_id for IG, prefixed)
+  const conversationKey = (m: Message) =>
+    m.channel === "instagram" ? `ig:${m.ig_user_id}` : `wa:${normalizePhone(m.phone)}`;
+
   // Fetch orders for selected customer
   const selectedCustomerId = useMemo(() => {
     if (!selectedPhoneKey) return null;
-
-    const conv = allMessages.find((m) => normalizePhone(m.phone) === selectedPhoneKey);
+    const conv = allMessages.find((m) => conversationKey(m) === selectedPhoneKey);
     if (conv?.customer_id) return conv.customer_id;
-
-    const matchedCustomer = customers.find(
-      (customer) => customer.phone && normalizePhone(customer.phone) === selectedPhoneKey
-    );
-
-    return matchedCustomer?.id || null;
+    if (selectedPhoneKey.startsWith("wa:")) {
+      const phoneKey = selectedPhoneKey.slice(3);
+      const matched = customers.find((c) => c.phone && normalizePhone(c.phone) === phoneKey);
+      return matched?.id || null;
+    }
+    return null;
   }, [selectedPhoneKey, allMessages, customers]);
 
   const { data: customerOrders = [] } = useQuery({
@@ -91,7 +139,6 @@ export default function Chat() {
     enabled: !!selectedCustomerId && !!tenantId,
   });
 
-  // Build conversations
   // Build a map of customer attributes by phone
   const customerAttrMap = useMemo(() => {
     const map = new Map<string, any>();
@@ -115,16 +162,23 @@ export default function Chat() {
     });
 
     for (const msg of allMessages) {
-      const phoneKey = normalizePhone(msg.phone);
-      const existing = map.get(phoneKey);
-      const attrs = customerAttrMap.get(phoneKey) || {};
-      const matchedCustomer = customerMap.get(phoneKey);
+      const key = conversationKey(msg);
+      const existing = map.get(key);
+
+      const isIG = msg.channel === "instagram";
+      const phoneKeyClean = isIG ? msg.ig_user_id! : normalizePhone(msg.phone);
+      const attrs = isIG ? {} : customerAttrMap.get(phoneKeyClean) || {};
+      const matchedCustomer = isIG ? null : customerMap.get(phoneKeyClean);
+
+      const displayName = isIG
+        ? (msg.username ? `@${msg.username}` : `IG ${msg.ig_user_id?.slice(-6)}`)
+        : (matchedCustomer?.name || msg.phone);
 
       if (!existing) {
-        map.set(phoneKey, {
+        map.set(key, {
           phone: msg.phone,
-          phoneKey,
-          customerName: matchedCustomer?.name || msg.phone,
+          phoneKey: key,
+          customerName: displayName,
           customerId: msg.customer_id || matchedCustomer?.id || null,
           lastMessage: msg.content || `[${msg.message_type}]`,
           lastMessageAt: msg.created_at,
@@ -134,6 +188,10 @@ export default function Chat() {
           isMuted: !!attrs.is_muted,
           isArchived: !!attrs.is_archived,
           conversationStatus: attrs.conversation_status || "open",
+          channel: isIG ? "instagram" : "whatsapp",
+          igAccountId: msg.ig_account_id || null,
+          igUserId: msg.ig_user_id || null,
+          username: msg.username || null,
         });
         continue;
       }
@@ -161,6 +219,10 @@ export default function Chat() {
         (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
       );
 
+    if (channelFilter !== "all") {
+      convs = convs.filter((c) => c.channel === channelFilter);
+    }
+
     if (dateFilter !== "all") {
       const now = new Date();
       const cutoff = new Date();
@@ -183,12 +245,26 @@ export default function Chat() {
     }
 
     return convs;
-  }, [allMessages, customers, customerAttrMap, searchTerm, dateFilter, statusFilter]);
+  }, [allMessages, customers, customerAttrMap, searchTerm, dateFilter, statusFilter, channelFilter]);
+
+  // Channel counts for tabs
+  const channelCounts = useMemo(() => {
+    const all = Array.from(
+      new Map(
+        allMessages.map((m) => [conversationKey(m), m])
+      ).values()
+    );
+    return {
+      all: all.length,
+      whatsapp: all.filter((m) => m.channel !== "instagram").length,
+      instagram: all.filter((m) => m.channel === "instagram").length,
+    };
+  }, [allMessages]);
 
   const selectedMessages = useMemo(
     () =>
       allMessages
-        .filter((m) => normalizePhone(m.phone) === selectedPhoneKey)
+        .filter((m) => conversationKey(m) === selectedPhoneKey)
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
     [allMessages, selectedPhoneKey]
   );
@@ -200,18 +276,18 @@ export default function Chat() {
     if (selectedConv?.customerId) {
       return customers.find((c) => c.id === selectedConv.customerId) || null;
     }
-
-    if (!selectedConv?.phoneKey) return null;
-
-    return (
-      customers.find((c) => c.phone && normalizePhone(c.phone) === selectedConv.phoneKey) || null
-    );
+    if (!selectedConv) return null;
+    if (selectedConv.channel === "whatsapp") {
+      const phoneKey = selectedConv.phoneKey.slice(3);
+      return customers.find((c) => c.phone && normalizePhone(c.phone) === phoneKey) || null;
+    }
+    return null;
   }, [selectedConv, customers]);
 
-  // Realtime
+  // Realtime: WhatsApp + Instagram
   useEffect(() => {
     if (!tenantId) return;
-    const channel = supabase
+    const waChan = supabase
       .channel("whatsapp-realtime")
       .on(
         "postgres_changes",
@@ -221,7 +297,20 @@ export default function Chat() {
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const igChan = supabase
+      .channel("instagram-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "instagram_messages", filter: `tenant_id=eq.${tenantId}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["instagram-messages", tenantId] });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(waChan);
+      supabase.removeChannel(igChan);
+    };
   }, [tenantId, queryClient]);
 
   // Helper to extract structured error from edge function FunctionsHttpError
@@ -266,17 +355,33 @@ export default function Chat() {
     });
   };
 
-  // Send text message
+  // Send text message — routes by channel
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      if (!selectedPhoneKey || !tenantId) throw new Error("No conversation selected");
-      const conv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
+      if (!selectedPhoneKey || !tenantId || !selectedConv) throw new Error("No conversation selected");
+
+      if (selectedConv.channel === "instagram") {
+        const { data, error } = await supabase.functions.invoke("instagram-send", {
+          body: {
+            mode: "manual",
+            tenant_id: tenantId,
+            ig_account_id: selectedConv.igAccountId,
+            ig_user_id: selectedConv.igUserId,
+            username: selectedConv.username,
+            channel: "dm",
+            message,
+          },
+        });
+        if (error) throw error;
+        return data;
+      }
+
       const { data, error } = await supabase.functions.invoke("whatsapp-send", {
         body: {
-          phone: conv?.phone || "",
+          phone: selectedConv.phone || "",
           message,
           tenant_id: tenantId,
-          customer_id: conv?.customerId || null,
+          customer_id: selectedConv.customerId || null,
         },
       });
       if (error) throw error;
@@ -284,21 +389,24 @@ export default function Chat() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-messages", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["instagram-messages", tenantId] });
     },
     onError: handleSendError,
   });
 
-  // Send media message
+  // Send media message (WhatsApp only for now)
   const sendMediaMutation = useMutation({
     mutationFn: async ({ mediaType, mediaUrl, caption, filename }: { mediaType: string; mediaUrl: string; caption: string; filename?: string }) => {
-      if (!selectedPhoneKey || !tenantId) throw new Error("No conversation selected");
-      const conv = conversations.find((c) => c.phoneKey === selectedPhoneKey);
+      if (!selectedPhoneKey || !tenantId || !selectedConv) throw new Error("No conversation selected");
+      if (selectedConv.channel === "instagram") {
+        throw new Error("Envio de mídia em Instagram DM ainda não disponível");
+      }
       const { data, error } = await supabase.functions.invoke("whatsapp-send", {
         body: {
-          phone: conv?.phone || "",
+          phone: selectedConv.phone || "",
           message: caption || undefined,
           tenant_id: tenantId,
-          customer_id: conv?.customerId || null,
+          customer_id: selectedConv.customerId || null,
           media_type: mediaType,
           media_url: mediaUrl,
           filename,
@@ -369,6 +477,9 @@ export default function Chat() {
             onDateFilterChange={setDateFilter}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
+            channelFilter={channelFilter}
+            onChannelFilterChange={setChannelFilter}
+            channelCounts={channelCounts}
             isMobile={isMobile}
           />
         )}

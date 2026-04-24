@@ -55,6 +55,9 @@ export default function SettingsInstagram() {
   const [connecting, setConnecting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<StartDiagnostics | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [reconnectAccount, setReconnectAccount] = useState<IgAccount | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [showToken, setShowToken] = useState(false);
 
   // Handle OAuth callback
   useEffect(() => {

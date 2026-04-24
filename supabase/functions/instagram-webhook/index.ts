@@ -95,6 +95,166 @@ async function resolveCustomerByIgUser(
   return created;
 }
 
+// ── Comment-Rules engine (ManyChat-style) ─────────────────────────
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function matchesKeywords(rule: any, text: string): { ok: boolean; term?: string } {
+  const content = normalize(text);
+  if (!content) return { ok: false };
+  const kws = (rule.keywords || []) as string[];
+  for (const raw of kws) {
+    const k = normalize(raw);
+    if (!k) continue;
+    if (rule.match_mode === "exact") {
+      const re = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (re.test(content)) return { ok: true, term: raw };
+    } else {
+      if (content.includes(k)) return { ok: true, term: raw };
+    }
+  }
+  return { ok: false };
+}
+
+async function aiIntentMatch(rule: any, text: string): Promise<boolean> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) return false;
+  try {
+    const sys = `Você é um classificador binário. Decida se o COMENTÁRIO indica a mesma intenção da REGRA. Responda SOMENTE com "yes" ou "no".\nREGRA: ${rule.name}\nPALAVRAS-CHAVE: ${(rule.keywords || []).join(", ")}\nRESPOSTA PÚBLICA DA REGRA: ${rule.public_reply_text}`;
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: text },
+        ],
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const ans = (data.choices?.[0]?.message?.content || "").toLowerCase().trim();
+    return ans.startsWith("y");
+  } catch (e) {
+    console.error("[ig-webhook] aiIntentMatch error:", e);
+    return false;
+  }
+}
+
+async function evaluateAndRunRules(opts: {
+  account: any;
+  channel: "comment" | "live";
+  text: string;
+  comment_id: string;
+  post_id?: string;
+  from_ig_user_id?: string;
+  from_username?: string;
+  permalink?: string;
+}): Promise<boolean> {
+  const { account, channel, text, comment_id, post_id, from_ig_user_id, from_username, permalink } = opts;
+  if (!text) return false;
+
+  const { data: rules } = await supabase
+    .from("instagram_comment_rules")
+    .select("*")
+    .eq("ig_account_id", account.id)
+    .eq("is_active", true);
+
+  if (!rules || rules.length === 0) return false;
+
+  // Filter by scope
+  const candidates = rules.filter((r: any) => {
+    if (r.scope === "all") return true;
+    if (r.scope === "posts") return channel === "comment";
+    if (r.scope === "lives") return channel === "live";
+    if (r.scope === "specific")
+      return channel === "comment" && post_id && (r.post_ids || []).includes(post_id);
+    return false;
+  });
+
+  for (const rule of candidates) {
+    // Dedup
+    const { data: existing } = await supabase
+      .from("instagram_rule_executions")
+      .select("id")
+      .eq("rule_id", rule.id)
+      .eq("comment_id", comment_id)
+      .maybeSingle();
+    if (existing) continue;
+
+    // Match
+    let matched_by: "keyword" | "ai" | null = null;
+    let matched_term: string | undefined;
+    const kw = matchesKeywords(rule, text);
+    if (kw.ok) {
+      matched_by = "keyword";
+      matched_term = kw.term;
+    } else if (rule.use_ai_intent) {
+      const ai = await aiIntentMatch(rule, text);
+      if (ai) matched_by = "ai";
+    }
+    if (!matched_by) continue;
+
+    // Cooldown / daily limit per user
+    if (from_ig_user_id) {
+      const since = new Date(Date.now() - (rule.cooldown_seconds || 60) * 1000).toISOString();
+      const { data: recent } = await supabase
+        .from("instagram_rule_executions")
+        .select("id")
+        .eq("rule_id", rule.id)
+        .eq("from_ig_user_id", from_ig_user_id)
+        .gte("created_at", since)
+        .limit(1);
+      if (recent && recent.length > 0) continue;
+
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const { count } = await supabase
+        .from("instagram_rule_executions")
+        .select("*", { count: "exact", head: true })
+        .eq("rule_id", rule.id)
+        .eq("from_ig_user_id", from_ig_user_id)
+        .gte("created_at", dayStart.toISOString());
+      if ((count || 0) >= (rule.daily_limit_per_user || 3)) continue;
+    }
+
+    // Fire rule via instagram-send (mode rule_reply)
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/instagram-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({
+          mode: "rule_reply",
+          tenant_id: account.tenant_id,
+          ig_account_id: account.id,
+          rule_id: rule.id,
+          channel,
+          comment_id,
+          post_id,
+          from_ig_user_id,
+          from_username,
+          matched_by,
+          matched_term,
+          context: { permalink, post_id },
+        }),
+      });
+      return true; // first matching rule wins
+    } catch (e) {
+      console.error("[ig-webhook] rule fire failed:", e);
+    }
+  }
+  return false;
+}
+
 async function triggerCopilotReply(params: {
   tenantId: string;
   ig_account_id: string;

@@ -11,6 +11,62 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// ── UTM helpers ────────────────────────────────────────────────────
+const STORE_DOMAIN = "https://maxfem.com.br";
+const DEFAULT_PRODUCT_URL = `${STORE_DOMAIN}/`;
+
+function buildUtmUrl(rawUrl: string, opts: { source?: string; medium?: string; campaign?: string; content?: string }) {
+  try {
+    const url = new URL(rawUrl);
+    const params = url.searchParams;
+    if (!params.has("utm_source")) params.set("utm_source", opts.source || "copilot");
+    if (!params.has("utm_medium")) params.set("utm_medium", opts.medium || "instagram");
+    if (!params.has("utm_campaign")) params.set("utm_campaign", opts.campaign || "comment_to_dm");
+    if (!params.has("utm_content")) params.set("utm_content", opts.content || "auto_reply");
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+// Heuristic: does the comment text express purchase intent?
+function isPurchaseIntent(text: string): boolean {
+  const t = text.toLowerCase();
+  const patterns = [
+    /\bcomprar?\b/, /\bcompro\b/, /\bquero\b/, /\bvalor(es)?\b/, /\bpre(ç|c)o\b/,
+    /\bquanto\s+(custa|é|sai)/, /\bonde\s+(comprar|encontro|acho)/, /\blink\b/,
+    /\bsite\b/, /\bdispon(í|i)vel\b/, /\bestoque\b/, /\btem\s+(pra|para)\s+vender/,
+    /como\s+(fa(ç|c)o|adquir|consig|pe(ç|c)o)/, /interessad[ao]/, /quero\s+um/,
+  ];
+  return patterns.some((p) => p.test(t));
+}
+
+// Try to find a relevant product URL based on incoming text using existing tracked_links / message_templates
+async function pickProductUrl(tenantId: string, incoming: string): Promise<string> {
+  const lower = incoming.toLowerCase();
+  // 1) Look at recent tracked_links for this tenant — pick the most-clicked matching keyword
+  const { data: links } = await supabase
+    .from("tracked_links")
+    .select("original_url")
+    .eq("tenant_id", tenantId)
+    .ilike("original_url", `%${STORE_DOMAIN.replace("https://", "")}%`)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (links?.length) {
+    // try to match a product slug present in the comment (e.g., "imunofem", "candidíase")
+    for (const l of links) {
+      try {
+        const slug = new URL(l.original_url).pathname.toLowerCase();
+        const tokens = slug.split(/[/\-_]+/).filter((t) => t.length > 3);
+        if (tokens.some((tk) => lower.includes(tk))) return l.original_url;
+      } catch { /* ignore */ }
+    }
+    return links[0].original_url;
+  }
+  return DEFAULT_PRODUCT_URL;
+}
+
 // ── Copilot: generate reply via Lovable AI (Gemini) ────────────────
 async function generateCopilotReply(opts: {
   tenantId: string;
@@ -18,6 +74,7 @@ async function generateCopilotReply(opts: {
   incoming: string;
   username?: string;
   context?: any;
+  forcePurchaseRedirect?: boolean;
 }): Promise<string | null> {
   // load tone from integrations table (gemini or openai)
   const { data: integ } = await supabase
@@ -33,12 +90,16 @@ async function generateCopilotReply(opts: {
   const tone = integ?.config?.tone || "amigável e prestativo";
   const customPrompt = integ?.config?.system_prompt || "";
 
-  const channelHint =
+  let channelHint =
     opts.channel === "live"
       ? "Você está respondendo um comentário em uma transmissão ao vivo do Instagram. Seja muito breve (máximo 1 frase, até 120 caracteres), use emojis e tom super informal."
       : opts.channel === "comment"
       ? "Você está respondendo um comentário público em um post do Instagram. Seja amigável, breve (máximo 2 frases), use 1-2 emojis."
       : "Você está respondendo uma DM do Instagram. Tom informal com emojis, máximo 4 frases.";
+
+  if (opts.forcePurchaseRedirect && opts.channel === "comment") {
+    channelHint = "Você está respondendo PUBLICAMENTE um comentário no Instagram em que a pessoa demonstrou interesse de compra. NÃO inclua link no comentário público. Apenas avise de forma breve e calorosa que você acabou de mandar o link no Direct (DM). Máximo 1-2 frases, use 1-2 emojis. Exemplo: 'Oba! Te mandei o link no Direct agora 💖✨'";
+  }
 
   const systemPrompt = `Você é um assistente de atendimento da loja. Tom: ${tone}.\n${channelHint}\n${customPrompt}\nNunca invente informações sobre pedidos.`;
 

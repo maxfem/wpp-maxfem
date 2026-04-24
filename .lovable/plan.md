@@ -1,59 +1,73 @@
-# Problema
+# Por que aparece "IG 169001" em vez do @usuário
 
-Na conversa de DM do Instagram, quando o cliente envia um CPF (ex: `117.488.176-39`), o Copilot responde de forma confusa ("Que número diferente é esse?") em vez de buscar o pedido no Bling, retornar status, código de rastreio e link.
+Hoje o painel de atendimento já tenta mostrar `@username` quando ele existe na tabela `instagram_messages`. O problema é que a coluna `username` está vindo **vazia para quase todas as conversas** (verificado direto no banco: só 1 conversa de ~30 tem username preenchido).
 
-# Causa raiz
+## Causa raiz
 
-Existem **dois Copilots distintos** no projeto, e o do Instagram DM não tem acesso às ferramentas de pedido:
+Em `instagram-webhook/index.ts`, a função `fetchIgUsername` faz a requisição **somente** em:
 
-| Copilot | Onde roda | Tem ferramenta de CPF/Bling? |
-|---|---|---|
-| `ai-copilot` (chat manual, painel de contato) | Sugestões manuais no chat | ✅ Sim — `lookup_orders_bling` + `lookup_orders_by_cpf` |
-| `generateCopilotReply` dentro de `instagram-send` (auto-reply de DM/comentário) | Resposta automática quando `auto_reply_dms = true` | ❌ Não — só prompt simples no Gemini, sem tool-calling |
+```
+https://graph.facebook.com/v22.0/{IGSID}?fields=username,name
+```
 
-O auto-reply do DM (`instagram-send` → `generateCopilotReply`) é um fetch direto ao Lovable AI sem `tools`, então o modelo nunca chama Bling, e ainda recebe a instrução "Nunca invente informações sobre pedidos" — daí a resposta vaga pedindo para o cliente repetir o que precisa.
+Essa rota funciona apenas quando o token é do tipo **Facebook Page Access Token (EAA...)**. A conta atual da Maxfem usa token de **Instagram Login (IGAA...)** — o mesmo problema de roteamento que já corrigimos em `instagram-send` na rodada anterior. Como a chamada falha, `username` salva como `null` e o front cai no fallback `IG 169001` (últimos 6 dígitos do IGSID).
+
+Além disso, mesmo quando a chamada funciona, hoje só rodamos para mensagens novas (inbound) — todas as conversas antigas continuam com `username = NULL`.
 
 # Solução
 
-Fazer o auto-reply do DM do Instagram usar o **mesmo motor `ai-copilot`** que já tem acesso ao Bling, em vez do `generateCopilotReply` simplificado.
+## 1. `supabase/functions/instagram-webhook/index.ts` — resolver username em qualquer tipo de token
 
-## Mudanças
+Reescrever `fetchIgUsername` para tentar, em ordem, todos os endpoints válidos da Meta e devolver o primeiro que responder:
 
-### 1. `supabase/functions/instagram-send/index.ts`
-- Quando `mode === "auto_reply"` e `channel === "dm"`, **substituir** a chamada a `generateCopilotReply` por uma chamada ao edge function `ai-copilot` (via fetch interno com service role).
-- Carregar as últimas ~15 mensagens da conversa (`instagram_messages` filtrando por `tenant_id` + `ig_user_id`) e enviar no formato `{ direction, message_type, content, media_url }` esperado pelo `ai-copilot`.
-- Adicionar `conversation_context` informando: "Esta é uma DM do Instagram de @username. Mantenha respostas curtas (máx 4 frases), com 1-2 emojis."
-- Manter `generateCopilotReply` apenas para `channel === "comment"` e `channel === "live"` (públicos), pois esses não devem consultar CPF/pedido em comentários abertos.
+1. `https://graph.instagram.com/v22.0/{IGSID}?fields=username` — Instagram Login (IGAA)
+2. `https://graph.facebook.com/v22.0/{IGSID}?fields=username,name` — Facebook Page Token (EAA)
+3. `https://graph.instagram.com/v22.0/me/conversations?user_id={IGSID}&fields=participants{username,name}&access_token=...` — fallback usando a conversa (alguns escopos só liberam o nome por aqui)
 
-### 2. `supabase/functions/ai-copilot/index.ts`
-- Permitir invocação **server-to-server** (sem JWT de usuário) quando vier do `instagram-send`: aceitar header `x-internal-call: <CRON_SECRET>` como alternativa ao Bearer de usuário, mantendo a validação de JWT para chamadas do front.
-- Pequeno ajuste no system prompt para reconhecer canal Instagram DM quando vier no `conversation_context` (já é flexível, basta passar o contexto).
+Logar qual rota teve sucesso para diagnóstico.
 
-### 3. `src/pages/SettingsInstagram.tsx` (ajuste de UX)
-- Adicionar um aviso/toggle explicando: "Auto-resposta de DM usa o Copilot completo (consulta pedidos no Bling por CPF). Auto-resposta de comentários públicos usa apenas resposta amigável (não expõe dados em comentário público)."
-- Sem mudança funcional além do texto descritivo do toggle `auto_reply_dms`.
+## 2. Resolver username também em **outbound** (mensagens enviadas pelo painel)
+
+Hoje só tentamos resolver quando `isInbound = true`. Vamos resolver também em outbound (echo) quando o registro ainda não tem username — isso garante que conversas iniciadas por nós também sejam batizadas.
+
+## 3. Backfill em massa das conversas antigas
+
+Criar função utilitária `backfillUsernames(account)` que:
+- Lista todos os `ig_user_id` distintos de `instagram_messages` da conta com `username IS NULL`.
+- Para cada um, chama `fetchIgUsername` (com small concurrency, ex.: 3 em paralelo, e respeita rate-limit com pequeno delay).
+- Atualiza todas as mensagens daquele `ig_user_id` com o username encontrado.
+- Atualiza também o `customers.name` para `@username` quando o nome atual começar com `IG ` (placeholder) ou estiver vazio.
+
+Disparar esse backfill de duas formas:
+- **Automático**: quando o webhook recebe uma nova mensagem e descobre o username, já fazemos o backfill local da conversa (isso já existe).
+- **Sob demanda**: nova edge function `instagram-backfill-usernames` que aceita `{ tenant_id }` e roda o backfill para todas as contas IG ativas do tenant. Útil para regularizar o histórico de uma vez.
+
+## 4. Botão "Atualizar nomes do Instagram" em `/settings/instagram`
+
+Adicionar em `src/pages/SettingsInstagram.tsx` um botão que chama a edge function `instagram-backfill-usernames` para o tenant atual e mostra um toast com o total atualizado. Sem esse botão o usuário não consegue regularizar as conversas antigas sem esperar nova mensagem.
+
+## 5. Atualização do `customers.name` no caminho normal
+
+Em `resolveCustomerByIgUser`, hoje só sobrescrevemos `name` se o nome começar com `IG `. Vamos manter, mas também atualizar quando `name` for igual a `@oldUsername` e o IG tenha mudado de handle. Pequeno ajuste defensivo.
+
+## 6. Front-end (sem mudanças visuais grandes)
+
+Nenhuma mudança de UI necessária — `Chat.tsx`, `ChatHeader`, `ChatSidebar` e `ContactInfoPanel` já usam `customerName`, que vira `@username` automaticamente assim que os dados forem preenchidos pelo backfill. Apenas garantir que, ao renderizar, se `customerName` for placeholder `IG xxxxxx`, exibimos um pequeno "Atualizando…" tooltip seria uma melhoria opcional — não vou incluir agora para manter o escopo enxuto.
 
 # Comportamento esperado depois
 
-Cliente manda DM no Instagram: `117.488.176-39`
+- Toda nova DM ou comentário inbound resolve o `@username` corretamente, independentemente do tipo de token (IGAA ou EAA).
+- O usuário clica em "Atualizar nomes do Instagram" em `/settings/instagram` uma vez e todas as conversas antigas passam a mostrar `@usuario` em vez de `IG 169001`.
+- O nome dos clientes IG na tabela `customers` também passa a refletir o handle real (`@su.elen1984`, etc.), o que melhora também a busca, listas e segmentações.
 
-1. Webhook recebe → `instagram-send` (auto_reply, channel=dm) → `ai-copilot` com histórico
-2. Modelo detecta CPF → chama `lookup_orders_bling`
-3. Bling retorna pedido + tracking_code
-4. Resposta automática enviada via DM:
-   ```
-   Oi! 💖 Encontrei seu pedido:
-   - Número do pedido: 12345
-   - Status: Enviado
-   - Código de rastreio: BLI1_6033293224
-   - Link para rastreamento: http://rastreio.maxfem.com.br/BLI1_6033293224
-   ```
+# Arquivos a editar / criar
 
-Se não encontrar, resposta amigável: "Não localizei pedido com esse CPF. Pode confirmar os 11 dígitos? 💖"
+- `supabase/functions/instagram-webhook/index.ts` — reescrever `fetchIgUsername` com 3 fallbacks + resolver em outbound.
+- `supabase/functions/instagram-backfill-usernames/index.ts` — **novo**, edge function para backfill em massa.
+- `src/pages/SettingsInstagram.tsx` — botão "Atualizar nomes do Instagram" + toast de progresso.
 
 # Notas técnicas
 
-- O `ai-copilot` já tem todas as regras de formatação de URL crua, domínio próprio `rastreio.maxfem.com.br` e proteção contra Markdown.
-- A janela de 24h de mensagens do Instagram permite responder DMs livres (não-template), então o auto-reply é válido.
-- Custos: cada DM com CPF dispara 1-2 chamadas extras (Bling + Gemini round-trip), aceitável.
-- Não altera comportamento de comentários públicos nem do fluxo de "purchase intent" (que já manda DM com link de produto).
+- Rate-limit Meta: limitar concorrência a 3 e adicionar 200ms de delay entre lotes para não bater limite.
+- O backfill grava `username` em `instagram_messages` (todos os registros do `ig_user_id`) e atualiza `customers.name` quando placeholder.
+- Logs detalhados para diagnosticar contas onde nenhum dos 3 endpoints responde (token expirado, escopo faltando).

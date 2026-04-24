@@ -209,6 +209,13 @@ export default function SettingsInstagram() {
           </p>
         </div>
 
+        <Tabs defaultValue="accounts" className="w-full">
+          <TabsList>
+            <TabsTrigger value="accounts">Contas e auto-resposta</TabsTrigger>
+            <TabsTrigger value="rules">Regras Comentário → Direct</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="accounts" className="space-y-6 mt-6">
         <Card>
           <CardHeader>
             <CardTitle>Conectar conta</CardTitle>

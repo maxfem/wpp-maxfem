@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft } from "lucide-react";
+import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft, Instagram, MessageSquare } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Conversation } from "./types";

@@ -438,6 +438,17 @@ export default function SettingsInstagram() {
             </a>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="rules" className="mt-6">
+            {tenantId && (
+              <CommentRulesPanel
+                tenantId={tenantId}
+                accounts={accounts.map((a) => ({ id: a.id, username: a.username }))}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

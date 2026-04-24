@@ -1,51 +1,50 @@
 
+Objetivo: destravar a conexão do Instagram e eliminar o erro recorrente “ID do app inválido” com diagnóstico explícito no próprio sistema.
 
-## Status da integração Instagram
+1. Confirmar o ponto exato da falha no fluxo
+- O erro atual acontece antes do callback OAuth finalizar.
+- O caminho afetado é: `/settings/instagram` → `instagram-register?action=start` → URL `https://www.facebook.com/v22.0/dialog/oauth`.
+- Como a tela da Meta ainda mostra “ID do app inválido”, o problema está no `client_id` enviado pelo backend, não em tabelas, webhooks ou RLS.
 
-### ✅ Já configurado
-- **App Meta** "maxzap" criado, App ID `877027558735996` e Secret válidos (já salvos em `META_APP_ID` / `META_APP_SECRET`).
-- **3 URIs de redirecionamento OAuth** cadastradas no painel Meta (preview, lovable.app e maxapps.com.br).
-- **Login OAuth Web + HTTPS + modo estrito** ativados.
-- **Edge Functions** prontas: `instagram-register` (start/callback), `instagram-webhook` (DMs/comments/lives), `instagram-send`.
-- **Frontend** `/settings/instagram` com fluxo de conexão, abertura em nova aba (preview), refresh automático no retorno e gestão de auto-reply (DMs / comentários / lives).
-- **Tabelas** `instagram_accounts`, `instagram_messages`, `instagram_comments`, `instagram_live_comments` com RLS por tenant.
+2. Fortalecer a Edge Function `instagram-register`
+- Validar `META_APP_ID` logo no início do `action=start`.
+- Aplicar normalização defensiva no valor (`trim`) para evitar espaços/quebras de linha.
+- Se o App ID estiver vazio ou não for numérico, retornar erro claro e específico, por exemplo:
+  - `META_APP_ID ausente`
+  - `META_APP_ID inválido: precisa ser numérico`
+- Incluir um modo de diagnóstico autenticado no retorno do `start` com dados não sensíveis:
+  - `meta_app_id`
+  - `meta_app_id_length`
+  - `meta_app_id_is_numeric`
+  - `redirect_uri`
+- Melhorar logs do `start` para registrar apenas metadados seguros do OAuth gerado.
 
-### ⚠️ O que ainda falta no painel Meta para conectar
+3. Melhorar o frontend de `/settings/instagram`
+- Tratar separadamente erro de “início da conexão” vs erro de “callback”.
+- Quando o backend indicar configuração inválida, mostrar mensagem explícita na tela informando que o App ID runtime do backend não bate com o esperado.
+- Adicionar uma área de diagnóstico visível apenas nessa tela com:
+  - App ID que o backend está usando
+  - redirect URI enviado
+  - checklist de validação rápida da Meta
+- Manter o comportamento de abrir nova aba no preview, mas com feedback melhor se a URL vier inválida.
 
-**1. Adicionar os produtos certos ao app**
-No app maxzap → "Adicionar produto", certifique-se de ter:
-- **Login do Facebook para empresas** ✅ (já está)
-- **Webhooks** — para receber DMs/comentários
-- **Instagram Graph API** — para enviar mensagens e ler dados
+4. Revalidar a configuração real em runtime
+- Testar o `action=start` e conferir se a URL OAuth gerada contém `client_id=877027558735996`.
+- Se o valor retornado for diferente, regravar `META_APP_ID` e `META_APP_SECRET` no backend e validar novamente.
+- Se o valor estiver correto, seguir para o próximo erro real da Meta em vez de continuar preso no falso diagnóstico inicial.
 
-**2. Permissões / escopos solicitados**
-O `instagram-register` pede estes escopos. Eles precisam estar disponíveis no app:
-- `instagram_basic`
-- `instagram_manage_messages`
-- `instagram_manage_comments`
-- `pages_manage_metadata`
-- `pages_read_engagement`
-- `pages_show_list`
-- `business_management`
+5. Teste final da integração
+- Clicar em “Conectar Instagram”.
+- Confirmar abertura da autorização da Meta sem erro de App ID.
+- Concluir o callback e validar:
+  - toast de sucesso com número de contas conectadas
+  - inserção/atualização em `instagram_accounts`
+  - listagem das contas sincronizadas na página
 
-Em **App Review → Permissões e Recursos**, confirme que estão listados. Em **modo Desenvolvimento**, funcionam só para usuários adicionados como Admin/Dev/Tester. Para produção pública, precisam ser **aprovados em App Review**.
-
-**3. Cadastrar você como tester (modo Dev)**
-Em **Funções do app → Funções**, adicione seu usuário Facebook como **Administrador** ou **Testador**. Sem isso, mesmo os escopos básicos retornam erro de permissão.
-
-**4. Configurar o Webhook do Instagram**
-Em **Produtos → Webhooks → Instagram**:
-- **Callback URL**: `https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/instagram-webhook`
-- **Verify Token**: o mesmo valor já salvo em `WHATSAPP_VERIFY_TOKEN` (a função reaproveita esse secret)
-- Subscrever os campos: `messages`, `messaging_postbacks`, `comments`, `live_comments`, `mentions`
-
-**5. Pré-requisitos da própria conta IG**
-- Conta Instagram deve ser **Business ou Creator** (não pessoal).
-- Deve estar **vinculada a uma Página do Facebook** que você administre.
-- Você precisa ser admin tanto da Página quanto do app.
-
-### 🧪 Próximo teste
-Após (1)–(5), clique em **Conectar Instagram**. A nova aba abrirá a tela de autorização do Facebook listando as permissões. Aprove → você volta para `/settings/instagram` → o toast mostrará "X conta(s) conectada(s)".
-
-Se aparecer erro nesse passo, me envie o print/JSON da tela final e eu identifico exatamente qual etapa acima está faltando — não há mais nada do lado do código pendente.
-
+Detalhes técnicos
+- Arquivos principais:
+  - `supabase/functions/instagram-register/index.ts`
+  - `src/pages/SettingsInstagram.tsx`
+- Não deve exigir migração de banco.
+- O indício mais forte hoje é discrepância entre o App ID esperado (`877027558735996`) e o App ID efetivamente usado em runtime pela função.
+- A correção proposta resolve o problema atual e evita novos ciclos cegos de tentativa/erro na configuração OAuth.

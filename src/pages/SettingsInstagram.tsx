@@ -7,7 +7,10 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Instagram, Plus, Trash2, ExternalLink, AlertCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Instagram, Plus, Trash2, ExternalLink, AlertCircle, KeyRound, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +55,9 @@ export default function SettingsInstagram() {
   const [connecting, setConnecting] = useState(false);
   const [diagnostics, setDiagnostics] = useState<StartDiagnostics | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [reconnectAccount, setReconnectAccount] = useState<IgAccount | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [showToken, setShowToken] = useState(false);
 
   // Handle OAuth callback
   useEffect(() => {
@@ -186,6 +192,35 @@ export default function SettingsInstagram() {
       queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
     },
     onError: (e: any) => toast.error("Erro ao desconectar", { description: e.message }),
+  });
+
+  const reconnectMutation = useMutation({
+    mutationFn: async ({ id, token }: { id: string; token: string }) => {
+      const trimmed = token.trim();
+      if (trimmed.length < 30) throw new Error("Token inválido (muito curto).");
+      // Validate token against Meta and refresh metadata via edge function
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-register?action=update_token`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ ig_account_id: id, access_token: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao validar token");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Token atualizado com sucesso");
+      setReconnectAccount(null);
+      setTokenInput("");
+      setShowToken(false);
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    },
+    onError: (e: any) => toast.error("Erro ao atualizar token", { description: e.message }),
   });
 
   const daysUntilExpiry = (iso: string | null) => {
@@ -331,15 +366,30 @@ export default function SettingsInstagram() {
                             )}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm(`Desconectar @${acc.username}?`)) deleteMutation.mutate(acc.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => {
+                              setReconnectAccount(acc);
+                              setTokenInput("");
+                              setShowToken(false);
+                            }}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Reconectar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm(`Desconectar @${acc.username}?`)) deleteMutation.mutate(acc.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="mt-4 pt-4 border-t space-y-3">
@@ -450,6 +500,92 @@ export default function SettingsInstagram() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={!!reconnectAccount}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReconnectAccount(null);
+            setTokenInput("");
+            setShowToken(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              Reconectar @{reconnectAccount?.username}
+            </DialogTitle>
+            <DialogDescription>
+              Cole abaixo o novo <strong>access token</strong> de longa duração gerado no painel da Meta.
+              Ele será validado e armazenado de forma segura no backend.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/40 p-3 text-xs flex gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
+                O token nunca aparece em URL, console ou logs. É enviado por HTTPS para uma função protegida e
+                gravado apenas via Service Role com RLS ativa.
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ig-token">Access token</Label>
+              <div className="relative">
+                <Textarea
+                  id="ig-token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="EAAG... ou IGAA..."
+                  rows={4}
+                  className={showToken ? "font-mono text-xs pr-10" : "font-mono text-xs pr-10 [-webkit-text-security:disc] [text-security:disc]"}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-7 w-7"
+                  onClick={() => setShowToken((s) => !s)}
+                  tabIndex={-1}
+                >
+                  {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Gere em: Meta App → <strong>Instagram</strong> → <strong>API setup with Instagram login</strong> → <strong>Generate access tokens</strong>.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReconnectAccount(null);
+                setTokenInput("");
+                setShowToken(false);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (reconnectAccount) {
+                  reconnectMutation.mutate({ id: reconnectAccount.id, token: tokenInput });
+                }
+              }}
+              disabled={reconnectMutation.isPending || tokenInput.trim().length < 30}
+            >
+              {reconnectMutation.isPending ? "Validando..." : "Atualizar token"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

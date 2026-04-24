@@ -241,6 +241,138 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── 3. UPDATE_TOKEN: validate & store a manually-pasted long-lived token ──
+    if (action === "update_token") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Missing auth" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabaseAuth = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user } } = await supabaseAuth.auth.getUser();
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const body = await req.json().catch(() => ({}));
+      const ig_account_id: string | undefined = body.ig_account_id;
+      const access_token: string | undefined = (body.access_token || "").trim();
+
+      if (!ig_account_id || !access_token || access_token.length < 30) {
+        return new Response(JSON.stringify({ error: "ig_account_id and valid access_token required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+      // Confirm caller is a member of the account's tenant
+      const { data: acc, error: accErr } = await supabase
+        .from("instagram_accounts")
+        .select("id, tenant_id, ig_user_id, page_id")
+        .eq("id", ig_account_id)
+        .single();
+      if (accErr || !acc) {
+        return new Response(JSON.stringify({ error: "Account not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: membership } = await supabase
+        .from("tenant_members")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("tenant_id", acc.tenant_id)
+        .maybeSingle();
+      if (!membership) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate token + refresh metadata via Graph API
+      const meRes = await fetch(
+        `https://graph.facebook.com/v22.0/${acc.ig_user_id}?fields=id,username,profile_picture_url,followers_count&access_token=${access_token}`
+      );
+      const meData = await meRes.json();
+      if (!meRes.ok) {
+        return new Response(JSON.stringify({ error: "Invalid token", details: meData }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Try to inspect token to get real expiry; default to 60d
+      let expiresAtIso: string;
+      try {
+        const dbgRes = await fetch(
+          `https://graph.facebook.com/v22.0/debug_token?input_token=${access_token}&access_token=${META_APP_ID}|${META_APP_SECRET}`
+        );
+        const dbg = await dbgRes.json();
+        const expSec = dbg?.data?.expires_at;
+        if (expSec && typeof expSec === "number" && expSec > 0) {
+          expiresAtIso = new Date(expSec * 1000).toISOString();
+        } else {
+          const d = new Date();
+          d.setDate(d.getDate() + 60);
+          expiresAtIso = d.toISOString();
+        }
+      } catch {
+        const d = new Date();
+        d.setDate(d.getDate() + 60);
+        expiresAtIso = d.toISOString();
+      }
+
+      const { error: upErr } = await supabase
+        .from("instagram_accounts")
+        .update({
+          access_token,
+          token_expires_at: expiresAtIso,
+          username: meData.username ?? undefined,
+          profile_picture_url: meData.profile_picture_url ?? undefined,
+          followers_count: meData.followers_count ?? undefined,
+          is_active: true,
+        })
+        .eq("id", ig_account_id);
+
+      if (upErr) {
+        return new Response(JSON.stringify({ error: upErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Re-subscribe the page to webhook fields (best effort)
+      try {
+        await fetch(
+          `https://graph.facebook.com/v22.0/${acc.page_id}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,comments,live_comments,mentions&access_token=${access_token}`,
+          { method: "POST" }
+        );
+      } catch (e) {
+        console.warn("[instagram-register] re-subscribe failed:", e);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          username: meData.username,
+          token_expires_at: expiresAtIso,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

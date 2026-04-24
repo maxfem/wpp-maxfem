@@ -104,7 +104,10 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
   const url = useSignedUrl(msg.media_url);
   if (!msg.media_url || !url) return null;
 
-  const type = msg.message_type;
+  const knownTypes = ["image", "video", "audio", "document"];
+  // Fallback: unknown / unsupported types (e.g. Instagram story replies, shares)
+  // are almost always image previews — render them as images instead of hiding.
+  const type = knownTypes.includes(msg.message_type) ? msg.message_type : "image";
 
   if (type === "image") {
     return (
@@ -276,8 +279,9 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
               {group.msgs.map((msg, mi) => {
                 const isOutbound = msg.direction === "outbound";
                 const isTemplate = msg.message_type === "template";
-                const isMedia = ["image", "video", "audio", "document"].includes(msg.message_type);
                 const hasMedia = !!msg.media_url;
+                // Treat any message with a media_url as media (covers IG "unsupported_type")
+                const isMedia = hasMedia || ["image", "video", "audio", "document"].includes(msg.message_type);
 
                 // For media-only messages, don't show "[image]" text
                 let displayContent = "";

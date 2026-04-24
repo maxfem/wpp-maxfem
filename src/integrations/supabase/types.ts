@@ -492,6 +492,75 @@ export type Database = {
         }
         Relationships: []
       }
+      instagram_comment_rules: {
+        Row: {
+          cooldown_seconds: number
+          created_at: string
+          daily_limit_per_user: number
+          dm_link_url: string | null
+          dm_text: string
+          id: string
+          ig_account_id: string
+          is_active: boolean
+          keywords: string[]
+          match_mode: string
+          name: string
+          post_ids: string[]
+          public_reply_text: string
+          scope: string
+          stats_clicks: number
+          stats_dm_sent: number
+          stats_sent: number
+          tenant_id: string
+          updated_at: string
+          use_ai_intent: boolean
+        }
+        Insert: {
+          cooldown_seconds?: number
+          created_at?: string
+          daily_limit_per_user?: number
+          dm_link_url?: string | null
+          dm_text: string
+          id?: string
+          ig_account_id: string
+          is_active?: boolean
+          keywords?: string[]
+          match_mode?: string
+          name: string
+          post_ids?: string[]
+          public_reply_text: string
+          scope?: string
+          stats_clicks?: number
+          stats_dm_sent?: number
+          stats_sent?: number
+          tenant_id: string
+          updated_at?: string
+          use_ai_intent?: boolean
+        }
+        Update: {
+          cooldown_seconds?: number
+          created_at?: string
+          daily_limit_per_user?: number
+          dm_link_url?: string | null
+          dm_text?: string
+          id?: string
+          ig_account_id?: string
+          is_active?: boolean
+          keywords?: string[]
+          match_mode?: string
+          name?: string
+          post_ids?: string[]
+          public_reply_text?: string
+          scope?: string
+          stats_clicks?: number
+          stats_dm_sent?: number
+          stats_sent?: number
+          tenant_id?: string
+          updated_at?: string
+          use_ai_intent?: boolean
+        }
+        Relationships: []
+      }
       instagram_comments: {
         Row: {
           comment_id: string
@@ -677,6 +746,71 @@ export type Database = {
             columns: ["ig_account_id"]
             isOneToOne: false
             referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_rule_executions: {
+        Row: {
+          comment_id: string
+          created_at: string
+          dm_message_id: string | null
+          dm_status: string | null
+          error: string | null
+          from_ig_user_id: string | null
+          from_username: string | null
+          id: string
+          ig_account_id: string
+          matched_by: string
+          matched_term: string | null
+          post_id: string | null
+          public_reply_status: string | null
+          rule_id: string
+          tenant_id: string
+          tracked_link_id: string | null
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          dm_message_id?: string | null
+          dm_status?: string | null
+          error?: string | null
+          from_ig_user_id?: string | null
+          from_username?: string | null
+          id?: string
+          ig_account_id: string
+          matched_by: string
+          matched_term?: string | null
+          post_id?: string | null
+          public_reply_status?: string | null
+          rule_id: string
+          tenant_id: string
+          tracked_link_id?: string | null
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          dm_message_id?: string | null
+          dm_status?: string | null
+          error?: string | null
+          from_ig_user_id?: string | null
+          from_username?: string | null
+          id?: string
+          ig_account_id?: string
+          matched_by?: string
+          matched_term?: string | null
+          post_id?: string | null
+          public_reply_status?: string | null
+          rule_id?: string
+          tenant_id?: string
+          tracked_link_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_rule_executions_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_comment_rules"
             referencedColumns: ["id"]
           },
         ]

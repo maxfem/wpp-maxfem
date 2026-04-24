@@ -27,6 +27,20 @@ interface IgAccount {
   created_at: string;
 }
 
+interface StartDiagnostics {
+  meta_app_id?: string;
+  meta_app_id_length?: number;
+  meta_app_id_is_numeric?: boolean;
+  redirect_uri?: string;
+  scopes?: string[];
+  meta_app_id_preview?: string | null;
+  meta_app_id_present?: boolean;
+  meta_app_secret_present?: boolean;
+  meta_app_secret_length?: number;
+}
+
+const EXPECTED_APP_ID = "877027558735996";
+
 export default function SettingsInstagram() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
@@ -34,6 +48,8 @@ export default function SettingsInstagram() {
   const navigate = useNavigate();
   const tenantId = currentTenant?.id;
   const [connecting, setConnecting] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<StartDiagnostics | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Handle OAuth callback
   useEffect(() => {
@@ -102,6 +118,7 @@ export default function SettingsInstagram() {
   const startConnect = async () => {
     if (!tenantId) return;
     setConnecting(true);
+    setStartError(null);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-register?action=start`;
       const { data: { session } } = await supabase.auth.getSession();
@@ -117,7 +134,12 @@ export default function SettingsInstagram() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Falha ao iniciar conexão");
+      if (data?.diagnostics) setDiagnostics(data.diagnostics);
+      if (!res.ok) {
+        const msg = data.error || "Falha ao iniciar conexão";
+        setStartError(msg);
+        throw new Error(msg);
+      }
 
       const isEmbeddedPreview = window.self !== window.top;
       if (isEmbeddedPreview) {
@@ -193,11 +215,52 @@ export default function SettingsInstagram() {
               <strong>Business ou Creator</strong> e estar vinculada a uma Página do Facebook.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <Button onClick={startConnect} disabled={connecting} className="gap-2">
               <Plus className="h-4 w-4" />
               {connecting ? "Conectando..." : "Conectar Instagram"}
             </Button>
+
+            {(diagnostics || startError) && (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-2">
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Diagnóstico do backend
+                </div>
+                {startError && (
+                  <div className="text-destructive font-medium">{startError}</div>
+                )}
+                {diagnostics && (
+                  <div className="grid grid-cols-1 gap-1 font-mono">
+                    <div>
+                      App ID em runtime:{" "}
+                      <span className={diagnostics.meta_app_id === EXPECTED_APP_ID ? "text-emerald-600" : "text-destructive"}>
+                        {diagnostics.meta_app_id ?? diagnostics.meta_app_id_preview ?? "—"}
+                      </span>
+                    </div>
+                    <div>
+                      App ID esperado:{" "}
+                      <span className="text-muted-foreground">{EXPECTED_APP_ID}</span>
+                    </div>
+                    <div>
+                      Comprimento: {diagnostics.meta_app_id_length ?? "—"} ·{" "}
+                      Numérico: {String(diagnostics.meta_app_id_is_numeric ?? "—")}
+                    </div>
+                    {diagnostics.meta_app_secret_length !== undefined && (
+                      <div>App Secret length: {diagnostics.meta_app_secret_length}</div>
+                    )}
+                    {diagnostics.redirect_uri && (
+                      <div className="break-all">redirect_uri: {diagnostics.redirect_uri}</div>
+                    )}
+                    {diagnostics.meta_app_id && diagnostics.meta_app_id !== EXPECTED_APP_ID && (
+                      <div className="text-destructive mt-1">
+                        ⚠️ App ID em runtime difere do esperado. Atualize a secret META_APP_ID.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

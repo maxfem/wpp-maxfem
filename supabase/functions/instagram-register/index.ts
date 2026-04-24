@@ -6,10 +6,25 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
-const META_APP_ID = Deno.env.get("META_APP_ID")!;
-const META_APP_SECRET = Deno.env.get("META_APP_SECRET")!;
+const META_APP_ID = (Deno.env.get("META_APP_ID") ?? "").trim();
+const META_APP_SECRET = (Deno.env.get("META_APP_SECRET") ?? "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+function validateMetaAppId(): { ok: true } | { ok: false; error: string; diagnostics: Record<string, unknown> } {
+  const diagnostics = {
+    meta_app_id_present: META_APP_ID.length > 0,
+    meta_app_id_length: META_APP_ID.length,
+    meta_app_id_is_numeric: /^\d+$/.test(META_APP_ID),
+    meta_app_id_preview: META_APP_ID ? `${META_APP_ID.slice(0, 4)}…${META_APP_ID.slice(-4)}` : null,
+    meta_app_secret_present: META_APP_SECRET.length > 0,
+    meta_app_secret_length: META_APP_SECRET.length,
+  };
+  if (!META_APP_ID) return { ok: false, error: "META_APP_ID ausente nas secrets do backend", diagnostics };
+  if (!/^\d+$/.test(META_APP_ID)) return { ok: false, error: "META_APP_ID inválido: precisa ser numérico (apenas dígitos)", diagnostics };
+  if (!META_APP_SECRET) return { ok: false, error: "META_APP_SECRET ausente nas secrets do backend", diagnostics };
+  return { ok: true };
+}
 
 // Required scopes for IG DMs + comments + lives
 const SCOPES = [
@@ -63,6 +78,20 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Validate Meta App credentials BEFORE building OAuth URL
+      const validation = validateMetaAppId();
+      if (!validation.ok) {
+        console.error("[instagram-register] Invalid Meta config:", validation.diagnostics);
+        return new Response(
+          JSON.stringify({
+            error: validation.error,
+            diagnostics: validation.diagnostics,
+            redirect_uri,
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // state encodes tenant_id + user_id so callback can resolve
       const state = btoa(JSON.stringify({ tenant_id, user_id: user.id, ts: Date.now() }));
 
@@ -73,9 +102,26 @@ Deno.serve(async (req) => {
       oauthUrl.searchParams.set("response_type", "code");
       oauthUrl.searchParams.set("state", state);
 
-      return new Response(JSON.stringify({ oauth_url: oauthUrl.toString() }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      console.log("[instagram-register] OAuth URL built:", {
+        client_id_length: META_APP_ID.length,
+        client_id_preview: `${META_APP_ID.slice(0, 4)}…${META_APP_ID.slice(-4)}`,
+        redirect_uri,
+        scopes_count: SCOPES.split(",").length,
       });
+
+      return new Response(
+        JSON.stringify({
+          oauth_url: oauthUrl.toString(),
+          diagnostics: {
+            meta_app_id: META_APP_ID,
+            meta_app_id_length: META_APP_ID.length,
+            meta_app_id_is_numeric: /^\d+$/.test(META_APP_ID),
+            redirect_uri,
+            scopes: SCOPES.split(","),
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ── 2. CALLBACK: exchange code → token, list pages, save IG accounts ──

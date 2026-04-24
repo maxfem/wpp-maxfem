@@ -279,8 +279,9 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
               {group.msgs.map((msg, mi) => {
                 const isOutbound = msg.direction === "outbound";
                 const isTemplate = msg.message_type === "template";
-                const isMedia = ["image", "video", "audio", "document"].includes(msg.message_type);
                 const hasMedia = !!msg.media_url;
+                // Treat any message with a media_url as media (covers IG "unsupported_type")
+                const isMedia = hasMedia || ["image", "video", "audio", "document"].includes(msg.message_type);
 
                 // For media-only messages, don't show "[image]" text
                 let displayContent = "";

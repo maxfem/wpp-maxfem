@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const {
-      mode = "manual", // "manual" | "auto_reply"
+      mode = "manual", // "manual" | "auto_reply" | "rule_reply"
       tenant_id,
       ig_account_id,
       ig_user_id, // recipient for DM
@@ -188,6 +188,13 @@ Deno.serve(async (req) => {
       incoming_text, // for auto_reply
       username,
       context,
+      // rule_reply fields
+      rule_id,
+      post_id,
+      from_ig_user_id,
+      from_username,
+      matched_by,
+      matched_term,
     } = body;
 
     if (!tenant_id || !ig_account_id) {
@@ -208,6 +215,125 @@ Deno.serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // ── rule_reply: ManyChat-style rule ─────────────────────────────
+    if (mode === "rule_reply") {
+      if (!rule_id || !comment_id) throw new Error("rule_id and comment_id required");
+      const { data: rule } = await supabase
+        .from("instagram_comment_rules")
+        .select("*")
+        .eq("id", rule_id)
+        .single();
+      if (!rule) throw new Error("rule not found");
+
+      // build short tracked link with UTMs
+      let trackedLinkId: string | null = null;
+      let shortUrl: string | null = null;
+      if (rule.dm_link_url) {
+        const code = Math.random().toString(36).slice(2, 10);
+        const slug = (rule.name || "rule").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
+        const { data: link } = await supabase
+          .from("tracked_links")
+          .insert({
+            tenant_id,
+            code,
+            original_url: rule.dm_link_url,
+            utm_source: "instagram",
+            utm_medium: "comment_to_dm",
+            utm_campaign: slug,
+            utm_content: post_id ? `post_${post_id}` : `rule_${rule_id}`,
+          })
+          .select("id")
+          .single();
+        trackedLinkId = link?.id || null;
+        shortUrl = `https://wpp.maxapps.com.br/r/${code}`;
+      }
+
+      const renderTemplate = (tpl: string) =>
+        (tpl || "")
+          .replaceAll("{{username}}", from_username || username || "")
+          .replaceAll("{{link}}", shortUrl || rule.dm_link_url || "");
+
+      const publicText = renderTemplate(rule.public_reply_text);
+      const dmText = renderTemplate(rule.dm_text);
+
+      let publicStatus = "skipped";
+      let dmStatus = "skipped";
+      let dmMessageId: string | null = null;
+      let runError: string | null = null;
+
+      // 1) Public reply on the comment (skip on lives only if you want; we reply on both)
+      try {
+        if (publicText) {
+          const r = await replyToComment(account, comment_id, publicText);
+          publicStatus = "sent";
+          await supabase
+            .from("instagram_comments")
+            .update({ replied: true, reply_id: r.id, reply_content: publicText })
+            .eq("comment_id", comment_id);
+        }
+      } catch (e) {
+        publicStatus = "error";
+        runError = `public:${e instanceof Error ? e.message : "err"}`;
+        console.error("[ig-send] rule public reply failed:", e);
+      }
+
+      // 2) Private reply (DM)
+      try {
+        if (dmText) {
+          const dm = await sendPrivateReply(account, comment_id, dmText);
+          dmStatus = "sent";
+          dmMessageId = dm?.message_id || null;
+          await supabase.from("instagram_messages").insert({
+            tenant_id,
+            ig_account_id,
+            ig_user_id: from_ig_user_id || "unknown",
+            username: from_username || username,
+            direction: "outbound",
+            message_type: "text",
+            content: dmText,
+            status: "sent",
+            message_id: dmMessageId,
+            metadata: { auto: true, source: "rule_reply", rule_id, comment_id },
+          });
+        }
+      } catch (e) {
+        dmStatus = "error";
+        runError = (runError ? runError + "; " : "") + `dm:${e instanceof Error ? e.message : "err"}`;
+        console.error("[ig-send] rule DM failed:", e);
+      }
+
+      // 3) Log execution + bump stats
+      await supabase.from("instagram_rule_executions").insert({
+        tenant_id,
+        rule_id,
+        ig_account_id,
+        comment_id,
+        post_id: post_id || null,
+        from_ig_user_id: from_ig_user_id || null,
+        from_username: from_username || null,
+        matched_by: matched_by || "keyword",
+        matched_term: matched_term || null,
+        public_reply_status: publicStatus,
+        dm_status: dmStatus,
+        dm_message_id: dmMessageId,
+        tracked_link_id: trackedLinkId,
+        error: runError,
+      });
+
+      await supabase
+        .from("instagram_comment_rules")
+        .update({
+          stats_sent: (rule.stats_sent || 0) + (publicStatus === "sent" ? 1 : 0),
+          stats_dm_sent: (rule.stats_dm_sent || 0) + (dmStatus === "sent" ? 1 : 0),
+        })
+        .eq("id", rule_id);
+
+      return new Response(
+        JSON.stringify({ success: true, public_status: publicStatus, dm_status: dmStatus, short_url: shortUrl }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     let textToSend: string | null = message || null;

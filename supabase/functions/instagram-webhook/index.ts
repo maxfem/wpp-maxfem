@@ -485,7 +485,28 @@ async function handleChanges(entry: any) {
           metadata: value,
         }, { onConflict: "comment_id" });
 
-      // Auto reply with safety filters
+      // 1) Try ManyChat-style rules first for live comments
+      let liveRuleFired = false;
+      if (text) {
+        liveRuleFired = await evaluateAndRunRules({
+          account,
+          channel: "live",
+          text,
+          comment_id: commentId,
+          post_id: liveId,
+          from_ig_user_id: fromIgId,
+          from_username: fromUsername,
+        });
+        if (liveRuleFired) {
+          await supabase
+            .from("instagram_live_comments")
+            .update({ auto_replied: true })
+            .eq("comment_id", commentId);
+        }
+      }
+
+      // 2) Fallback: generic Copilot live auto-reply with safety filters
+      if (liveRuleFired) continue;
       if (!account.auto_reply_lives || !text) continue;
       if (text.trim().length < 3) continue;
       if (/https?:\/\//i.test(text)) continue;

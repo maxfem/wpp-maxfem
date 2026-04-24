@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft } from "lucide-react";
+import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft, Instagram, MessageSquare } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Conversation } from "./types";
@@ -50,8 +51,13 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
           </Button>
         )}
         <Avatar className="h-8 w-8 shrink-0">
-          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-            {conversation.customerName.slice(0, 2).toUpperCase()}
+          <AvatarFallback className={cn(
+            "text-xs font-medium",
+            conversation.channel === "instagram"
+              ? "bg-gradient-to-br from-purple-500 to-pink-500 text-white"
+              : "bg-primary/10 text-primary"
+          )}>
+            {conversation.customerName.replace(/^@/, "").slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0">
@@ -65,9 +71,17 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
             {conversation.isMuted && (
               <VolumeX className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             )}
-            <Badge variant="outline" className="text-[9px] h-4 px-1.5 shrink-0">
-              📱 WhatsApp
-            </Badge>
+            {conversation.channel === "instagram" ? (
+              <Badge variant="outline" className="text-[9px] h-4 px-1.5 shrink-0 gap-1 border-pink-500/30 text-pink-600 dark:text-pink-400">
+                <Instagram className="h-2.5 w-2.5" />
+                Instagram
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-[9px] h-4 px-1.5 shrink-0 gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
+                <MessageSquare className="h-2.5 w-2.5" />
+                WhatsApp
+              </Badge>
+            )}
             <button
               onClick={onToggleContactPanel}
               className="text-xs text-primary hover:underline shrink-0"

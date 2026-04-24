@@ -80,16 +80,23 @@ export function InstagramCommentsView({ tenantId }: Props) {
       const { data, error } = await supabase.functions.invoke("ai-copilot", {
         body: {
           tenant_id: tenantId,
-          mode: "suggest_comment_reply",
-          context: {
-            channel: "instagram",
-            comment: activeComment.content,
-            from: activeComment.from_username,
-          },
+          messages: [
+            {
+              direction: "inbound",
+              message_type: "text",
+              content: `Comentário no Instagram de @${activeComment.from_username || "usuário"}: "${activeComment.content || ""}"\n\nSugira uma resposta ${replyMode === "private" ? "por DM (mais pessoal)" : "pública e curta"} para esse comentário.`,
+            },
+          ],
         },
       });
       if (error) throw error;
-      setReplyText(data?.suggestion || data?.reply || "");
+      const suggestion =
+        data?.suggestion ||
+        data?.reply ||
+        data?.message ||
+        data?.content ||
+        "";
+      setReplyText(suggestion);
     } catch (err: any) {
       toast.error("Copilot indisponível", { description: err?.message });
     } finally {

@@ -6,11 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Instagram, Plus, Trash2, ExternalLink, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { CommentRulesPanel } from "@/components/instagram/CommentRulesPanel";
 
 interface IgAccount {
   id: string;
@@ -207,6 +209,13 @@ export default function SettingsInstagram() {
           </p>
         </div>
 
+        <Tabs defaultValue="accounts" className="w-full">
+          <TabsList>
+            <TabsTrigger value="accounts">Contas e auto-resposta</TabsTrigger>
+            <TabsTrigger value="rules">Regras Comentário → Direct</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="accounts" className="space-y-6 mt-6">
         <Card>
           <CardHeader>
             <CardTitle>Conectar conta</CardTitle>
@@ -429,6 +438,17 @@ export default function SettingsInstagram() {
             </a>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="rules" className="mt-6">
+            {tenantId && (
+              <CommentRulesPanel
+                tenantId={tenantId}
+                accounts={accounts.map((a) => ({ id: a.id, username: a.username }))}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

@@ -128,6 +128,73 @@ async function generateCopilotReply(opts: {
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
+// ── Full Copilot for DMs (uses ai-copilot with Bling/CPF tools) ────
+async function generateFullCopilotDmReply(opts: {
+  tenantId: string;
+  igAccountId: string;
+  igUserId: string;
+  username?: string;
+  incoming: string;
+}): Promise<string | null> {
+  try {
+    // Load last ~15 messages of this conversation for context
+    const { data: history } = await supabase
+      .from("instagram_messages")
+      .select("direction, message_type, content, media_url, created_at")
+      .eq("tenant_id", opts.tenantId)
+      .eq("ig_account_id", opts.igAccountId)
+      .eq("ig_user_id", opts.igUserId)
+      .order("created_at", { ascending: true })
+      .limit(15);
+
+    const messages = (history || []).map((m: any) => ({
+      direction: m.direction,
+      message_type: m.message_type,
+      content: m.content,
+      media_url: m.media_url,
+    }));
+
+    // Make sure the most recent inbound text is included (in case it wasn't persisted yet)
+    const lastInbound = [...messages].reverse().find((m) => m.direction === "inbound");
+    if (!lastInbound || (lastInbound.content || "") !== opts.incoming) {
+      messages.push({
+        direction: "inbound",
+        message_type: "text",
+        content: opts.incoming,
+        media_url: null,
+      });
+    }
+
+    const conversationContext = `Esta é uma DM do Instagram${opts.username ? ` de @${opts.username}` : ""}. Mantenha respostas curtas (máximo 4 frases), com 1-2 emojis. Se o cliente enviar um CPF (11 dígitos com ou sem pontuação), use a ferramenta de consulta de pedidos para buscar status, código de rastreio e link.`;
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-copilot`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "x-internal-call": Deno.env.get("CRON_SECRET") || "",
+      },
+      body: JSON.stringify({
+        tenant_id: opts.tenantId,
+        messages,
+        conversation_context: conversationContext,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("[ig-send] full-copilot DM failed:", res.status, errText);
+      return null;
+    }
+
+    const data = await res.json();
+    return (data.suggestion || data.reply || data.message || data.content || "").trim() || null;
+  } catch (e) {
+    console.error("[ig-send] full-copilot DM error:", e);
+    return null;
+  }
+}
+
 // ── Meta API helpers ───────────────────────────────────────────────
 // Detect token type:
 //  - "IGAA..." → Instagram Login token → graph.instagram.com (no version prefix on /me/messages)

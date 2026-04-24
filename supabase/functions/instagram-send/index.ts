@@ -425,14 +425,26 @@ Deno.serve(async (req) => {
 
     // auto-reply: ask Copilot for the text
     if (mode === "auto_reply") {
-      textToSend = await generateCopilotReply({
-        tenantId: tenant_id,
-        channel: channel === "private_reply" ? "comment" : (channel as any),
-        incoming: incoming_text || "",
-        username,
-        context,
-        forcePurchaseRedirect: purchaseIntent,
-      });
+      // DMs use the full ai-copilot (with Bling/CPF order lookup tools).
+      // Comments/lives stay on the lightweight Gemini reply (no data exposure in public).
+      if (channel === "dm") {
+        textToSend = await generateFullCopilotDmReply({
+          tenantId: tenant_id,
+          igAccountId: ig_account_id,
+          igUserId: ig_user_id,
+          username,
+          incoming: incoming_text || "",
+        });
+      } else {
+        textToSend = await generateCopilotReply({
+          tenantId: tenant_id,
+          channel: channel === "private_reply" ? "comment" : (channel as any),
+          incoming: incoming_text || "",
+          username,
+          context,
+          forcePurchaseRedirect: purchaseIntent,
+        });
+      }
       if (!textToSend) {
         return new Response(JSON.stringify({ error: "Copilot returned no text" }), {
           status: 500,

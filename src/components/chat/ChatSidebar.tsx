@@ -69,6 +69,9 @@ export function ChatSidebar({
   onDateFilterChange,
   statusFilter,
   onStatusFilterChange,
+  channelFilter = "all",
+  onChannelFilterChange,
+  channelCounts,
   onNewChat,
   isMobile,
 }: ChatSidebarProps) {
@@ -205,6 +208,56 @@ export function ChatSidebar({
         </div>
       )}
 
+      {/* Channel filter chips */}
+      {onChannelFilterChange && (
+        <div className="px-3 pt-2 pb-2 flex items-center gap-1.5 border-b border-border">
+          <button
+            onClick={() => onChannelFilterChange("all")}
+            className={cn(
+              "h-6 px-2.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition-colors",
+              channelFilter === "all"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            )}
+          >
+            Todos
+            {channelCounts && (
+              <span className="opacity-70">{channelCounts.all}</span>
+            )}
+          </button>
+          <button
+            onClick={() => onChannelFilterChange("whatsapp")}
+            className={cn(
+              "h-6 px-2.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition-colors",
+              channelFilter === "whatsapp"
+                ? "bg-emerald-600 text-white"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            )}
+          >
+            <MessageSquare className="h-3 w-3" />
+            WhatsApp
+            {channelCounts && (
+              <span className="opacity-70">{channelCounts.whatsapp}</span>
+            )}
+          </button>
+          <button
+            onClick={() => onChannelFilterChange("instagram")}
+            className={cn(
+              "h-6 px-2.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition-colors",
+              channelFilter === "instagram"
+                ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            )}
+          >
+            <Instagram className="h-3 w-3" />
+            Instagram
+            {channelCounts && (
+              <span className="opacity-70">{channelCounts.instagram}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Chatwoot-style tabs: Mine / Unassigned / All */}
       <div className="border-b border-border">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SidebarTab)}>
@@ -269,15 +322,35 @@ export function ChatSidebar({
             >
               <div className="relative mt-0.5">
                 <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                    {conv.customerName.slice(0, 2).toUpperCase()}
+                  <AvatarFallback className={cn(
+                    "text-xs font-medium",
+                    conv.channel === "instagram"
+                      ? "bg-gradient-to-br from-purple-500 to-pink-500 text-white"
+                      : "bg-primary/10 text-primary"
+                  )}>
+                    {conv.customerName.replace(/^@/, "").slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
+                {conv.channel === "instagram" && (
+                  <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-card flex items-center justify-center">
+                    <Instagram className="h-2.5 w-2.5 text-pink-500" />
+                  </span>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-0.5">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs text-muted-foreground">📱 WhatsApp</span>
+                    {conv.channel === "instagram" ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500/10 to-pink-500/10 text-pink-600 dark:text-pink-400">
+                        <Instagram className="h-2.5 w-2.5" />
+                        Instagram
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <MessageSquare className="h-2.5 w-2.5" />
+                        WhatsApp
+                      </span>
+                    )}
                   </div>
                   <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap pl-1">
                     {formatTime(conv.lastMessageAt)}

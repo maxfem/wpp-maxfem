@@ -118,6 +118,7 @@ export default function SettingsInstagram() {
   const startConnect = async () => {
     if (!tenantId) return;
     setConnecting(true);
+    setStartError(null);
     try {
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-register?action=start`;
       const { data: { session } } = await supabase.auth.getSession();
@@ -133,7 +134,12 @@ export default function SettingsInstagram() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Falha ao iniciar conexão");
+      if (data?.diagnostics) setDiagnostics(data.diagnostics);
+      if (!res.ok) {
+        const msg = data.error || "Falha ao iniciar conexão";
+        setStartError(msg);
+        throw new Error(msg);
+      }
 
       const isEmbeddedPreview = window.self !== window.top;
       if (isEmbeddedPreview) {

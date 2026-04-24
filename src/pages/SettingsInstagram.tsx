@@ -194,6 +194,35 @@ export default function SettingsInstagram() {
     onError: (e: any) => toast.error("Erro ao desconectar", { description: e.message }),
   });
 
+  const reconnectMutation = useMutation({
+    mutationFn: async ({ id, token }: { id: string; token: string }) => {
+      const trimmed = token.trim();
+      if (trimmed.length < 30) throw new Error("Token inválido (muito curto).");
+      // Validate token against Meta and refresh metadata via edge function
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/instagram-register?action=update_token`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ ig_account_id: id, access_token: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Falha ao validar token");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Token atualizado com sucesso");
+      setReconnectAccount(null);
+      setTokenInput("");
+      setShowToken(false);
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    },
+    onError: (e: any) => toast.error("Erro ao atualizar token", { description: e.message }),
+  });
+
   const daysUntilExpiry = (iso: string | null) => {
     if (!iso) return null;
     const days = Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);

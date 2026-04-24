@@ -500,6 +500,92 @@ export default function SettingsInstagram() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={!!reconnectAccount}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReconnectAccount(null);
+            setTokenInput("");
+            setShowToken(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              Reconectar @{reconnectAccount?.username}
+            </DialogTitle>
+            <DialogDescription>
+              Cole abaixo o novo <strong>access token</strong> de longa duração gerado no painel da Meta.
+              Ele será validado e armazenado de forma segura no backend.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-md border bg-muted/40 p-3 text-xs flex gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
+                O token nunca aparece em URL, console ou logs. É enviado por HTTPS para uma função protegida e
+                gravado apenas via Service Role com RLS ativa.
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ig-token">Access token</Label>
+              <div className="relative">
+                <Textarea
+                  id="ig-token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="EAAG... ou IGAA..."
+                  rows={4}
+                  className={showToken ? "font-mono text-xs pr-10" : "font-mono text-xs pr-10 [-webkit-text-security:disc] [text-security:disc]"}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-7 w-7"
+                  onClick={() => setShowToken((s) => !s)}
+                  tabIndex={-1}
+                >
+                  {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Gere em: Meta App → <strong>Instagram</strong> → <strong>API setup with Instagram login</strong> → <strong>Generate access tokens</strong>.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReconnectAccount(null);
+                setTokenInput("");
+                setShowToken(false);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (reconnectAccount) {
+                  reconnectMutation.mutate({ id: reconnectAccount.id, token: tokenInput });
+                }
+              }}
+              disabled={reconnectMutation.isPending || tokenInput.trim().length < 30}
+            >
+              {reconnectMutation.isPending ? "Validando..." : "Atualizar token"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

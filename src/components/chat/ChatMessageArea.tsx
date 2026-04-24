@@ -104,7 +104,10 @@ function MediaPreview({ msg, isOutbound }: { msg: Message; isOutbound: boolean }
   const url = useSignedUrl(msg.media_url);
   if (!msg.media_url || !url) return null;
 
-  const type = msg.message_type;
+  const knownTypes = ["image", "video", "audio", "document"];
+  // Fallback: unknown / unsupported types (e.g. Instagram story replies, shares)
+  // are almost always image previews — render them as images instead of hiding.
+  const type = knownTypes.includes(msg.message_type) ? msg.message_type : "image";
 
   if (type === "image") {
     return (

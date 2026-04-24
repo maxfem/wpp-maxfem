@@ -223,6 +223,27 @@ export default function SettingsInstagram() {
     onError: (e: any) => toast.error("Erro ao atualizar token", { description: e.message }),
   });
 
+  const backfillUsernamesMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId) throw new Error("Sem tenant");
+      const { data, error } = await supabase.functions.invoke(
+        "instagram-backfill-usernames",
+        { body: { tenant_id: tenantId } },
+      );
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data: any) => {
+      toast.success(
+        `Nomes atualizados: ${data.total_resolved} de ${data.total_scanned} conversas`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    },
+    onError: (e: any) =>
+      toast.error("Erro ao atualizar nomes", { description: e.message }),
+  });
+
   const daysUntilExpiry = (iso: string | null) => {
     if (!iso) return null;
     const days = Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);

@@ -27,6 +27,20 @@ interface IgAccount {
   created_at: string;
 }
 
+interface StartDiagnostics {
+  meta_app_id?: string;
+  meta_app_id_length?: number;
+  meta_app_id_is_numeric?: boolean;
+  redirect_uri?: string;
+  scopes?: string[];
+  meta_app_id_preview?: string | null;
+  meta_app_id_present?: boolean;
+  meta_app_secret_present?: boolean;
+  meta_app_secret_length?: number;
+}
+
+const EXPECTED_APP_ID = "877027558735996";
+
 export default function SettingsInstagram() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
@@ -34,6 +48,8 @@ export default function SettingsInstagram() {
   const navigate = useNavigate();
   const tenantId = currentTenant?.id;
   const [connecting, setConnecting] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<StartDiagnostics | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Handle OAuth callback
   useEffect(() => {

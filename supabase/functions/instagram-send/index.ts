@@ -212,6 +212,12 @@ Deno.serve(async (req) => {
 
     let textToSend: string | null = message || null;
 
+    // Detect purchase intent on incoming comments to trigger combined comment + DM flow
+    const purchaseIntent =
+      mode === "auto_reply" &&
+      (channel === "comment" || channel === "live") &&
+      isPurchaseIntent(incoming_text || "");
+
     // auto-reply: ask Copilot for the text
     if (mode === "auto_reply") {
       textToSend = await generateCopilotReply({
@@ -220,6 +226,7 @@ Deno.serve(async (req) => {
         incoming: incoming_text || "",
         username,
         context,
+        forcePurchaseRedirect: purchaseIntent,
       });
       if (!textToSend) {
         return new Response(JSON.stringify({ error: "Copilot returned no text" }), {
@@ -238,6 +245,8 @@ Deno.serve(async (req) => {
 
     // route by channel
     let result: any;
+    let dmResult: any = null;
+    let dmText: string | null = null;
     if (channel === "dm") {
       if (!ig_user_id) throw new Error("ig_user_id required for DM");
       result = await sendDM(account, ig_user_id, textToSend);
@@ -266,6 +275,37 @@ Deno.serve(async (req) => {
           reply_content: textToSend,
         })
         .eq("comment_id", comment_id);
+
+      // Purchase intent: also send Private Reply (DM) with product link + UTMs
+      if (purchaseIntent) {
+        try {
+          const productUrl = await pickProductUrl(tenant_id, incoming_text || "");
+          const linkWithUtm = buildUtmUrl(productUrl, {
+            source: "copilot",
+            medium: "instagram",
+            campaign: "comment_to_dm",
+            content: context?.post_id ? `post_${context.post_id}` : "auto_reply",
+          });
+          dmText = `Oi${username ? ` @${username}` : ""}! 💖 Aqui está o link do produto pra você: ${linkWithUtm}\n\nQualquer dúvida é só me chamar por aqui! ✨`;
+          dmResult = await sendPrivateReply(account, comment_id, dmText);
+
+          // Log the DM in instagram_messages so it appears in chat history
+          await supabase.from("instagram_messages").insert({
+            tenant_id,
+            ig_account_id,
+            ig_user_id: ig_user_id || "unknown",
+            username,
+            direction: "outbound",
+            message_type: "text",
+            content: dmText,
+            status: "sent",
+            message_id: dmResult?.message_id,
+            metadata: { auto: true, source: "comment_purchase_intent", comment_id },
+          });
+        } catch (e) {
+          console.error("[ig-send] purchase-intent DM failed:", e);
+        }
+      }
     } else if (channel === "private_reply") {
       if (!comment_id) throw new Error("comment_id required");
       result = await sendPrivateReply(account, comment_id, textToSend);
@@ -295,9 +335,10 @@ Deno.serve(async (req) => {
       throw new Error(`Unknown channel: ${channel}`);
     }
 
-    return new Response(JSON.stringify({ success: true, result, sent_text: textToSend }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: true, result, sent_text: textToSend, dm_result: dmResult, dm_text: dmText }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e) {
     console.error("[ig-send] error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {

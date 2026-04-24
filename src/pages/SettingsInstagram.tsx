@@ -215,11 +215,52 @@ export default function SettingsInstagram() {
               <strong>Business ou Creator</strong> e estar vinculada a uma Página do Facebook.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <Button onClick={startConnect} disabled={connecting} className="gap-2">
               <Plus className="h-4 w-4" />
               {connecting ? "Conectando..." : "Conectar Instagram"}
             </Button>
+
+            {(diagnostics || startError) && (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-2">
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Diagnóstico do backend
+                </div>
+                {startError && (
+                  <div className="text-destructive font-medium">{startError}</div>
+                )}
+                {diagnostics && (
+                  <div className="grid grid-cols-1 gap-1 font-mono">
+                    <div>
+                      App ID em runtime:{" "}
+                      <span className={diagnostics.meta_app_id === EXPECTED_APP_ID ? "text-emerald-600" : "text-destructive"}>
+                        {diagnostics.meta_app_id ?? diagnostics.meta_app_id_preview ?? "—"}
+                      </span>
+                    </div>
+                    <div>
+                      App ID esperado:{" "}
+                      <span className="text-muted-foreground">{EXPECTED_APP_ID}</span>
+                    </div>
+                    <div>
+                      Comprimento: {diagnostics.meta_app_id_length ?? "—"} ·{" "}
+                      Numérico: {String(diagnostics.meta_app_id_is_numeric ?? "—")}
+                    </div>
+                    {diagnostics.meta_app_secret_length !== undefined && (
+                      <div>App Secret length: {diagnostics.meta_app_secret_length}</div>
+                    )}
+                    {diagnostics.redirect_uri && (
+                      <div className="break-all">redirect_uri: {diagnostics.redirect_uri}</div>
+                    )}
+                    {diagnostics.meta_app_id && diagnostics.meta_app_id !== EXPECTED_APP_ID && (
+                      <div className="text-destructive mt-1">
+                        ⚠️ App ID em runtime difere do esperado. Atualize a secret META_APP_ID.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

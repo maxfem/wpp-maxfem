@@ -423,7 +423,23 @@ async function handleChanges(entry: any) {
 
       console.log("[ig-webhook] comment saved:", inserted?.id);
 
-      if (account.auto_reply_comments && text) {
+      // 1) Try ManyChat-style rules first (keyword/AI → public reply + DM)
+      let ruleFired = false;
+      if (text && parentId == null) {
+        ruleFired = await evaluateAndRunRules({
+          account,
+          channel: "comment",
+          text,
+          comment_id: commentId,
+          post_id: postId,
+          from_ig_user_id: fromIgId,
+          from_username: fromUsername,
+          permalink: value.permalink,
+        });
+      }
+
+      // 2) Fallback to generic Copilot auto-reply only if no rule matched
+      if (!ruleFired && account.auto_reply_comments && text) {
         await triggerCopilotReply({
           tenantId: account.tenant_id,
           ig_account_id: account.id,

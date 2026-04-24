@@ -440,9 +440,30 @@ async function handleMessaging(entry: any) {
 
       if (msg.attachments?.length) {
         const att = msg.attachments[0];
-        messageType = att.type || "attachment";
+        let rawType = att.type || "attachment";
         mediaUrl = att.payload?.url || null;
-        if (!content) content = `[${messageType}]`;
+
+        // Instagram returns "unsupported_type" for Story replies, shared posts/reels and
+        // other rich media. The asset itself (lookaside.fbsbx.com) is almost always an
+        // image preview that we *can* render — coerce it to "image" so the chat shows it.
+        if (rawType === "unsupported_type" && mediaUrl) {
+          rawType = "image";
+        }
+        // Normalise other IG-specific types to known renderable buckets
+        if (rawType === "ig_reel" || rawType === "video") rawType = "video";
+        if (rawType === "story_mention" || rawType === "share" || rawType === "image") rawType = "image";
+
+        messageType = rawType;
+        if (!content) {
+          // Use a friendlier label per type so the conversation list isn't "[unsupported_type]"
+          const labels: Record<string, string> = {
+            image: "📷 Imagem",
+            video: "🎬 Vídeo",
+            audio: "🎵 Áudio",
+            document: "📎 Documento",
+          };
+          content = labels[rawType] || `[${rawType}]`;
+        }
       }
 
       const { data: inserted } = await supabase

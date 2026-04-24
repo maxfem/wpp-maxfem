@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Instagram, Plus, Trash2, ExternalLink, AlertCircle, KeyRound, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Instagram, Plus, Trash2, ExternalLink, AlertCircle, KeyRound, Eye, EyeOff, ShieldCheck, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -223,6 +223,27 @@ export default function SettingsInstagram() {
     onError: (e: any) => toast.error("Erro ao atualizar token", { description: e.message }),
   });
 
+  const backfillUsernamesMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId) throw new Error("Sem tenant");
+      const { data, error } = await supabase.functions.invoke(
+        "instagram-backfill-usernames",
+        { body: { tenant_id: tenantId } },
+      );
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data: any) => {
+      toast.success(
+        `Nomes atualizados: ${data.total_resolved} de ${data.total_scanned} conversas`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["instagram-accounts"] });
+    },
+    onError: (e: any) =>
+      toast.error("Erro ao atualizar nomes", { description: e.message }),
+  });
+
   const daysUntilExpiry = (iso: string | null) => {
     if (!iso) return null;
     const days = Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);
@@ -260,10 +281,24 @@ export default function SettingsInstagram() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={startConnect} disabled={connecting} className="gap-2">
-              <Plus className="h-4 w-4" />
-              {connecting ? "Conectando..." : "Conectar Instagram"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={startConnect} disabled={connecting} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {connecting ? "Conectando..." : "Conectar Instagram"}
+              </Button>
+              {accounts.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => backfillUsernamesMutation.mutate()}
+                  disabled={backfillUsernamesMutation.isPending}
+                  className="gap-2"
+                  title="Busca o @usuário das conversas antigas que ainda aparecem como 'IG xxxxxx'"
+                >
+                  <RefreshCw className={`h-4 w-4 ${backfillUsernamesMutation.isPending ? "animate-spin" : ""}`} />
+                  {backfillUsernamesMutation.isPending ? "Atualizando nomes..." : "Atualizar nomes do Instagram"}
+                </Button>
+              )}
+            </div>
 
             {(diagnostics || startError) && (
               <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-2">

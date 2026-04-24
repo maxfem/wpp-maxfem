@@ -29,22 +29,131 @@ async function findAccountByPageId(pageId: string) {
 }
 
 // Fetch IG username from Meta Graph API for a given IG-Scoped User ID.
-// Uses the page access token tied to the connected IG account.
-async function fetchIgUsername(igUserId: string, accessToken: string): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://graph.facebook.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`
-    );
-    const data = await res.json();
-    if (!res.ok) {
-      console.warn("[ig-webhook] fetchIgUsername failed:", igUserId, data);
-      return null;
+// Tries multiple endpoints — works for both Instagram Login (IGAA) and Facebook Page (EAA) tokens.
+async function fetchIgUsername(
+  igUserId: string,
+  accessToken: string,
+  ownerIgUserId?: string,
+): Promise<string | null> {
+  const isInstagramLoginToken = accessToken.startsWith("IGAA");
+
+  // Build endpoint list in order of likelihood of success based on token type
+  const endpoints = isInstagramLoginToken
+    ? [
+        // Instagram Login token (IGAA) — must use graph.instagram.com
+        `https://graph.instagram.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`,
+        // Fallback to graph.facebook.com (sometimes accepted)
+        `https://graph.facebook.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`,
+      ]
+    : [
+        // Facebook Page token (EAA) — primary
+        `https://graph.facebook.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`,
+        `https://graph.instagram.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`,
+      ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (res.ok && (data.username || data.name)) {
+        const handle = data.username || data.name;
+        console.log(`[ig-webhook] fetchIgUsername OK (${url.split("?")[0]}) → ${handle}`);
+        return handle;
+      }
+      console.warn(`[ig-webhook] fetchIgUsername miss ${url.split("?")[0]}:`, data?.error?.message || data);
+    } catch (e) {
+      console.error("[ig-webhook] fetchIgUsername error:", e);
     }
-    return data.username || data.name || null;
-  } catch (e) {
-    console.error("[ig-webhook] fetchIgUsername error:", e);
-    return null;
   }
+
+  // Last resort: list conversations and look for matching participant
+  if (ownerIgUserId) {
+    try {
+      const base = isInstagramLoginToken
+        ? "https://graph.instagram.com/v22.0"
+        : "https://graph.facebook.com/v22.0";
+      const url = `${base}/${ownerIgUserId}/conversations?platform=instagram&fields=participants&access_token=${accessToken}&limit=50`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data?.data)) {
+        for (const conv of data.data) {
+          const part = conv?.participants?.data?.find((p: any) => p.id === igUserId);
+          if (part?.username) {
+            console.log(`[ig-webhook] fetchIgUsername via conversations → ${part.username}`);
+            return part.username;
+          }
+        }
+      } else {
+        console.warn("[ig-webhook] conversations fallback miss:", data?.error?.message || data);
+      }
+    } catch (e) {
+      console.error("[ig-webhook] conversations fallback error:", e);
+    }
+  }
+
+  return null;
+}
+
+// Backfill usernames for an account: scan distinct ig_user_ids missing username and resolve them.
+async function backfillUsernamesForAccount(account: any): Promise<{ resolved: number; scanned: number }> {
+  if (!account?.access_token) return { resolved: 0, scanned: 0 };
+
+  const { data: rows } = await supabase
+    .from("instagram_messages")
+    .select("ig_user_id")
+    .eq("ig_account_id", account.id)
+    .is("username", null)
+    .limit(2000);
+
+  const uniqueIds = Array.from(new Set((rows || []).map((r: any) => r.ig_user_id))).filter(
+    (id) => id && id !== account.ig_user_id,
+  );
+
+  let resolved = 0;
+  // Process in small batches to respect rate limits
+  const concurrency = 3;
+  for (let i = 0; i < uniqueIds.length; i += concurrency) {
+    const chunk = uniqueIds.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (igUserId) => {
+        const username = await fetchIgUsername(igUserId, account.access_token, account.ig_user_id);
+        if (!username) return;
+        resolved++;
+        // update messages
+        await supabase
+          .from("instagram_messages")
+          .update({ username })
+          .eq("ig_account_id", account.id)
+          .eq("ig_user_id", igUserId)
+          .is("username", null);
+        // update customer name if placeholder
+        const { data: cust } = await supabase
+          .from("customers")
+          .select("id, name, custom_attributes")
+          .eq("tenant_id", account.tenant_id)
+          .filter("custom_attributes->instagram->>ig_user_id", "eq", igUserId)
+          .limit(1)
+          .maybeSingle();
+        if (cust && (cust.name?.startsWith("IG ") || !cust.name)) {
+          const attrs = (cust.custom_attributes as any) || {};
+          await supabase
+            .from("customers")
+            .update({
+              name: `@${username}`,
+              custom_attributes: {
+                ...attrs,
+                instagram: { ...(attrs.instagram || {}), ig_user_id: igUserId, username },
+              },
+            })
+            .eq("id", cust.id);
+        }
+      }),
+    );
+    // small pause between batches
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return { resolved, scanned: uniqueIds.length };
 }
 
 async function resolveCustomerByIgUser(
@@ -313,9 +422,10 @@ async function handleMessaging(entry: any) {
       if (msg.is_echo) continue;
 
       // Try to resolve the username via Graph API (webhook payload doesn't include it).
+      // Resolve for both inbound AND outbound (echo) so conversations started by us also get named.
       let resolvedUsername: string | null = null;
-      if (isInbound && account.access_token) {
-        resolvedUsername = await fetchIgUsername(igUserId, account.access_token);
+      if (account.access_token) {
+        resolvedUsername = await fetchIgUsername(igUserId, account.access_token, account.ig_user_id);
       }
 
       const customer = await resolveCustomerByIgUser(

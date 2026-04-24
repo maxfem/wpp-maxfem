@@ -301,34 +301,56 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Validate token + refresh metadata via Graph API
-      const meRes = await fetch(
-        `https://graph.facebook.com/v22.0/${acc.ig_user_id}?fields=id,username,profile_picture_url,followers_count&access_token=${access_token}`
-      );
+      // Detect token type by prefix:
+      //  - "IGAA..." → Instagram Login token → graph.instagram.com
+      //  - "EAA..."  → Facebook Page/User token → graph.facebook.com
+      const isIgToken = access_token.startsWith("IGAA");
+      const graphHost = isIgToken ? "https://graph.instagram.com" : "https://graph.facebook.com/v22.0";
+      const meEndpoint = isIgToken
+        ? `${graphHost}/me?fields=id,username,profile_picture_url,followers_count&access_token=${access_token}`
+        : `${graphHost}/${acc.ig_user_id}?fields=id,username,profile_picture_url,followers_count&access_token=${access_token}`;
+
+      const meRes = await fetch(meEndpoint);
       const meData = await meRes.json();
       if (!meRes.ok) {
-        return new Response(JSON.stringify({ error: "Invalid token", details: meData }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            error: "Invalid token",
+            details: meData,
+            hint: isIgToken
+              ? "Token Instagram (IGAA) detectado — validado via graph.instagram.com. Verifique se foi gerado com permissões instagram_business_manage_messages/comments."
+              : "Token Facebook Page (EAA) detectado — gere um Page Access Token vinculado à página do Instagram no painel da Meta.",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
 
-      // Try to inspect token to get real expiry; default to 60d
+      // Try to inspect token to get real expiry; default to 60d.
+      // debug_token only works for Facebook tokens; IG tokens are long-lived (~60d) by default.
       let expiresAtIso: string;
-      try {
-        const dbgRes = await fetch(
-          `https://graph.facebook.com/v22.0/debug_token?input_token=${access_token}&access_token=${META_APP_ID}|${META_APP_SECRET}`
-        );
-        const dbg = await dbgRes.json();
-        const expSec = dbg?.data?.expires_at;
-        if (expSec && typeof expSec === "number" && expSec > 0) {
-          expiresAtIso = new Date(expSec * 1000).toISOString();
-        } else {
+      if (!isIgToken) {
+        try {
+          const dbgRes = await fetch(
+            `https://graph.facebook.com/v22.0/debug_token?input_token=${access_token}&access_token=${META_APP_ID}|${META_APP_SECRET}`
+          );
+          const dbg = await dbgRes.json();
+          const expSec = dbg?.data?.expires_at;
+          if (expSec && typeof expSec === "number" && expSec > 0) {
+            expiresAtIso = new Date(expSec * 1000).toISOString();
+          } else {
+            const d = new Date();
+            d.setDate(d.getDate() + 60);
+            expiresAtIso = d.toISOString();
+          }
+        } catch {
           const d = new Date();
           d.setDate(d.getDate() + 60);
           expiresAtIso = d.toISOString();
         }
-      } catch {
+      } else {
         const d = new Date();
         d.setDate(d.getDate() + 60);
         expiresAtIso = d.toISOString();

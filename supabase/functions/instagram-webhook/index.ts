@@ -28,7 +28,30 @@ async function findAccountByPageId(pageId: string) {
   return data;
 }
 
-async function resolveCustomerByIgUser(tenantId: string, igUserId: string, username?: string) {
+// Fetch IG username from Meta Graph API for a given IG-Scoped User ID.
+// Uses the page access token tied to the connected IG account.
+async function fetchIgUsername(igUserId: string, accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn("[ig-webhook] fetchIgUsername failed:", igUserId, data);
+      return null;
+    }
+    return data.username || data.name || null;
+  } catch (e) {
+    console.error("[ig-webhook] fetchIgUsername error:", e);
+    return null;
+  }
+}
+
+async function resolveCustomerByIgUser(
+  tenantId: string,
+  igUserId: string,
+  username?: string | null
+) {
   // try lookup by custom_attributes->instagram->ig_user_id
   const { data: existing } = await supabase
     .from("customers")
@@ -37,7 +60,25 @@ async function resolveCustomerByIgUser(tenantId: string, igUserId: string, usern
     .filter("custom_attributes->instagram->>ig_user_id", "eq", igUserId)
     .limit(1)
     .maybeSingle();
-  if (existing) return existing;
+
+  if (existing) {
+    // Backfill username if we now have it and the existing record was a placeholder
+    const attrs = (existing.custom_attributes as any) || {};
+    const currentUsername = attrs?.instagram?.username;
+    if (username && (!currentUsername || existing.name?.startsWith("IG "))) {
+      await supabase
+        .from("customers")
+        .update({
+          name: `@${username}`,
+          custom_attributes: {
+            ...attrs,
+            instagram: { ...(attrs.instagram || {}), ig_user_id: igUserId, username },
+          },
+        })
+        .eq("id", existing.id);
+    }
+    return existing;
+  }
 
   // create new customer
   const { data: created, error } = await supabase

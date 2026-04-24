@@ -281,10 +281,24 @@ export default function SettingsInstagram() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button onClick={startConnect} disabled={connecting} className="gap-2">
-              <Plus className="h-4 w-4" />
-              {connecting ? "Conectando..." : "Conectar Instagram"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={startConnect} disabled={connecting} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {connecting ? "Conectando..." : "Conectar Instagram"}
+              </Button>
+              {accounts.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => backfillUsernamesMutation.mutate()}
+                  disabled={backfillUsernamesMutation.isPending}
+                  className="gap-2"
+                  title="Busca o @usuário das conversas antigas que ainda aparecem como 'IG xxxxxx'"
+                >
+                  <RefreshCw className={`h-4 w-4 ${backfillUsernamesMutation.isPending ? "animate-spin" : ""}`} />
+                  {backfillUsernamesMutation.isPending ? "Atualizando nomes..." : "Atualizar nomes do Instagram"}
+                </Button>
+              )}
+            </div>
 
             {(diagnostics || startError) && (
               <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-2">

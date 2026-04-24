@@ -129,8 +129,18 @@ async function generateCopilotReply(opts: {
 }
 
 // ── Meta API helpers ───────────────────────────────────────────────
+// Detect token type:
+//  - "IGAA..." → Instagram Login token → graph.instagram.com (no version prefix on /me/messages)
+//  - "EAA..."  → Facebook Page/User token → graph.facebook.com/v22.0
+function graphBase(token: string): string {
+  return token?.startsWith("IGAA")
+    ? "https://graph.instagram.com/v22.0"
+    : "https://graph.facebook.com/v22.0";
+}
+
 async function sendDM(account: any, recipientId: string, text: string) {
-  const url = `https://graph.facebook.com/v22.0/${account.ig_user_id}/messages?access_token=${account.access_token}`;
+  const base = graphBase(account.access_token);
+  const url = `${base}/${account.ig_user_id}/messages?access_token=${account.access_token}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -145,7 +155,8 @@ async function sendDM(account: any, recipientId: string, text: string) {
 }
 
 async function replyToComment(account: any, commentId: string, text: string) {
-  const url = `https://graph.facebook.com/v22.0/${commentId}/replies?access_token=${account.access_token}`;
+  const base = graphBase(account.access_token);
+  const url = `${base}/${commentId}/replies?access_token=${account.access_token}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -157,7 +168,8 @@ async function replyToComment(account: any, commentId: string, text: string) {
 }
 
 async function sendPrivateReply(account: any, commentId: string, text: string) {
-  const url = `https://graph.facebook.com/v22.0/${account.ig_user_id}/messages?access_token=${account.access_token}`;
+  const base = graphBase(account.access_token);
+  const url = `${base}/${account.ig_user_id}/messages?access_token=${account.access_token}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

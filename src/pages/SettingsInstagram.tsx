@@ -366,15 +366,30 @@ export default function SettingsInstagram() {
                             )}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm(`Desconectar @${acc.username}?`)) deleteMutation.mutate(acc.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => {
+                              setReconnectAccount(acc);
+                              setTokenInput("");
+                              setShowToken(false);
+                            }}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Reconectar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm(`Desconectar @${acc.username}?`)) deleteMutation.mutate(acc.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="mt-4 pt-4 border-t space-y-3">

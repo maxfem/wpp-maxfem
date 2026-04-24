@@ -422,9 +422,10 @@ async function handleMessaging(entry: any) {
       if (msg.is_echo) continue;
 
       // Try to resolve the username via Graph API (webhook payload doesn't include it).
+      // Resolve for both inbound AND outbound (echo) so conversations started by us also get named.
       let resolvedUsername: string | null = null;
-      if (isInbound && account.access_token) {
-        resolvedUsername = await fetchIgUsername(igUserId, account.access_token);
+      if (account.access_token) {
+        resolvedUsername = await fetchIgUsername(igUserId, account.access_token, account.ig_user_id);
       }
 
       const customer = await resolveCustomerByIgUser(

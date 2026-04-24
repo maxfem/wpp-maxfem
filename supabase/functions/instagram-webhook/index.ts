@@ -28,7 +28,30 @@ async function findAccountByPageId(pageId: string) {
   return data;
 }
 
-async function resolveCustomerByIgUser(tenantId: string, igUserId: string, username?: string) {
+// Fetch IG username from Meta Graph API for a given IG-Scoped User ID.
+// Uses the page access token tied to the connected IG account.
+async function fetchIgUsername(igUserId: string, accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v22.0/${igUserId}?fields=username,name&access_token=${accessToken}`
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn("[ig-webhook] fetchIgUsername failed:", igUserId, data);
+      return null;
+    }
+    return data.username || data.name || null;
+  } catch (e) {
+    console.error("[ig-webhook] fetchIgUsername error:", e);
+    return null;
+  }
+}
+
+async function resolveCustomerByIgUser(
+  tenantId: string,
+  igUserId: string,
+  username?: string | null
+) {
   // try lookup by custom_attributes->instagram->ig_user_id
   const { data: existing } = await supabase
     .from("customers")
@@ -37,7 +60,25 @@ async function resolveCustomerByIgUser(tenantId: string, igUserId: string, usern
     .filter("custom_attributes->instagram->>ig_user_id", "eq", igUserId)
     .limit(1)
     .maybeSingle();
-  if (existing) return existing;
+
+  if (existing) {
+    // Backfill username if we now have it and the existing record was a placeholder
+    const attrs = (existing.custom_attributes as any) || {};
+    const currentUsername = attrs?.instagram?.username;
+    if (username && (!currentUsername || existing.name?.startsWith("IG "))) {
+      await supabase
+        .from("customers")
+        .update({
+          name: `@${username}`,
+          custom_attributes: {
+            ...attrs,
+            instagram: { ...(attrs.instagram || {}), ig_user_id: igUserId, username },
+          },
+        })
+        .eq("id", existing.id);
+    }
+    return existing;
+  }
 
   // create new customer
   const { data: created, error } = await supabase
@@ -111,7 +152,17 @@ async function handleMessaging(entry: any) {
       // Skip echoes of our own outbound (handled by send function)
       if (msg.is_echo) continue;
 
-      const customer = await resolveCustomerByIgUser(account.tenant_id, igUserId);
+      // Try to resolve the username via Graph API (webhook payload doesn't include it).
+      let resolvedUsername: string | null = null;
+      if (isInbound && account.access_token) {
+        resolvedUsername = await fetchIgUsername(igUserId, account.access_token);
+      }
+
+      const customer = await resolveCustomerByIgUser(
+        account.tenant_id,
+        igUserId,
+        resolvedUsername
+      );
 
       let content: string | null = msg.text || null;
       let messageType = "text";
@@ -138,12 +189,23 @@ async function handleMessaging(entry: any) {
           media_url: mediaUrl,
           status: isInbound ? "received" : "sent",
           message_id: msg.mid,
+          username: resolvedUsername,
           metadata: msg,
         })
         .select()
         .single();
 
-      console.log("[ig-webhook] message saved:", inserted?.id);
+      console.log("[ig-webhook] message saved:", inserted?.id, "username:", resolvedUsername);
+
+      // Backfill username on previous messages of this conversation that lacked it
+      if (resolvedUsername) {
+        await supabase
+          .from("instagram_messages")
+          .update({ username: resolvedUsername })
+          .eq("ig_account_id", account.id)
+          .eq("ig_user_id", igUserId)
+          .is("username", null);
+      }
 
       // Auto-reply DMs if enabled and inbound and within 24h (always within for fresh inbound)
       if (isInbound && account.auto_reply_dms && content) {
@@ -151,6 +213,7 @@ async function handleMessaging(entry: any) {
           tenantId: account.tenant_id,
           ig_account_id: account.id,
           ig_user_id: igUserId,
+          username: resolvedUsername || undefined,
           text: content,
           channel: "dm",
         });

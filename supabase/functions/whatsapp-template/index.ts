@@ -235,22 +235,32 @@ Deno.serve(async (req) => {
     const components: Record<string, unknown>[] = [];
 
     if (template.header_type && template.header_type !== "none") {
-      const headerComponent: Record<string, unknown> = {
-        type: "HEADER",
-        format: template.header_type.toUpperCase(),
-      };
+      const isTextHeader = template.header_type === "text";
+      const isMediaHeader = ["image", "video", "document"].includes(template.header_type);
 
-      if (template.header_type === "text" && sanitizedHeader) {
-        headerComponent.text = sanitizedHeader;
-      }
+      // Skip HEADER entirely if required content is missing — Meta rejects empty headers (subcode 2388043)
+      const hasValidContent =
+        (isTextHeader && sanitizedHeader) ||
+        (isMediaHeader && template.header_content);
 
-      if (["image", "video", "document"].includes(template.header_type) && template.header_content) {
-        headerComponent.example = {
-          header_handle: [template.header_content],
+      if (hasValidContent) {
+        const headerComponent: Record<string, unknown> = {
+          type: "HEADER",
+          format: template.header_type.toUpperCase(),
         };
-      }
 
-      components.push(headerComponent);
+        if (isTextHeader) {
+          headerComponent.text = sanitizedHeader;
+        }
+
+        if (isMediaHeader) {
+          headerComponent.example = {
+            header_handle: [template.header_content],
+          };
+        }
+
+        components.push(headerComponent);
+      }
     }
 
     const bodyComponent: Record<string, unknown> = {

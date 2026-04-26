@@ -64,7 +64,7 @@ export default function Automations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom", trigger: "" });
-  const [dateKey, setDateKey] = useState<DatePeriodKey>("all");
+  const [dateKey, setDateKey] = useState<DatePeriodKey>("today");
   const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
   const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -90,18 +90,23 @@ export default function Automations() {
     queryFn: async () => {
       if (!currentTenant) return [];
       const allData: CampaignActivity[] = [];
-      let from = 0;
+      let fromPage = 0;
       const batchSize = 1000;
       while (true) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("campaign_activities")
           .select("campaign_id, status, clicked_at, conversion_value, created_at")
           .eq("tenant_id", currentTenant.id)
-          .range(from, from + batchSize - 1);
+          .range(fromPage, fromPage + batchSize - 1);
+        
+        if (error) {
+          console.error("Error fetching activities:", error);
+          break;
+        }
         if (!data || data.length === 0) break;
         allData.push(...(data as CampaignActivity[]));
         if (data.length < batchSize) break;
-        from += batchSize;
+        fromPage += batchSize;
       }
       return allData;
     },
@@ -129,12 +134,14 @@ export default function Automations() {
   });
 
   const metricsMap = useMemo(() => {
-    let acts = rawActivities;
     const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
     
-    if (dateKey !== "all" || (customDateFrom || customDateTo)) {
-      acts = acts.filter((a) => isWithinInterval(toSaoPaulo(a.created_at), { start: from, end: to }));
-    }
+    // Filter activities based on the standard period range
+    const acts = rawActivities.filter((a) => {
+      const activityDate = toSaoPaulo(a.created_at);
+      return isWithinInterval(activityDate, { start: from, end: to });
+    });
+
     const map: Record<string, CampaignMetrics> = {};
     acts.forEach((a) => {
       if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
@@ -232,15 +239,10 @@ export default function Automations() {
       c.name.toLowerCase().includes(search.toLowerCase())
     );
     
-    const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
-
-    if (dateKey !== "all" || (customDateFrom || customDateTo)) {
-      list = list.filter((c) => {
-        return isWithinInterval(toSaoPaulo(c.created_at), { start: from, end: to });
-      });
-    }
+    // We removed the campaign creation date filter to show all automations 
+    // regardless of when they were created, but keeping metrics date-filtered
     return list;
-  }, [campaigns, search, dateKey, customDateFrom, customDateTo]);
+  }, [campaigns, search]);
 
   const dateLabel = useMemo(() => {
     if (dateKey !== "custom" && dateKey !== "all") {

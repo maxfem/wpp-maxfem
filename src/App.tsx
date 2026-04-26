@@ -32,6 +32,7 @@ const SettingsBling = lazy(() => import("./pages/SettingsBling"));
 const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const SettingsInstagram = lazy(() => import("./pages/SettingsInstagram"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
+const CRMPlanner = lazy(() => import("./pages/CRMPlanner"));
 
 const queryClient = new QueryClient();
 

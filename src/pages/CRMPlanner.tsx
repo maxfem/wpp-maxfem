@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Bot, User, ListFilter, Sparkles, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 
@@ -15,6 +16,7 @@ type Message = {
 };
 
 export default function CRMPlanner() {
+  const { currentTenant } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -42,7 +44,10 @@ export default function CRMPlanner() {
 
     try {
       const { data, error } = await supabase.functions.invoke("crm-planner", {
-        body: { messages: newMessages },
+        body: { 
+          messages: newMessages,
+          tenant_id: currentTenant?.id 
+        },
       });
 
       if (error) throw error;

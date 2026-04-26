@@ -451,8 +451,16 @@ async function processAutomationQueue(supabase: any) {
 
             const waData = await waRes.json();
             if (!waRes.ok) {
-              console.error(`Item ${item.id}: send failed:`, JSON.stringify(waData));
+              const errorMessage = waData.error?.message || JSON.stringify(waData);
+              console.error(`Item ${item.id}: send failed:`, errorMessage);
+              
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: customer.id, status: "failed", channel: "whatsapp", 
+                sent_at: new Date().toISOString(), error_message: errorMessage,
+              });
               break;
             }
 

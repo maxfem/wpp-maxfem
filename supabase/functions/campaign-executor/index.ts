@@ -11,8 +11,8 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
   const { customer, order, campaign } = ctx;
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
-
-  switch (key) {
+  
+  if (!key) return "-";
     case "customer.name": return customer?.name || "Cliente";
     case "customer.first_name": return (customer?.name || "Cliente").split(" ")[0];
     case "customer.phone": return customer?.phone || "";
@@ -76,7 +76,8 @@ function buildTemplateComponents(
 ) {
   const components: any[] = [];
   if (hasHeaderVar) {
-    components.push({ type: "header", parameters: [{ type: "text", text: resolveVariable("customer.name", ctx) }] });
+    const value = resolveVariable("customer.first_name", ctx);
+    components.push({ type: "header", parameters: [{ type: "text", text: value && value !== "-" ? value : "Cliente" }] });
   }
   if (bodyVarCount > 0) {
     const params: any[] = [];

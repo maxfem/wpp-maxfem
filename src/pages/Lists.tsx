@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download,
+  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,7 @@ type ContactList = {
 
 export default function Lists() {
   const { currentTenant } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -443,6 +445,10 @@ export default function Lists() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" className="border-primary/50 hover:bg-primary/5" onClick={() => navigate("/listas")}>
+              <Sparkles className="h-4 w-4 mr-2 text-primary" />
+              Arquiteto CRM
+            </Button>
             <Button variant="outline" onClick={() => setCsvOpen(true)}>
               <Upload className="h-4 w-4 mr-2" />
               Importar CSV

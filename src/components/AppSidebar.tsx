@@ -11,6 +11,7 @@ import {
   LogOut,
   Zap,
   List,
+  Sparkles,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
@@ -45,6 +46,7 @@ const planItems = [
   { title: "Campanhas", url: "/campaigns", icon: Megaphone },
   { title: "Automações", url: "/automations", icon: Zap },
   { title: "Templates", url: "/templates", icon: FileText },
+  { title: "Arquiteto CRM", url: "/listas", icon: Sparkles },
 ];
 
 const executeItems = [

@@ -418,24 +418,37 @@ async function processAutomationQueue(supabase: any) {
             }
 
             // Resolve COPY_CODE button values
-            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => ({
-              index: btn.index,
-              value: btn.example ? resolveVariable(btn.example, ctx) : "-",
-            }));
+            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => {
+              const value = btn.example ? resolveVariable(btn.example, ctx) : "-";
+              console.log(`[automation] Resolving COPY_CODE button ${btn.index} with variable ${btn.example}: ${value}`);
+              return {
+                index: btn.index,
+                value: value,
+              };
+            });
+
+            const templatePayload = {
+              messaging_product: "whatsapp", to: phone, type: "template",
+              template: {
+                name: templateName, language: { code: templateLanguage },
+                components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
+              },
+            };
+            
+            console.log(`[automation] Sending message to ${phone} with payload:`, JSON.stringify(templatePayload, null, 2));
 
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
               method: "POST",
               headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                messaging_product: "whatsapp", to: phone, type: "template",
-                template: {
-                  name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
-                },
-              }),
+              body: JSON.stringify(templatePayload),
             });
 
             const waData = await waRes.json();
+            if (!waRes.ok) {
+              console.error(`Item ${item.id}: send failed:`, JSON.stringify(waData));
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              break;
+            }
 
             if (waData.messages?.[0]?.id) {
               await supabase.from("whatsapp_messages").insert({

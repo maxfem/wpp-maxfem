@@ -89,6 +89,7 @@ export type Database = {
           created_at: string
           customer_id: string
           delivered_at: string | null
+          error_message: string | null
           id: string
           read_at: string | null
           replied_at: string | null
@@ -106,6 +107,7 @@ export type Database = {
           created_at?: string
           customer_id: string
           delivered_at?: string | null
+          error_message?: string | null
           id?: string
           read_at?: string | null
           replied_at?: string | null
@@ -123,6 +125,7 @@ export type Database = {
           created_at?: string
           customer_id?: string
           delivered_at?: string | null
+          error_message?: string | null
           id?: string
           read_at?: string | null
           replied_at?: string | null

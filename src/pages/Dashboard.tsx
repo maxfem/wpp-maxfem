@@ -36,9 +36,9 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { subDays, startOfDay, endOfDay, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatSP } from "@/lib/utils";
+import { formatSP, getStandardPeriodRange, type DatePeriodKey, toSaoPaulo } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 import { KPIGradientCard } from "@/components/dashboard/KPIGradientCard";
 import { MiniMetricCard } from "@/components/dashboard/MiniMetricCard";
@@ -60,7 +60,7 @@ async function fetchAll<T>(query: any): Promise<T[]> {
   return all;
 }
 
-type PeriodKey = "today" | "yesterday" | "7d" | "30d" | "custom";
+type PeriodKey = DatePeriodKey;
 
 const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
   { key: "today", label: "Hoje" },
@@ -69,29 +69,6 @@ const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
   { key: "30d", label: "30 dias" },
   { key: "custom", label: "Personalizado" },
 ];
-
-function getPeriodRange(key: PeriodKey, customRange?: DateRange): { from: Date; to: Date; days: number } {
-  const now = new Date();
-  switch (key) {
-    case "today":
-      return { from: startOfDay(now), to: endOfDay(now), days: 1 };
-    case "yesterday": {
-      const y = subDays(now, 1);
-      return { from: startOfDay(y), to: endOfDay(y), days: 1 };
-    }
-    case "7d":
-      return { from: startOfDay(subDays(now, 6)), to: endOfDay(now), days: 7 };
-    case "30d":
-      return { from: startOfDay(subDays(now, 29)), to: endOfDay(now), days: 30 };
-    case "custom": {
-      if (customRange?.from && customRange?.to) {
-        const days = differenceInDays(customRange.to, customRange.from) + 1;
-        return { from: startOfDay(customRange.from), to: endOfDay(customRange.to), days };
-      }
-      return { from: startOfDay(subDays(now, 6)), to: endOfDay(now), days: 7 };
-    }
-  }
-}
 
 const fmtNumber = (v: number) => {
   if (v >= 1_000_000) return `${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
@@ -144,12 +121,9 @@ export default function Dashboard() {
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const { from: periodFrom, to: periodTo, days: periodDays } = useMemo(
-    () => getPeriodRange(periodKey, customRange),
+    () => getStandardPeriodRange(periodKey, customRange),
     [periodKey, customRange]
   );
-
-  const periodStartISO = periodFrom.toISOString();
-  const periodEndISO = periodTo.toISOString();
 
   const periodLabel = useMemo(() => {
     if (periodKey === "custom" && customRange?.from && customRange?.to) {
@@ -159,15 +133,15 @@ export default function Dashboard() {
   }, [periodKey, customRange]);
 
   const { data: orders = [] } = useQuery({
-    queryKey: ["dashboard-orders", tenantId, periodStartISO, periodEndISO],
+    queryKey: ["dashboard-orders", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
     queryFn: () =>
       fetchAll<{ total: number; created_at: string; customer_id: string }>(
         supabase
           .from("orders")
           .select("total, created_at, customer_id")
           .eq("tenant_id", tenantId!)
-          .gte("created_at", periodStartISO)
-          .lte("created_at", periodEndISO)
+          .gte("created_at", periodFrom.toISOString())
+          .lte("created_at", periodTo.toISOString())
           .order("created_at")
       ),
     enabled: !!tenantId,
@@ -186,15 +160,15 @@ export default function Dashboard() {
   });
 
   const { data: activities = [] } = useQuery({
-    queryKey: ["dashboard-activities", tenantId, periodStartISO, periodEndISO],
+    queryKey: ["dashboard-activities", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
     queryFn: () =>
       fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
         supabase
           .from("campaign_activities")
           .select("status, clicked_at, converted_at, conversion_value, created_at")
           .eq("tenant_id", tenantId!)
-          .gte("created_at", periodStartISO)
-          .lte("created_at", periodEndISO)
+          .gte("created_at", periodFrom.toISOString())
+          .lte("created_at", periodTo.toISOString())
       ),
     enabled: !!tenantId,
   });

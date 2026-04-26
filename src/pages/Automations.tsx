@@ -145,7 +145,7 @@ export default function Automations() {
       if (cv > 0) map[a.campaign_id].conversoes++;
     });
     return map;
-  }, [rawActivities, datePreset, customDateFrom, customDateTo]);
+  }, [rawActivities, dateKey, customDateFrom, customDateTo]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {
@@ -231,24 +231,16 @@ export default function Automations() {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())
     );
-    if (datePreset >= 0) {
-      const now = toSaoPaulo(new Date());
-      const from = startOfDay(subDays(now, datePreset));
-      const to = endOfDay(now);
+    
+    const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
+
+    if (dateKey !== "all" || (customDateFrom || customDateTo)) {
       list = list.filter((c) => {
-        const d = new Date(c.created_at);
         return isWithinInterval(toSaoPaulo(c.created_at), { start: from, end: to });
-      });
-    } else if (customDateFrom || customDateTo) {
-      list = list.filter((c) => {
-        const d = toSaoPaulo(c.created_at);
-        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
-        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
-        return true;
       });
     }
     return list;
-  }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
+  }, [campaigns, search, dateKey, customDateFrom, customDateTo]);
 
   const dateLabel = useMemo(() => {
     if (dateKey !== "custom" && dateKey !== "all") {

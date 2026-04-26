@@ -53,6 +53,9 @@ function validateServerSide(template: Record<string, unknown>): ValidationError 
   }
 
   // Header text
+  if (headerType === "text" && !headerContent?.trim()) {
+    return { error: "Cabeçalho de texto requer conteúdo. Preencha o texto do cabeçalho ou selecione 'Sem cabeçalho'.", field: "header_content" };
+  }
   if (headerType === "text" && headerContent) {
     if (headerContent.length > 60) {
       return { error: "Cabeçalho excede 60 caracteres.", field: "header_content" };

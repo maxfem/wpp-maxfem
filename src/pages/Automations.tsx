@@ -131,9 +131,10 @@ export default function Automations() {
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
     if (datePreset >= 0) {
-      const from = startOfDay(toSaoPaulo(new Date()));
-      const to = endOfDay(toSaoPaulo(new Date()));
-      acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
+      const now = toSaoPaulo(new Date());
+      const from = startOfDay(subDays(now, datePreset));
+      const to = endOfDay(now);
+      acts = acts.filter((a) => isWithinInterval(toSaoPaulo(a.created_at), { start: from, end: to }));
     } else if (customDateFrom || customDateTo) {
       acts = acts.filter((a) => {
         const d = new Date(a.created_at);
@@ -239,11 +240,12 @@ export default function Automations() {
       c.name.toLowerCase().includes(search.toLowerCase())
     );
     if (datePreset >= 0) {
-      const from = startOfDay(toSaoPaulo(new Date()));
-      const to = endOfDay(toSaoPaulo(new Date()));
+      const now = toSaoPaulo(new Date());
+      const from = startOfDay(subDays(now, datePreset));
+      const to = endOfDay(now);
       list = list.filter((c) => {
         const d = new Date(c.created_at);
-        return isWithinInterval(d, { start: from, end: to });
+        return isWithinInterval(toSaoPaulo(c.created_at), { start: from, end: to });
       });
     } else if (customDateFrom || customDateTo) {
       list = list.filter((c) => {

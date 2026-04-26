@@ -44,7 +44,10 @@ export default function CRMPlanner() {
 
     try {
       const { data, error } = await supabase.functions.invoke("crm-planner", {
-        body: { messages: newMessages },
+        body: { 
+          messages: newMessages,
+          tenant_id: currentTenant?.id 
+        },
       });
 
       if (error) throw error;

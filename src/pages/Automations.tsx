@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { cn, formatSP } from "@/lib/utils";
+import { cn, formatSP, toSaoPaulo } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
@@ -131,14 +131,15 @@ export default function Automations() {
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
     if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
-      acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
+      const now = toSaoPaulo(new Date());
+      const from = startOfDay(subDays(now, datePreset));
+      const to = endOfDay(now);
+      acts = acts.filter((a) => isWithinInterval(toSaoPaulo(a.created_at), { start: from, end: to }));
     } else if (customDateFrom || customDateTo) {
       acts = acts.filter((a) => {
-        const d = new Date(a.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        const d = toSaoPaulo(a.created_at);
+        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
+        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
         return true;
       });
     }
@@ -239,17 +240,18 @@ export default function Automations() {
       c.name.toLowerCase().includes(search.toLowerCase())
     );
     if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
+      const now = toSaoPaulo(new Date());
+      const from = startOfDay(subDays(now, datePreset));
+      const to = endOfDay(now);
       list = list.filter((c) => {
         const d = new Date(c.created_at);
-        return isWithinInterval(d, { start: from, end: to });
+        return isWithinInterval(toSaoPaulo(c.created_at), { start: from, end: to });
       });
     } else if (customDateFrom || customDateTo) {
       list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        const d = toSaoPaulo(c.created_at);
+        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
+        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
         return true;
       });
     }

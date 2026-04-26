@@ -125,9 +125,6 @@ export default function Dashboard() {
     [periodKey, customRange]
   );
 
-  const periodStartISO = periodFrom.toISOString();
-  const periodEndISO = periodTo.toISOString();
-
   const periodLabel = useMemo(() => {
     if (periodKey === "custom" && customRange?.from && customRange?.to) {
       return `${formatSP(customRange.from, "dd/MM/yyyy")} — ${formatSP(customRange.to, "dd/MM/yyyy")}`;
@@ -136,7 +133,7 @@ export default function Dashboard() {
   }, [periodKey, customRange]);
 
   const { data: orders = [] } = useQuery({
-    queryKey: ["dashboard-orders", tenantId, periodStartISO, periodEndISO],
+    queryKey: ["dashboard-orders", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
     queryFn: () =>
       fetchAll<{ total: number; created_at: string; customer_id: string }>(
         supabase
@@ -163,7 +160,7 @@ export default function Dashboard() {
   });
 
   const { data: activities = [] } = useQuery({
-    queryKey: ["dashboard-activities", tenantId, periodStartISO, periodEndISO],
+    queryKey: ["dashboard-activities", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
     queryFn: () =>
       fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
         supabase

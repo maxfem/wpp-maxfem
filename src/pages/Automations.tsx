@@ -23,8 +23,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { cn, formatSP, toSaoPaulo } from "@/lib/utils";
+import { isWithinInterval } from "date-fns";
+import { cn, formatSP, toSaoPaulo, getStandardPeriodRange, type DatePeriodKey } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
@@ -35,13 +35,13 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; cla
   failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
 };
 
-const datePresets = [
-  { label: "Hoje", days: 0 },
-  { label: "7 dias", days: 7 },
-  { label: "14 dias", days: 14 },
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
-  { label: "Todos", days: -1 },
+const datePresets: { label: string; key: DatePeriodKey }[] = [
+  { label: "Hoje", key: "today" },
+  { label: "7 dias", key: "7d" },
+  { label: "14 dias", key: "14d" },
+  { label: "30 dias", key: "30d" },
+  { label: "90 dias", key: "90d" },
+  { label: "Todos", key: "all" },
 ];
 
 const automationTypes = [
@@ -64,7 +64,7 @@ export default function Automations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom", trigger: "" });
-  const [datePreset, setDatePreset] = useState(-1);
+  const [dateKey, setDateKey] = useState<DatePeriodKey>("all");
   const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
   const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -130,18 +130,10 @@ export default function Automations() {
 
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
-    if (datePreset >= 0) {
-      const now = toSaoPaulo(new Date());
-      const from = startOfDay(subDays(now, datePreset));
-      const to = endOfDay(now);
+    const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
+    
+    if (dateKey !== "all" || (customDateFrom || customDateTo)) {
       acts = acts.filter((a) => isWithinInterval(toSaoPaulo(a.created_at), { start: from, end: to }));
-    } else if (customDateFrom || customDateTo) {
-      acts = acts.filter((a) => {
-        const d = toSaoPaulo(a.created_at);
-        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
-        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
-        return true;
-      });
     }
     const map: Record<string, CampaignMetrics> = {};
     acts.forEach((a) => {
@@ -259,8 +251,8 @@ export default function Automations() {
   }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
 
   const dateLabel = useMemo(() => {
-    if (datePreset >= 0) {
-      return datePresets.find((p) => p.days === datePreset)?.label || "";
+    if (dateKey !== "custom" && dateKey !== "all") {
+      return datePresets.find((p) => p.key === dateKey)?.label || "";
     }
     if (customDateFrom && customDateTo) {
       return `${formatSP(customDateFrom, "dd/MM")} - ${formatSP(customDateTo, "dd/MM")}`;
@@ -268,7 +260,7 @@ export default function Automations() {
     if (customDateFrom) return `A partir de ${formatSP(customDateFrom, "dd/MM")}`;
     if (customDateTo) return `Até ${formatSP(customDateTo, "dd/MM")}`;
     return "Todos";
-  }, [datePreset, customDateFrom, customDateTo]);
+  }, [dateKey, customDateFrom, customDateTo]);
 
   return (
     <AppLayout>
@@ -313,12 +305,12 @@ export default function Automations() {
           <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
             {datePresets.map((p) => (
               <Button
-                key={p.days}
-                variant={datePreset === p.days && !customDateFrom ? "default" : "ghost"}
+                key={p.key}
+                variant={dateKey === p.key && !customDateFrom ? "default" : "ghost"}
                 size="sm"
                 className="h-7 text-xs px-2"
                 onClick={() => {
-                  setDatePreset(p.days);
+                  setDateKey(p.key);
                   setCustomDateFrom(undefined);
                   setCustomDateTo(undefined);
                 }}
@@ -342,7 +334,7 @@ export default function Automations() {
                   <Calendar
                     mode="single"
                     selected={customDateFrom}
-                    onSelect={(d) => { setCustomDateFrom(d); setDatePreset(-1); }}
+                    onSelect={(d) => { setCustomDateFrom(d); setDateKey("custom"); }}
                     className={cn("p-2 pointer-events-auto")}
                   />
                 </div>
@@ -351,7 +343,7 @@ export default function Automations() {
                   <Calendar
                     mode="single"
                     selected={customDateTo}
-                    onSelect={(d) => { setCustomDateTo(d); setDatePreset(-1); setCalendarOpen(false); }}
+                    onSelect={(d) => { setCustomDateTo(d); setDateKey("custom"); setCalendarOpen(false); }}
                     className={cn("p-2 pointer-events-auto")}
                   />
                 </div>

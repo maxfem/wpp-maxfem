@@ -41,6 +41,7 @@ type ContactList = {
 
 export default function Lists() {
   const { currentTenant } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);

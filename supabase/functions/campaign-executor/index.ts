@@ -326,17 +326,28 @@ async function processAutomationQueue(supabase: any) {
 
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
-            if (!phoneNumberId || !accessToken) {
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
-              break;
-            }
-
             const templateName = node.data?.template || node.data?.templateName;
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
+            const triggerData = (item.trigger_data || {}) as any;
 
             if (!templateName) {
               const nextId = getNextNodeId(edges, currentNodeId, "out-3");
               if (nextId) { currentNodeId = nextId; await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id); continue; }
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            // Check if order is already paid for Pix/Checkout automations
+            if (templateName.startsWith("pix_nao_pago") || templateName.startsWith("carrinho_abandonado")) {
+              const isPaid = !(await isOrderStillUnpaid(supabase, triggerData, campaign.tenant_id));
+              if (isPaid) {
+                console.log(`[automation] Skipping paid order for template ${templateName} (item ${item.id})`);
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+                break;
+              }
+            }
+
+            if (!phoneNumberId || !accessToken) {
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
               break;
             }
@@ -371,7 +382,6 @@ async function processAutomationQueue(supabase: any) {
             if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
 
             let orderRecord: any = null;
-            const triggerData = (item.trigger_data || {}) as any;
             if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
               let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
               if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);

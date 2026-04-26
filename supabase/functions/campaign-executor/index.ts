@@ -13,6 +13,7 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
   const cart = attrs?.abandoned_cart || {};
   
   if (!key) return "-";
+  switch (key) {
     case "customer.name": return customer?.name || "Cliente";
     case "customer.first_name": return (customer?.name || "Cliente").split(" ")[0];
     case "customer.phone": return customer?.phone || "";

@@ -84,6 +84,8 @@ const App = () => (
                   <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
                   <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
                   <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />
+                  <Route path="/listas" element={<ProtectedRoute><CRMPlanner /></ProtectedRoute>} />
+                  <Route path="/lists/ai" element={<ProtectedRoute><CRMPlanner /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
                   <Route path="/settings/whatsapp" element={<ProtectedRoute><SettingsWhatsApp /></ProtectedRoute>} />
                   <Route path="/settings/integrations" element={<ProtectedRoute><SettingsIntegrations /></ProtectedRoute>} />

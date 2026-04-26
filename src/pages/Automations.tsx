@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { cn, formatSP } from "@/lib/utils";
+import { cn, formatSP, toSaoPaulo } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 
@@ -131,8 +131,8 @@ export default function Automations() {
   const metricsMap = useMemo(() => {
     let acts = rawActivities;
     if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
+      const from = startOfDay(toSaoPaulo(new Date()));
+      const to = endOfDay(toSaoPaulo(new Date()));
       acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
     } else if (customDateFrom || customDateTo) {
       acts = acts.filter((a) => {
@@ -239,8 +239,8 @@ export default function Automations() {
       c.name.toLowerCase().includes(search.toLowerCase())
     );
     if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
+      const from = startOfDay(toSaoPaulo(new Date()));
+      const to = endOfDay(toSaoPaulo(new Date()));
       list = list.filter((c) => {
         const d = new Date(c.created_at);
         return isWithinInterval(d, { start: from, end: to });

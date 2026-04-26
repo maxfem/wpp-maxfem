@@ -2,7 +2,7 @@
 // busca novos comentários da Live na Graph API e dispara auto-resposta via instagram-send.
 // Aplica filtros anti-spam: <3 chars, dedup 60s mesmo usuário, rate 1/5s por conta.
 
-import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { createClient } from "npm:@supabase/supabase-js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -1,7 +1,7 @@
 // Cron diário: renova access_token de instagram_accounts cujo token expira em ≤7 dias.
 // Usa Graph API endpoint de refresh de long-lived token.
 
-import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { createClient } from "npm:@supabase/supabase-js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -15,6 +15,7 @@ type Message = {
 };
 
 export default function CRMPlanner() {
+  const { currentTenant } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",

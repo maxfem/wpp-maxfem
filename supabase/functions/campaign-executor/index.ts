@@ -11,7 +11,8 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
   const { customer, order, campaign } = ctx;
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
-
+  
+  if (!key) return "-";
   switch (key) {
     case "customer.name": return customer?.name || "Cliente";
     case "customer.first_name": return (customer?.name || "Cliente").split(" ")[0];
@@ -76,7 +77,8 @@ function buildTemplateComponents(
 ) {
   const components: any[] = [];
   if (hasHeaderVar) {
-    components.push({ type: "header", parameters: [{ type: "text", text: resolveVariable("customer.name", ctx) }] });
+    const value = resolveVariable("customer.first_name", ctx);
+    components.push({ type: "header", parameters: [{ type: "text", text: value && value !== "-" ? value : "Cliente" }] });
   }
   if (bodyVarCount > 0) {
     const params: any[] = [];
@@ -91,9 +93,12 @@ function buildTemplateComponents(
   }
   if (copyCodeButtons) {
     for (const btn of copyCodeButtons) {
-      // Meta limits coupon_code to 15 characters
-      if (btn.value && btn.value.length <= 15) {
-        components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: btn.value }] });
+      if (btn.value && btn.value !== "-") {
+        // According to Meta, coupon_code must be 15 chars max. 
+        // For PIX, this button type might not be the right one if we want to copy the full code.
+        // However, if the template was approved with COPY_CODE, we must provide a value.
+        const finalValue = btn.value.length > 15 ? btn.value.substring(0, 15) : btn.value;
+        components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: finalValue }] });
       }
     }
   }
@@ -367,10 +372,11 @@ async function processAutomationQueue(supabase: any) {
 
             let orderRecord: any = null;
             const triggerData = (item.trigger_data || {}) as any;
-            if (triggerData?.yampi_order_id || triggerData?.order_id) {
+            if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
               let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
               if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);
-              else oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_id) oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_number) oq = oq.eq("order_number", triggerData.order_number);
               const { data: ord } = await oq.limit(1).single();
               orderRecord = ord;
             }
@@ -418,24 +424,37 @@ async function processAutomationQueue(supabase: any) {
             }
 
             // Resolve COPY_CODE button values
-            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => ({
-              index: btn.index,
-              value: btn.example ? resolveVariable(btn.example, ctx) : "-",
-            }));
+            const resolvedCopyCodeButtons = copyCodeBtnIndices.map(btn => {
+              const value = btn.example ? resolveVariable(btn.example, ctx) : "-";
+              console.log(`[automation] Resolving COPY_CODE button ${btn.index} with variable ${btn.example}: ${value}`);
+              return {
+                index: btn.index,
+                value: value,
+              };
+            });
+
+            const templatePayload = {
+              messaging_product: "whatsapp", to: phone, type: "template",
+              template: {
+                name: templateName, language: { code: templateLanguage },
+                components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
+              },
+            };
+            
+            console.log(`[automation] Sending message to ${phone} with payload:`, JSON.stringify(templatePayload, null, 2));
 
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
               method: "POST",
               headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-              body: JSON.stringify({
-                messaging_product: "whatsapp", to: phone, type: "template",
-                template: {
-                  name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
-                },
-              }),
+              body: JSON.stringify(templatePayload),
             });
 
             const waData = await waRes.json();
+            if (!waRes.ok) {
+              console.error(`Item ${item.id}: send failed:`, JSON.stringify(waData));
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              break;
+            }
 
             if (waData.messages?.[0]?.id) {
               await supabase.from("whatsapp_messages").insert({

@@ -463,13 +463,15 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const paymentAlias = tx?.payment?.data?.alias || "";
 
       const matchedTriggers: string[] = [];
-      // Only fire generic order_created if the order is NOT awaiting Pix/Boleto payment
-      const isAwaitingPixOrBoleto = (isPix || isBillet) && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled" && !["approved", "invoiced"].includes(orderStatus);
-      if (!isAwaitingPixOrBoleto) {
+      const isAwaitingPixOrBoleto = (isPix || isBillet) && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled" && !["approved", "invoiced", "shipped", "on_carriage", "in_transit", "delivered"].includes(orderStatus);
+      
+      // Never send generic order_created if we have specialized Pix/Boleto triggers
+      if (!isPix && !isBillet) {
         matchedTriggers.push("order_created");
       }
-      if (isPix && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_pix");
-      if (isBillet && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled") matchedTriggers.push("order_created_boleto");
+      
+      if (isPix && isAwaitingPixOrBoleto) matchedTriggers.push("order_created_pix");
+      if (isBillet && isAwaitingPixOrBoleto) matchedTriggers.push("order_created_boleto");
 
       // Debug log for Pix orders
       if (isPix) {

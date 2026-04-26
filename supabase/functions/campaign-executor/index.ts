@@ -326,6 +326,18 @@ async function processAutomationQueue(supabase: any) {
 
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
+            const triggerData = (item.trigger_data || {}) as any;
+
+            // Check if order is already paid for Pix/Checkout automations
+            if (templateName?.startsWith("pix_nao_pago") || templateName?.startsWith("carrinho_abandonado")) {
+              const isPaid = !(await isOrderStillUnpaid(supabase, triggerData, campaign.tenant_id));
+              if (isPaid) {
+                console.log(`[automation] Skipping paid order for template ${templateName} (item ${item.id})`);
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+                break;
+              }
+            }
+
             if (!phoneNumberId || !accessToken) {
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
               break;

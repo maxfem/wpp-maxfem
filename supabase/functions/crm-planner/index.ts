@@ -197,7 +197,7 @@ serve(async (req) => {
     return new Response(JSON.stringify(aiResponse), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("[crm-planner] Exception:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,

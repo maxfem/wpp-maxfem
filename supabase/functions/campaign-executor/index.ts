@@ -371,10 +371,11 @@ async function processAutomationQueue(supabase: any) {
 
             let orderRecord: any = null;
             const triggerData = (item.trigger_data || {}) as any;
-            if (triggerData?.yampi_order_id || triggerData?.order_id) {
+            if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
               let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
               if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);
-              else oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_id) oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_number) oq = oq.eq("order_number", triggerData.order_number);
               const { data: ord } = await oq.limit(1).single();
               orderRecord = ord;
             }

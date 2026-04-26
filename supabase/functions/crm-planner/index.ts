@@ -144,7 +144,7 @@ Todas as regras podem ser combinadas com:
 - **AND (E)** — todos os critérios precisam ser verdadeiros
 - **OR (OU)** — pelo menos um critério precisa ser verdadeiro
 - **NOT (NÃO)** — exclusão de critério
-- **Grupos aninhados** — \`(A AND B) OR (C AND NOT D)\`
+- **Grupos aninhados** — (A AND B) OR (C AND NOT D)
 - **Janelas temporais customizáveis** — últimos X dias, entre data Y e Z, comparativo período anterior
 - **Operadores numéricos** — maior que, menor que, entre, igual a, diferente de
 - **Listas de exclusão** — excluir clientes que estão em outra lista X
@@ -199,11 +199,12 @@ serve(async (req) => {
 
   try {
     const { messages } = await req.json();
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: \`Bearer \${Deno.env.get("LOVABLE_API_KEY")}\`,
+        "Authorization": "Bearer " + apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

@@ -443,6 +443,10 @@ export default function Lists() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" className="border-primary/50 hover:bg-primary/5" onClick={() => window.location.href = "/listas"}>
+              <Sparkles className="h-4 w-4 mr-2 text-primary" />
+              Arquiteto CRM
+            </Button>
             <Button variant="outline" onClick={() => setCsvOpen(true)}>
               <Upload className="h-4 w-4 mr-2" />
               Importar CSV

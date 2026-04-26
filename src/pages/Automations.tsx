@@ -137,9 +137,9 @@ export default function Automations() {
       acts = acts.filter((a) => isWithinInterval(toSaoPaulo(a.created_at), { start: from, end: to }));
     } else if (customDateFrom || customDateTo) {
       acts = acts.filter((a) => {
-        const d = new Date(a.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        const d = toSaoPaulo(a.created_at);
+        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
+        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
         return true;
       });
     }
@@ -249,9 +249,9 @@ export default function Automations() {
       });
     } else if (customDateFrom || customDateTo) {
       list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
+        const d = toSaoPaulo(c.created_at);
+        if (customDateFrom && d < startOfDay(toSaoPaulo(customDateFrom))) return false;
+        if (customDateTo && d > endOfDay(toSaoPaulo(customDateTo))) return false;
         return true;
       });
     }

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, ShieldCheck, Mail, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ShieldCheck, Mail, Save, Send } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import { useState, useEffect } from "react";
 
 export default function SettingsAWS() {
   const navigate = useNavigate();
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
   const queryClient = useQueryClient();
   const [senderEmail, setSenderEmail] = useState("");
   const [accessKey, setAccessKey] = useState("");
@@ -22,6 +22,7 @@ export default function SettingsAWS() {
   const [region, setRegion] = useState("sa-east-1");
   const [isValidating, setIsValidating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   const { data: integration, isLoading } = useQuery({
     queryKey: ["aws-integration", currentTenant?.id],
@@ -111,6 +112,38 @@ export default function SettingsAWS() {
       toast.error(`Erro ao salvar: ${error.message}`);
     }
   });
+
+  const sendTestEmail = async () => {
+    if (!user?.email) {
+      toast.error("Seu e-mail de usuário não foi encontrado.");
+      return;
+    }
+    
+    setIsSendingTest(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-email-ses", {
+        body: {
+          to: user.email,
+          subject: "E-mail de Teste - AWS SES",
+          html: "<h1>Teste bem-sucedido!</h1><p>Esta é uma mensagem de teste enviada via AWS SES através do Lovable.</p>",
+          fromEmail: senderEmail,
+          accessKey,
+          secretKey,
+          region
+        }
+      });
+
+      if (error || data?.error) {
+        throw new Error(error?.message || data?.error || "Falha ao enviar e-mail de teste");
+      }
+
+      toast.success(`E-mail de teste enviado para ${user.email}`);
+    } catch (error: any) {
+      toast.error(`Erro no teste: ${error.message}`);
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
 
   const isConnected = integration?.is_active;
 
@@ -241,11 +274,27 @@ export default function SettingsAWS() {
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">SES Bridge:</span>
-                    <span className="font-medium text-green-500">Pronto</span>
+                    <span className={`font-medium ${isConnected ? "text-green-500" : "text-yellow-500"}`}>
+                      {isConnected ? "Pronto" : "Aguardando Configuração"}
+                    </span>
                   </div>
+                  
+                  {isConnected && (
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      size="sm"
+                      onClick={sendTestEmail}
+                      disabled={isSendingTest}
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      {isSendingTest ? "Enviando..." : "Enviar e-mail de teste"}
+                    </Button>
+                  )}
+
                   <div className="pt-4 border-t border-border">
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Para desativar completamente, remova as credenciais dos Secrets do projeto.
+                      Para desativar completamente, remova as credenciais ou desative a integração.
                     </p>
                   </div>
                 </div>

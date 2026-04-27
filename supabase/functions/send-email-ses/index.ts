@@ -14,9 +14,9 @@ serve(async (req) => {
     const { to, subject, html, text, fromName, fromEmail, validate_only, accessKey, secretKey, region: reqRegion } = payload;
     
     let AWS_REGION = reqRegion || Deno.env.get("AWS_REGION") || "sa-east-1";
-    let AWS_ACCESS_KEY_ID = accessKey || Deno.env.get("AWS_ACCESS_KEY_ID")!;
-    let AWS_SECRET_ACCESS_KEY = secretKey || Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
-    let SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
+    let AWS_ACCESS_KEY_ID = (accessKey || Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
+    let AWS_SECRET_ACCESS_KEY = (secretKey || Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
+    let SENDER_EMAIL = (fromEmail || Deno.env.get("SENDER_EMAIL") || "").trim();
 
     // If credentials not provided in request, try to get from DB
     if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !SENDER_EMAIL) {
@@ -25,10 +25,10 @@ serve(async (req) => {
       
       if (data?.config) {
         const config = data.config as any;
-        if (!AWS_ACCESS_KEY_ID) AWS_ACCESS_KEY_ID = config.access_key;
-        if (!AWS_SECRET_ACCESS_KEY) AWS_SECRET_ACCESS_KEY = config.secret_key;
-        if (!SENDER_EMAIL) SENDER_EMAIL = config.sender_email;
-        if (!reqRegion && config.region) AWS_REGION = config.region;
+        if (!AWS_ACCESS_KEY_ID) AWS_ACCESS_KEY_ID = (config.access_key || "").trim();
+        if (!AWS_SECRET_ACCESS_KEY) AWS_SECRET_ACCESS_KEY = (config.secret_key || "").trim();
+        if (!SENDER_EMAIL) SENDER_EMAIL = (config.sender_email || "").trim();
+        if (!reqRegion && config.region) AWS_REGION = (config.region || "").trim();
       }
     }
 
@@ -40,16 +40,16 @@ serve(async (req) => {
       // Action: GetSendQuota is a lightweight read action
       const body = new URLSearchParams();
       body.append("Action", "GetSendQuota");
-      const bodyStr = body.toString();
+      const bodyStr = body.toString().replace(/\+/g, "%20");
       const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
       const date = datetime.slice(0, 8);
       const host = `email.${AWS_REGION}.amazonaws.com`;
       const endpoint = `https://${host}/`;
 
       const bodyHash = await sha256(bodyStr);
-      const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
+      const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}`;
       const signedHeaders = "content-type;host;x-amz-date";
-      const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, bodyHash].join("\n");
+      const canonicalRequest = ["POST", "/", "", canonicalHeaders + "\n", signedHeaders, bodyHash].join("\n");
       const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(canonicalRequest)].join("\n");
       const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
@@ -63,6 +63,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Host": host,
           "X-Amz-Date": datetime,
           "Authorization": authHeader,
         },
@@ -89,7 +90,7 @@ serve(async (req) => {
     if (text) body.append("Message.Body.Text.Data", text);
     body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
-    const bodyStr = body.toString();
+    const bodyStr = body.toString().replace(/\+/g, "%20");
     const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
     const date = datetime.slice(0, 8);
     const host = `email.${AWS_REGION}.amazonaws.com`;
@@ -98,13 +99,13 @@ serve(async (req) => {
     // 1. Canonical Request
     const bodyHash = await sha256(bodyStr);
     // Explicit headers order for canonical request
-    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
+    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}`;
     const signedHeaders = "content-type;host;x-amz-date";
     const canonicalRequest = [
       "POST",
       "/",
       "",
-      canonicalHeaders,
+      canonicalHeaders + "\n",
       signedHeaders,
       bodyHash
     ].join("\n");
@@ -134,6 +135,7 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Host": host,
         "X-Amz-Date": datetime,
         "Authorization": authHeader,
       },

@@ -14,7 +14,7 @@ import { useState, useEffect } from "react";
 
 export default function SettingsAWS() {
   const navigate = useNavigate();
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
   const queryClient = useQueryClient();
   const [senderEmail, setSenderEmail] = useState("");
   const [accessKey, setAccessKey] = useState("");
@@ -114,7 +114,7 @@ export default function SettingsAWS() {
   });
 
   const sendTestEmail = async () => {
-    if (!currentTenant?.email) {
+    if (!user?.email) {
       toast.error("Seu e-mail de usuário não foi encontrado.");
       return;
     }
@@ -123,7 +123,7 @@ export default function SettingsAWS() {
     try {
       const { data, error } = await supabase.functions.invoke("send-email-ses", {
         body: {
-          to: currentTenant.email,
+          to: user.email,
           subject: "E-mail de Teste - AWS SES",
           html: "<h1>Teste bem-sucedido!</h1><p>Esta é uma mensagem de teste enviada via AWS SES através do Lovable.</p>",
           fromEmail: senderEmail,
@@ -137,7 +137,7 @@ export default function SettingsAWS() {
         throw new Error(error?.message || data?.error || "Falha ao enviar e-mail de teste");
       }
 
-      toast.success(`E-mail de teste enviado para ${currentTenant.email}`);
+      toast.success(`E-mail de teste enviado para ${user.email}`);
     } catch (error: any) {
       toast.error(`Erro no teste: ${error.message}`);
     } finally {

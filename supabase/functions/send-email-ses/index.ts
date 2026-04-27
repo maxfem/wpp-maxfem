@@ -1,97 +1,201 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
-import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand } from "npm:@aws-sdk/client-ses@3.645.0";
+import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand, GetAccountCommand } from "npm:@aws-sdk/client-ses@3.645.0";
+import { STSClient, GetCallerIdentityCommand } from "npm:@aws-sdk/client-sts@3.645.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Translates AWS error codes into actionable Portuguese messages
+function translateAwsError(err: any): string {
+  const code = err?.name || err?.Code || err?.$metadata?.httpStatusCode;
+  const msg = err?.message || String(err);
+
+  if (msg.includes("SignatureDoesNotMatch")) {
+    return "Sua AWS Secret Access Key está incorreta. Copie-a novamente do console IAM (não pode haver espaços ou caracteres faltando — ela tem exatamente 40 caracteres).";
+  }
+  if (msg.includes("InvalidClientTokenId") || code === "InvalidClientTokenId") {
+    return "Sua AWS Access Key ID não existe ou foi desativada. Verifique no console IAM da AWS.";
+  }
+  if (msg.includes("AccessDenied") || code === "AccessDenied") {
+    return "Permissão negada. O usuário IAM não tem as permissões necessárias (ses:SendEmail, ses:GetSendQuota, ses:GetIdentityVerificationAttributes). Anexe a policy 'AmazonSESFullAccess' ao usuário IAM.";
+  }
+  if (msg.includes("UnrecognizedClientException")) {
+    return "Credenciais AWS não reconhecidas. Verifique Access Key ID e Secret Access Key.";
+  }
+  if (msg.includes("MessageRejected")) {
+    return "E-mail rejeitado pelo SES. Possíveis causas: conta em modo Sandbox (só envia para e-mails verificados), remetente não verificado, ou conteúdo bloqueado.";
+  }
+  if (msg.includes("MailFromDomainNotVerified")) {
+    return "O domínio do remetente não está verificado no AWS SES.";
+  }
+  if (msg.includes("ResolveEndpoint") || msg.includes("ENOTFOUND") || msg.includes("getaddrinfo")) {
+    return "Região AWS inválida ou inexistente. Use uma região válida como 'us-east-1', 'sa-east-1' ou 'eu-west-1'.";
+  }
+  return msg;
+}
+
+interface Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  senderEmail: string;
+}
+
+async function resolveCredentials(mode: string, payload: any): Promise<Credentials> {
+  const region = (payload.region || "").trim();
+  const accessKeyId = (payload.accessKey || "").trim();
+  const secretAccessKey = (payload.secretKey || "").trim();
+  const senderEmail = (payload.fromEmail || "").trim();
+
+  if (mode === "validate" || mode === "test") {
+    // Always use payload credentials — never read from DB
+    if (!accessKeyId || !secretAccessKey || !region || !senderEmail) {
+      throw new Error("Preencha todos os campos: Access Key ID, Secret Access Key, Região e E-mail do remetente.");
+    }
+    return { accessKeyId, secretAccessKey, region, senderEmail };
+  }
+
+  // mode === "send" — read from DB
+  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const { data } = await supabase.from("integrations").select("config").eq("provider", "aws").eq("is_active", true).limit(1).maybeSingle();
+  if (!data?.config) {
+    throw new Error("Integração AWS SES não configurada ou inativa.");
+  }
+  const config = data.config as any;
+  return {
+    accessKeyId: (config.access_key || "").trim(),
+    secretAccessKey: (config.secret_key || "").trim(),
+    region: (config.region || "us-east-1").trim(),
+    senderEmail: (config.sender_email || "").trim(),
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const payload = await req.json();
-    const { to, subject, html, text, fromName, fromEmail, validate_only, accessKey, secretKey, region: reqRegion } = payload;
+    // Backward compatibility: if no mode provided, infer from payload
+    const mode: string = payload.mode || (payload.validate_only ? "validate" : "send");
 
-    let AWS_REGION = (reqRegion || Deno.env.get("AWS_REGION") || "sa-east-1").trim();
-    let AWS_ACCESS_KEY_ID = (accessKey || Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
-    let AWS_SECRET_ACCESS_KEY = (secretKey || Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
-    let SENDER_EMAIL = (fromEmail || Deno.env.get("SENDER_EMAIL") || "").trim();
+    const creds = await resolveCredentials(mode, payload);
 
-    // Fallback to DB-stored config
-    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !SENDER_EMAIL) {
-      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      const { data } = await supabase.from("integrations").select("config").eq("provider", "aws").eq("is_active", true).limit(1).maybeSingle();
-      if (data?.config) {
-        const config = data.config as any;
-        if (!AWS_ACCESS_KEY_ID) AWS_ACCESS_KEY_ID = (config.access_key || "").trim();
-        if (!AWS_SECRET_ACCESS_KEY) AWS_SECRET_ACCESS_KEY = (config.secret_key || "").trim();
-        if (!SENDER_EMAIL) SENDER_EMAIL = (config.sender_email || "").trim();
-        if (!reqRegion && config.region) AWS_REGION = (config.region || "").trim();
-      }
-    }
-
-    if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) throw new Error("Credenciais AWS não configuradas.");
-    if (!SENDER_EMAIL) throw new Error("E-mail do remetente não configurado.");
-
-    const ses = new SESClient({
-      region: AWS_REGION,
-      credentials: {
-        accessKeyId: AWS_ACCESS_KEY_ID,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      },
+    const sesClient = new SESClient({
+      region: creds.region,
+      credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
     });
 
-    if (validate_only) {
-      // 1. Validate credentials & permission
+    // ========== VALIDATE MODE ==========
+    if (mode === "validate") {
+      const checks: any = {
+        credentials: { ok: false },
+        region: { ok: false },
+        identity: { ok: false },
+        quota: { ok: false },
+      };
+
+      // Step 1: Validate credentials with STS GetCallerIdentity
       try {
-        await ses.send(new GetSendQuotaCommand({}));
+        const stsClient = new STSClient({
+          region: creds.region,
+          credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+        });
+        const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+        checks.credentials = { ok: true, account_id: identity.Account, arn: identity.Arn };
       } catch (e: any) {
-        throw new Error(`Credenciais inválidas ou sem permissão ses:GetSendQuota: ${e.message}`);
+        checks.credentials = { ok: false, error: translateAwsError(e) };
+        return new Response(JSON.stringify({ validated: false, failed_at: "credentials", checks }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
       }
 
-      // 2. Validate sender email is verified in SES
+      // Step 2: Validate region & SES enabled (GetAccount)
       try {
-        const verifyResult = await ses.send(
-          new GetIdentityVerificationAttributesCommand({ Identities: [SENDER_EMAIL] })
+        const account = await sesClient.send(new GetAccountCommand({}));
+        const sandbox = !account.ProductionAccessEnabled;
+        checks.region = { ok: true, region: creds.region, sandbox, sending_enabled: account.SendingEnabled };
+      } catch (e: any) {
+        // GetAccount might not be available — fall back to checking via GetSendQuota
+        checks.region = { ok: true, region: creds.region, sandbox: null, note: "Não foi possível detectar modo sandbox" };
+      }
+
+      // Step 3: Validate sender identity
+      try {
+        const verifyResult = await sesClient.send(
+          new GetIdentityVerificationAttributesCommand({ Identities: [creds.senderEmail] })
         );
-        const attr = verifyResult.VerificationAttributes?.[SENDER_EMAIL];
-        if (!attr || attr.VerificationStatus !== "Success") {
-          throw new Error(
-            `O e-mail "${SENDER_EMAIL}" não está verificado no SES (status: ${attr?.VerificationStatus || "não encontrado"}). Verifique a identidade no console AWS SES.`
-          );
+        const attr = verifyResult.VerificationAttributes?.[creds.senderEmail];
+        if (!attr) {
+          checks.identity = {
+            ok: false,
+            error: `O e-mail "${creds.senderEmail}" não está cadastrado como identidade no AWS SES. Adicione-o em SES → Verified Identities.`,
+          };
+        } else if (attr.VerificationStatus !== "Success") {
+          checks.identity = {
+            ok: false,
+            status: attr.VerificationStatus,
+            error: `O e-mail "${creds.senderEmail}" está com status "${attr.VerificationStatus}". Verifique a caixa de entrada e clique no link de confirmação enviado pela AWS.`,
+          };
+        } else {
+          checks.identity = { ok: true, status: "Success", email: creds.senderEmail };
         }
       } catch (e: any) {
-        if (e.message.includes("não está verificado")) throw e;
-        throw new Error(`Erro ao verificar identidade no SES: ${e.message}`);
+        checks.identity = { ok: false, error: translateAwsError(e) };
       }
 
-      return new Response(JSON.stringify({ success: true, validated: true, message: "Credenciais, região e remetente validados com sucesso." }), {
+      // Step 4: Validate IAM permission for sending (GetSendQuota)
+      try {
+        const quota = await sesClient.send(new GetSendQuotaCommand({}));
+        checks.quota = {
+          ok: true,
+          max_24h: quota.Max24HourSend,
+          sent_24h: quota.SentLast24Hours,
+          max_per_second: quota.MaxSendRate,
+        };
+      } catch (e: any) {
+        checks.quota = { ok: false, error: translateAwsError(e) };
+      }
+
+      const allOk = checks.credentials.ok && checks.region.ok && checks.identity.ok && checks.quota.ok;
+      const failedAt = !checks.credentials.ok ? "credentials" : !checks.region.ok ? "region" : !checks.identity.ok ? "identity" : !checks.quota.ok ? "quota" : null;
+
+      return new Response(JSON.stringify({ validated: allOk, failed_at: failedAt, checks }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
       });
     }
 
-    // Send email
-    console.log(`[SES] Sending: To=${Array.isArray(to) ? to[0] : to}, From=${SENDER_EMAIL}, Region=${AWS_REGION}`);
+    // ========== TEST & SEND MODE ==========
+    const { to, subject, html, text, fromName } = payload;
+    if (!to || !subject || !html) {
+      throw new Error("Campos obrigatórios: to, subject, html.");
+    }
 
-    const result = await ses.send(new SendEmailCommand({
-      Source: fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL,
-      Destination: {
-        ToAddresses: Array.isArray(to) ? to : [to],
-      },
-      Message: {
-        Subject: { Data: subject, Charset: "UTF-8" },
-        Body: {
-          Html: { Data: html, Charset: "UTF-8" },
-          ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
+    console.log(`[SES] mode=${mode} To=${Array.isArray(to) ? to[0] : to} From=${creds.senderEmail} Region=${creds.region}`);
+
+    try {
+      const result = await sesClient.send(new SendEmailCommand({
+        Source: fromName ? `${fromName} <${creds.senderEmail}>` : creds.senderEmail,
+        Destination: { ToAddresses: Array.isArray(to) ? to : [to] },
+        Message: {
+          Subject: { Data: subject, Charset: "UTF-8" },
+          Body: {
+            Html: { Data: html, Charset: "UTF-8" },
+            ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
+          },
         },
-      },
-    }));
+      }));
 
-    return new Response(JSON.stringify({ success: true, messageId: result.MessageId }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      return new Response(JSON.stringify({ success: true, messageId: result.MessageId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (e: any) {
+      throw new Error(translateAwsError(e));
+    }
   } catch (error: any) {
     console.error(`[SES] Handler Error: ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {

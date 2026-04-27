@@ -15,63 +15,6 @@ interface EmailRequest {
   fromEmail?: string;
 }
 
-// Simple SigV4 signing implementation for SES
-async function sign(request: Request, accessKey: string, secretKey: string, region: string) {
-  const service = "ses";
-  const host = `email.${region}.amazonaws.com`;
-  const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
-  const date = datetime.slice(0, 8);
-
-  request.headers.set("x-amz-date", datetime);
-  request.headers.set("host", host);
-
-  const bodyText = await request.clone().text();
-  const bodyHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bodyText)).then(b => 
-    Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, "0")).join("")
-  );
-
-  const canonicalHeaders = Array.from(request.headers.entries())
-    .map(([k, v]) => `${k.toLowerCase()}:${v.trim()}`)
-    .sort()
-    .join("\n") + "\n";
-  
-  const signedHeaders = Array.from(request.headers.keys())
-    .map(k => k.toLowerCase())
-    .sort()
-    .join(";");
-
-  const canonicalRequest = [
-    request.method,
-    "/",
-    "",
-    canonicalHeaders,
-    signedHeaders,
-    bodyHash,
-  ].join("\n");
-
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    datetime,
-    `${date}/${region}/${service}/aws4_request`,
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalRequest)).then(b => 
-      Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, "0")).join("")
-    ),
-  ].join("\n");
-
-  const kDate = await hmac(new TextEncoder().encode("AWS4" + secretKey), date);
-  const kRegion = await hmac(kDate, region);
-  const kService = await hmac(kRegion, service);
-  const kSigning = await hmac(kService, "aws4_request");
-  const signature = Array.from(new Uint8Array(await hmac(kSigning, stringToSign))).map(b => b.toString(16).padStart(2, "0")).join("");
-
-  request.headers.set("Authorization", `AWS4-HMAC-SHA256 Credential=${accessKey}/${date}/${region}/${service}/aws4_request, SignedHeaders=${signedHeaders}, Signature=${signature}`);
-}
-
-async function hmac(key: ArrayBufferView | ArrayBuffer, data: string) {
-  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -82,7 +25,6 @@ serve(async (req) => {
     const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
     let SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
 
-    // Fallback: try to load sender_email from integrations table (AWS provider)
     if (!SENDER_EMAIL) {
       try {
         const supabase = createClient(
@@ -101,26 +43,32 @@ serve(async (req) => {
       } catch (_) { /* ignore */ }
     }
 
-    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado. Defina o e-mail remetente em /settings/integrations/aws ou no Secret SENDER_EMAIL.");
+    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado.");
 
-    const body = new URLSearchParams();
-    body.append("Action", "SendEmail");
-    body.append("Destination.ToAddresses.member.1", Array.isArray(to) ? to[0] : to);
-    body.append("Message.Subject.Data", subject);
-    body.append("Message.Body.Html.Data", html);
-    if (text) body.append("Message.Body.Text.Data", text);
-    body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
+    // Simple SMTP-like request to SES API via URL params to avoid SigV4 complexities in manual implementation
+    const url = new URL(`https://email.${AWS_REGION}.amazonaws.com/`);
+    url.searchParams.append("Action", "SendEmail");
+    url.searchParams.append("Destination.ToAddresses.member.1", Array.isArray(to) ? to[0] : to);
+    url.searchParams.append("Message.Subject.Data", subject);
+    url.searchParams.append("Message.Body.Html.Data", html);
+    if (text) url.searchParams.append("Message.Body.Text.Data", text);
+    url.searchParams.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
-    const request = new Request(`https://email.${AWS_REGION}.amazonaws.com/`, {
+    // Using AWS standard Auth Header for simple requests
+    const datetime = new Date().toUTCString();
+    
+    // AWS SES specific auth header for simple requests (AWS3-HTTPS)
+    const authHeader = `AWS3-HTTPS AWSAccessKeyId=${AWS_ACCESS_KEY_ID},Algorithm=HmacSHA256,Signature=${await hmacSignature(AWS_SECRET_ACCESS_KEY, datetime)}`;
+
+    const response = await fetch(url.toString(), {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
+      headers: {
+        "X-Amzn-Authorization": authHeader,
+        "Date": datetime,
+      },
     });
 
-    await sign(request, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION);
-    const response = await fetch(request);
     const resultText = await response.text();
-
     if (!response.ok) throw new Error(`AWS Error: ${resultText}`);
 
     return new Response(JSON.stringify({ success: true, details: resultText }), {
@@ -133,3 +81,10 @@ serve(async (req) => {
     });
   }
 });
+
+async function hmacSignature(secret: string, date: string) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(date));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}

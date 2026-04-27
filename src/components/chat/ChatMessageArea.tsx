@@ -1,6 +1,6 @@
 import { useRef, useEffect, Fragment, useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { cn, toSaoPaulo, formatSP } from "@/lib/utils";
 import { Message } from "./types";
 import { Check, CheckCheck, Image, FileText, Video, Search, X, ArrowDown, Play, Download, Volume2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -39,21 +39,23 @@ interface ChatMessageAreaProps {
   onCloseSearch?: () => void;
 }
 
-const SP_TZ = "America/Sao_Paulo";
-
 const formatTime = (dateStr: string) => {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: SP_TZ });
+  return formatSP(dateStr, "HH:mm");
 };
 
 const formatDateSeparator = (dateStr: string) => {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const yesterday = new Date();
+  const d = toSaoPaulo(dateStr);
+  const now = toSaoPaulo(new Date());
+  const yesterday = toSaoPaulo(new Date());
   yesterday.setDate(now.getDate() - 1);
-  if (d.toLocaleDateString("pt-BR", { timeZone: SP_TZ }) === now.toLocaleDateString("pt-BR", { timeZone: SP_TZ })) return "Hoje";
-  if (d.toLocaleDateString("pt-BR", { timeZone: SP_TZ }) === yesterday.toLocaleDateString("pt-BR", { timeZone: SP_TZ })) return "Ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric", timeZone: SP_TZ });
+  
+  const dStr = formatSP(d, "dd/MM/yyyy");
+  const nowStr = formatSP(now, "dd/MM/yyyy");
+  const yesterdayStr = formatSP(yesterday, "dd/MM/yyyy");
+  
+  if (dStr === nowStr) return "Hoje";
+  if (dStr === yesterdayStr) return "Ontem";
+  return formatSP(d, "dd 'de' MMMM 'de' yyyy");
 };
 
 function renderFormattedText(text: string) {
@@ -223,7 +225,7 @@ export function ChatMessageArea({ messages, searchInChat, onCloseSearch }: ChatM
   const groupedMessages: { date: string; msgs: Message[] }[] = [];
   let currentDate = "";
   for (const msg of messages) {
-    const msgDate = new Date(msg.created_at).toDateString();
+    const msgDate = formatSP(msg.created_at, "yyyy-MM-dd");
     if (msgDate !== currentDate) {
       currentDate = msgDate;
       groupedMessages.push({ date: msg.created_at, msgs: [msg] });

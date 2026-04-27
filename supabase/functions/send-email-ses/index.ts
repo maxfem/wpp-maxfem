@@ -6,20 +6,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface EmailRequest {
-  to: string | string[];
-  subject: string;
-  html: string;
-  text?: string;
-  fromName?: string;
-  fromEmail?: string;
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { to, subject, html, text, fromName, fromEmail }: EmailRequest = await req.json();
+    const payload = await req.json();
+    const { to, subject, html, text, fromName, fromEmail } = payload;
+    
     const AWS_REGION = Deno.env.get("AWS_REGION") || "us-east-1";
     const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID")!;
     const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
@@ -41,23 +34,22 @@ serve(async (req) => {
     if (text) body.append("Message.Body.Text.Data", text);
     body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
-    const endpoint = `https://email.${AWS_REGION}.amazonaws.com/`;
+    const bodyStr = body.toString();
     const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
     const date = datetime.slice(0, 8);
-    const bodyStr = body.toString();
+    const host = `email.${AWS_REGION}.amazonaws.com`;
+    const endpoint = `https://${host}/`;
 
-    // 1. Canonical Request
     const bodyHash = await sha256(bodyStr);
     const canonicalRequest = [
       "POST",
       "/",
       "",
-      `content-type:application/x-www-form-urlencoded\nhost:email.${AWS_REGION}.amazonaws.com\nx-amz-date:${datetime}\n`,
+      `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`,
       "content-type;host;x-amz-date",
       bodyHash
     ].join("\n");
 
-    // 2. String to Sign
     const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
     const stringToSign = [
       "AWS4-HMAC-SHA256",
@@ -66,8 +58,7 @@ serve(async (req) => {
       await sha256(canonicalRequest)
     ].join("\n");
 
-    // 3. Signature
-    const kDate = await hmacRaw(`AWS4${AWS_SECRET_ACCESS_KEY}`, date);
+    const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
     const kRegion = await hmacRaw(kDate, AWS_REGION);
     const kService = await hmacRaw(kRegion, "ses");
     const kSigning = await hmacRaw(kService, "aws4_request");
@@ -75,10 +66,13 @@ serve(async (req) => {
 
     const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=content-type;host;x-amz-date, Signature=${signature}`;
 
+    console.log(`[SES] Sending to ${Array.isArray(to) ? to[0] : to} from ${SENDER_EMAIL} (Region: ${AWS_REGION})`);
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Host": host,
         "X-Amz-Date": datetime,
         "Authorization": authHeader,
       },
@@ -86,12 +80,16 @@ serve(async (req) => {
     });
 
     const resultText = await response.text();
-    if (!response.ok) throw new Error(`AWS Error: ${resultText}`);
+    if (!response.ok) {
+      console.error(`[SES] AWS Error Response: ${resultText}`);
+      throw new Error(`AWS SES Error: ${resultText}`);
+    }
 
-    return new Response(JSON.stringify({ success: true, details: resultText }), {
+    return new Response(JSON.stringify({ success: true, messageId: resultText }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error(`[SES] Internal Error: ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,
@@ -105,16 +103,9 @@ async function sha256(message: string) {
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmacRaw(key: string | ArrayBuffer, data: string) {
-  const encoder = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw", 
-    typeof key === "string" ? encoder.encode(key) : key, 
-    { name: "HMAC", hash: "SHA-256" }, 
-    false, 
-    ["sign"]
-  );
-  return await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(data));
+async function hmacRaw(key: ArrayBuffer, data: string) {
+  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
 }
 
 async function hmacHex(key: ArrayBuffer, data: string) {

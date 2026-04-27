@@ -63,6 +63,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Host": host,
           "X-Amz-Date": datetime,
           "Authorization": authHeader,
         },
@@ -134,6 +135,7 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Host": host,
         "X-Amz-Date": datetime,
         "Authorization": authHeader,
       },

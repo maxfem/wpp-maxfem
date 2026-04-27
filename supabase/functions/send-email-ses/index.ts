@@ -26,46 +26,63 @@ serve(async (req) => {
     let SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
 
     if (!SENDER_EMAIL) {
-      try {
-        const supabase = createClient(
-          Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-        );
-        const { data } = await supabase
-          .from("integrations")
-          .select("config")
-          .eq("provider", "aws")
-          .eq("is_active", true)
-          .limit(1)
-          .maybeSingle();
-        const cfg = data?.config as any;
-        if (cfg?.sender_email) SENDER_EMAIL = cfg.sender_email;
-      } catch (_) { /* ignore */ }
+      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data } = await supabase.from("integrations").select("config").eq("provider", "aws").eq("is_active", true).limit(1).maybeSingle();
+      if (data?.config && (data.config as any).sender_email) SENDER_EMAIL = (data.config as any).sender_email;
     }
 
     if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado.");
 
-    // Simple SMTP-like request to SES API via URL params to avoid SigV4 complexities in manual implementation
-    const url = new URL(`https://email.${AWS_REGION}.amazonaws.com/`);
-    url.searchParams.append("Action", "SendEmail");
-    url.searchParams.append("Destination.ToAddresses.member.1", Array.isArray(to) ? to[0] : to);
-    url.searchParams.append("Message.Subject.Data", subject);
-    url.searchParams.append("Message.Body.Html.Data", html);
-    if (text) url.searchParams.append("Message.Body.Text.Data", text);
-    url.searchParams.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
+    const body = new URLSearchParams();
+    body.append("Action", "SendEmail");
+    body.append("Destination.ToAddresses.member.1", Array.isArray(to) ? to[0] : to);
+    body.append("Message.Subject.Data", subject);
+    body.append("Message.Body.Html.Data", html);
+    if (text) body.append("Message.Body.Text.Data", text);
+    body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
-    // Using AWS standard Auth Header for simple requests
-    const datetime = new Date().toUTCString();
-    
-    // AWS SES specific auth header for simple requests (AWS3-HTTPS)
-    const authHeader = `AWS3-HTTPS AWSAccessKeyId=${AWS_ACCESS_KEY_ID},Algorithm=HmacSHA256,Signature=${await hmacSignature(AWS_SECRET_ACCESS_KEY, datetime)}`;
+    const endpoint = `https://email.${AWS_REGION}.amazonaws.com/`;
+    const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
+    const date = datetime.slice(0, 8);
+    const bodyStr = body.toString();
 
-    const response = await fetch(url.toString(), {
+    // 1. Canonical Request
+    const bodyHash = await sha256(bodyStr);
+    const canonicalRequest = [
+      "POST",
+      "/",
+      "",
+      `content-type:application/x-www-form-urlencoded\nhost:email.${AWS_REGION}.amazonaws.com\nx-amz-date:${datetime}\n`,
+      "content-type;host;x-amz-date",
+      bodyHash
+    ].join("\n");
+
+    // 2. String to Sign
+    const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      datetime,
+      scope,
+      await sha256(canonicalRequest)
+    ].join("\n");
+
+    // 3. Signature
+    const kDate = await hmacRaw(`AWS4${AWS_SECRET_ACCESS_KEY}`, date);
+    const kRegion = await hmacRaw(kDate, AWS_REGION);
+    const kService = await hmacRaw(kRegion, "ses");
+    const kSigning = await hmacRaw(kService, "aws4_request");
+    const signature = await hmacHex(kSigning, stringToSign);
+
+    const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=content-type;host;x-amz-date, Signature=${signature}`;
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "X-Amzn-Authorization": authHeader,
-        "Date": datetime,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Amz-Date": datetime,
+        "Authorization": authHeader,
       },
+      body: bodyStr,
     });
 
     const resultText = await response.text();
@@ -82,9 +99,25 @@ serve(async (req) => {
   }
 });
 
-async function hmacSignature(secret: string, date: string) {
+async function sha256(message: string) {
+  const msgUint8 = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacRaw(key: string | ArrayBuffer, data: string) {
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(date));
-  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", 
+    typeof key === "string" ? encoder.encode(key) : key, 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
+    ["sign"]
+  );
+  return await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(data));
+}
+
+async function hmacHex(key: ArrayBuffer, data: string) {
+  const signature = await hmacRaw(key, data);
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
 }

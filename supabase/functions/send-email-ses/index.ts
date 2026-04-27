@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
-import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand, GetAccountCommand } from "npm:@aws-sdk/client-ses@3.645.0";
+import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand } from "npm:@aws-sdk/client-ses@3.645.0";
 import { STSClient, GetCallerIdentityCommand } from "npm:@aws-sdk/client-sts@3.645.0";
 
 const corsHeaders = {
@@ -113,15 +113,8 @@ serve(async (req) => {
         });
       }
 
-      // Step 2: Validate region & SES enabled (GetAccount)
-      try {
-        const account = await sesClient.send(new GetAccountCommand({}));
-        const sandbox = !account.ProductionAccessEnabled;
-        checks.region = { ok: true, region: creds.region, sandbox, sending_enabled: account.SendingEnabled };
-      } catch (e: any) {
-        // GetAccount might not be available — fall back to checking via GetSendQuota
-        checks.region = { ok: true, region: creds.region, sandbox: null, note: "Não foi possível detectar modo sandbox" };
-      }
+      // Step 2: Region marcada OK (validada implicitamente pelos próximos comandos SES)
+      checks.region = { ok: true, region: creds.region };
 
       // Step 3: Validate sender identity
       try {

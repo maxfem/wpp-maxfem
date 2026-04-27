@@ -218,13 +218,13 @@ export default function SettingsAWS() {
     if (!currentTenant) return;
     setIsSaving(true);
     try {
-      const config = {
+      const config: any = {
         access_key: accessKey.trim(),
         secret_key: secretKey.trim(),
         region: region.trim(),
         sender_email: senderEmail.trim(),
         last_validated_at: new Date().toISOString(),
-        last_validation_checks: checks,
+        last_validation_checks: JSON.parse(JSON.stringify(checks)),
       };
 
       if (integration) {
@@ -236,7 +236,7 @@ export default function SettingsAWS() {
       } else {
         const { error } = await supabase
           .from("integrations")
-          .insert({ tenant_id: currentTenant.id, provider: "aws", config, is_active: true });
+          .insert([{ tenant_id: currentTenant.id, provider: "aws", config, is_active: true }]);
         if (error) throw error;
       }
 

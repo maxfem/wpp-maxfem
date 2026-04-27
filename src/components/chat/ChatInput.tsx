@@ -22,6 +22,7 @@ interface ChatInputProps {
   disabled?: boolean;
   onSendTemplate?: () => void;
   tenantId?: string;
+  channel?: "whatsapp" | "instagram";
 }
 
 const quickReplies = [
@@ -36,7 +37,7 @@ const ACCEPTED_IMAGE = "image/jpeg,image/png,image/webp";
 const ACCEPTED_VIDEO = "video/mp4,video/3gpp";
 const ACCEPTED_DOC = "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv";
 
-export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenantId }: ChatInputProps) {
+export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenantId, channel = "whatsapp" }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
@@ -44,6 +45,7 @@ export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenan
   const [uploading, setUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const handleSend = useCallback(() => {
     if (pendingFile) {
@@ -256,6 +258,42 @@ export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenan
                 <Zap className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger><TooltipContent>Respostas rápidas</TooltipContent></Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className={cn("h-7 w-7", suggesting && "animate-pulse text-primary")}
+                  onClick={async () => {
+                    if (!tenantId || suggesting) return;
+                    setSuggesting(true);
+                    try {
+                      // Simular chamada para obter sugestão baseada no prompt específico
+                      const { data, error } = await supabase.functions.invoke('ai-assistant', {
+                        body: { 
+                          action: 'suggest',
+                          tenant_id: tenantId,
+                          channel: channel,
+                          // Passar contexto simplificado se necessário
+                        }
+                      });
+                      if (error) throw error;
+                      if (data?.suggestion) setMessage(data.suggestion);
+                    } catch (err) {
+                      console.error("AI Error:", err);
+                      toast.error("Erro ao gerar sugestão");
+                    } finally {
+                      setSuggesting(false);
+                    }
+                  }}
+                  disabled={disabled || suggesting}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sugerir resposta com IA ({channel === 'whatsapp' ? 'WhatsApp' : 'Instagram'})</TooltipContent>
+            </Tooltip>
 
             <div className="flex-1" />
 

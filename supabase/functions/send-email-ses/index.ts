@@ -13,7 +13,8 @@ serve(async (req) => {
     const payload = await req.json();
     const { to, subject, html, text, fromName, fromEmail } = payload;
     
-    const AWS_REGION = Deno.env.get("AWS_REGION") || "us-east-1";
+    // Using sa-east-1 for consistency with current test state
+    const AWS_REGION = Deno.env.get("AWS_REGION") || "sa-east-1";
     const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID")!;
     const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
     let SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
@@ -40,16 +41,21 @@ serve(async (req) => {
     const host = `email.${AWS_REGION}.amazonaws.com`;
     const endpoint = `https://${host}/`;
 
+    // 1. Canonical Request
     const bodyHash = await sha256(bodyStr);
+    // Explicit headers order for canonical request
+    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
+    const signedHeaders = "content-type;host;x-amz-date";
     const canonicalRequest = [
       "POST",
       "/",
       "",
-      `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`,
-      "content-type;host;x-amz-date",
+      canonicalHeaders,
+      signedHeaders,
       bodyHash
     ].join("\n");
 
+    // 2. String to Sign
     const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
     const stringToSign = [
       "AWS4-HMAC-SHA256",
@@ -58,21 +64,22 @@ serve(async (req) => {
       await sha256(canonicalRequest)
     ].join("\n");
 
+    // 3. Signature
+    // Important: secret key used in first hmacRaw must be prepended with "AWS4"
     const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
     const kRegion = await hmacRaw(kDate, AWS_REGION);
     const kService = await hmacRaw(kRegion, "ses");
     const kSigning = await hmacRaw(kService, "aws4_request");
     const signature = await hmacHex(kSigning, stringToSign);
 
-    const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=content-type;host;x-amz-date, Signature=${signature}`;
+    const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-    console.log(`[SES] Sending to ${Array.isArray(to) ? to[0] : to} from ${SENDER_EMAIL} (Region: ${AWS_REGION})`);
+    console.log(`[SES] Attempting send: To=${Array.isArray(to) ? to[0] : to}, From=${SENDER_EMAIL}, Region=${AWS_REGION}`);
 
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Host": host,
         "X-Amz-Date": datetime,
         "Authorization": authHeader,
       },
@@ -81,7 +88,7 @@ serve(async (req) => {
 
     const resultText = await response.text();
     if (!response.ok) {
-      console.error(`[SES] AWS Error Response: ${resultText}`);
+      console.error(`[SES] AWS Error (Signature Check): ${resultText}`);
       throw new Error(`AWS SES Error: ${resultText}`);
     }
 
@@ -89,7 +96,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error(`[SES] Internal Error: ${error.message}`);
+    console.error(`[SES] Handler Error: ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,

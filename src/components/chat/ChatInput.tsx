@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Send, Smile, Bold, Italic, Strikethrough, Paperclip, Mic, Zap, Image, FileText, Video, X, Loader2 } from "lucide-react";
+import { Send, Smile, Bold, Italic, Strikethrough, Paperclip, Mic, Zap, Image, FileText, Video, X, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";

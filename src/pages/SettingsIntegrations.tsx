@@ -10,6 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 
 const PROVIDERS = [
   {
+    id: "aws",
+    name: "Amazon AWS",
+    description: "Infraestrutura de nuvem. Envie e-mails transacionais e de marketing via Amazon SES com alta entregabilidade.",
+    logo: "",
+    color: "#FF9900",
+    features: ["E-mail Marketing", "SES", "Transacional"],
+  },
+  {
     id: "gemini",
     name: "Gemini AI",
     description: "IA multimodal integrada via Lovable AI. Analisa imagens, vídeos e áudios nativamente no atendimento. Sem necessidade de API Key.",

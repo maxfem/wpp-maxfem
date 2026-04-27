@@ -25,18 +25,28 @@ async function sign(request: Request, accessKey: string, secretKey: string, regi
   request.headers.set("x-amz-date", datetime);
   request.headers.set("host", host);
 
+  const bodyText = await request.clone().text();
+  const bodyHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bodyText)).then(b => 
+    Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, "0")).join("")
+  );
+
+  const canonicalHeaders = Array.from(request.headers.entries())
+    .map(([k, v]) => `${k.toLowerCase()}:${v.trim()}`)
+    .sort()
+    .join("\n") + "\n";
+  
+  const signedHeaders = Array.from(request.headers.keys())
+    .map(k => k.toLowerCase())
+    .sort()
+    .join(";");
+
   const canonicalRequest = [
     request.method,
     "/",
     "",
-    Array.from(request.headers.entries())
-      .map(([k, v]) => `${k.toLowerCase()}:${v.trim()}`)
-      .sort()
-      .join("\n") + "\n",
-    Array.from(request.headers.keys()).map(k => k.toLowerCase()).sort().join(";"),
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(await request.clone().text())).then(b => 
-      Array.from(new Uint8Array(b)).map(b => b.toString(16).padStart(2, "0")).join("")
-    ),
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash,
   ].join("\n");
 
   const stringToSign = [
@@ -54,7 +64,7 @@ async function sign(request: Request, accessKey: string, secretKey: string, regi
   const kSigning = await hmac(kService, "aws4_request");
   const signature = Array.from(new Uint8Array(await hmac(kSigning, stringToSign))).map(b => b.toString(16).padStart(2, "0")).join("");
 
-  request.headers.set("Authorization", `AWS4-HMAC-SHA256 Credential=${accessKey}/${date}/${region}/${service}/aws4_request, SignedHeaders=${Array.from(request.headers.keys()).map(k => k.toLowerCase()).sort().join(";")}, Signature=${signature}`);
+  request.headers.set("Authorization", `AWS4-HMAC-SHA256 Credential=${accessKey}/${date}/${region}/${service}/aws4_request, SignedHeaders=${signedHeaders}, Signature=${signature}`);
 }
 
 async function hmac(key: ArrayBufferView | ArrayBuffer, data: string) {

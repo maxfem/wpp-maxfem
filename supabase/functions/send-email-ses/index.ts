@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,9 +70,28 @@ serve(async (req) => {
     const AWS_REGION = Deno.env.get("AWS_REGION") || "us-east-1";
     const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID")!;
     const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
-    const SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
+    let SENDER_EMAIL = fromEmail || Deno.env.get("SENDER_EMAIL");
 
-    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL not configured");
+    // Fallback: try to load sender_email from integrations table (AWS provider)
+    if (!SENDER_EMAIL) {
+      try {
+        const supabase = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+        );
+        const { data } = await supabase
+          .from("integrations")
+          .select("config")
+          .eq("provider", "aws")
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+        const cfg = data?.config as any;
+        if (cfg?.sender_email) SENDER_EMAIL = cfg.sender_email;
+      } catch (_) { /* ignore */ }
+    }
+
+    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado. Defina o e-mail remetente em /settings/integrations/aws ou no Secret SENDER_EMAIL.");
 
     const body = new URLSearchParams();
     body.append("Action", "SendEmail");

@@ -40,7 +40,7 @@ serve(async (req) => {
       // Action: GetSendQuota is a lightweight read action
       const body = new URLSearchParams();
       body.append("Action", "GetSendQuota");
-      const bodyStr = body.toString();
+      const bodyStr = body.toString().replace(/\+/g, "%20");
       const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
       const date = datetime.slice(0, 8);
       const host = `email.${AWS_REGION}.amazonaws.com`;
@@ -89,7 +89,7 @@ serve(async (req) => {
     if (text) body.append("Message.Body.Text.Data", text);
     body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
-    const bodyStr = body.toString();
+    const bodyStr = body.toString().replace(/\+/g, "%20");
     const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
     const date = datetime.slice(0, 8);
     const host = `email.${AWS_REGION}.amazonaws.com`;

@@ -17,6 +17,10 @@ export default function SettingsAWS() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
   const [senderEmail, setSenderEmail] = useState("");
+  const [accessKey, setAccessKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const [region, setRegion] = useState("sa-east-1");
+  const [isValidating, setIsValidating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const { data: integration, isLoading } = useQuery({
@@ -38,42 +42,68 @@ export default function SettingsAWS() {
     if (integration?.config) {
       const config = integration.config as any;
       setSenderEmail(config.sender_email || "");
+      setAccessKey(config.access_key || "");
+      setSecretKey(config.secret_key || "");
+      setRegion(config.region || "sa-east-1");
     }
   }, [integration]);
 
-  const updateConfigMutation = useMutation({
-    mutationFn: async (email: string) => {
+  const validateAndSaveMutation = useMutation({
+    mutationFn: async () => {
       if (!currentTenant) return;
+      setIsValidating(true);
       
-      const config = {
-        ...(integration?.config as object || {}),
-        sender_email: email,
-        updated_at: new Date().toISOString()
-      };
+      try {
+        // Validation via Edge Function
+        const { data: validationData, error: validationError } = await supabase.functions.invoke("send-email-ses", {
+          body: { 
+            validate_only: true,
+            accessKey,
+            secretKey,
+            region,
+            fromEmail: senderEmail
+          }
+        });
 
-      if (integration) {
-        const { error } = await supabase
-          .from("integrations")
-          .update({ 
-            config,
-            is_active: true 
-          })
-          .eq("id", integration.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from("integrations")
-          .insert({
-            tenant_id: currentTenant.id,
-            provider: "aws",
-            config,
-            is_active: true
-          });
-        if (error) throw error;
+        if (validationError || validationData?.error) {
+          throw new Error(validationError?.message || validationData?.error || "Falha na validação das credenciais");
+        }
+
+        const config = {
+          ...(integration?.config as object || {}),
+          sender_email: senderEmail,
+          access_key: accessKey,
+          secret_key: secretKey,
+          region: region,
+          updated_at: new Date().toISOString()
+        };
+
+        if (integration) {
+          const { error } = await supabase
+            .from("integrations")
+            .update({ 
+              config,
+              is_active: true 
+            })
+            .eq("id", integration.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from("integrations")
+            .insert({
+              tenant_id: currentTenant.id,
+              provider: "aws",
+              config,
+              is_active: true
+            });
+          if (error) throw error;
+        }
+      } finally {
+        setIsValidating(false);
       }
     },
     onSuccess: () => {
-      toast.success("Configuração AWS salva com sucesso!");
+      toast.success("Configuração AWS validada e salva com sucesso!");
       queryClient.invalidateQueries({ queryKey: ["aws-integration"] });
       queryClient.invalidateQueries({ queryKey: ["integrations"] });
     },
@@ -110,27 +140,65 @@ export default function SettingsAWS() {
                 <CardDescription>Defina o e-mail que será utilizado para enviar suas campanhas.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="senderEmail">E-mail do Remetente (Verificado no SES)</Label>
-                  <div className="flex gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="accessKey">AWS Access Key ID</Label>
+                    <Input 
+                      id="accessKey" 
+                      type="password"
+                      placeholder="AKIA..."
+                      value={accessKey}
+                      onChange={(e) => setAccessKey(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="secretKey">AWS Secret Access Key</Label>
+                    <Input 
+                      id="secretKey" 
+                      type="password"
+                      placeholder="Sua Secret Key"
+                      value={secretKey}
+                      onChange={(e) => setSecretKey(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="region">Região AWS</Label>
+                    <Input 
+                      id="region" 
+                      placeholder="sa-east-1"
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="senderEmail">E-mail do Remetente (Verificado no SES)</Label>
                     <Input 
                       id="senderEmail" 
                       placeholder="exemplo@suaempresa.com.br"
                       value={senderEmail}
                       onChange={(e) => setSenderEmail(e.target.value)}
                     />
-                    <Button 
-                      onClick={() => updateConfigMutation.mutate(senderEmail)}
-                      disabled={updateConfigMutation.isPending}
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      Salvar
-                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Certifique-se de que este e-mail já foi verificado no console da AWS SES.
-                  </p>
                 </div>
+                <div className="pt-4 flex justify-end">
+                  <Button 
+                    onClick={() => validateAndSaveMutation.mutate()}
+                    disabled={validateAndSaveMutation.isPending || isValidating}
+                    className="w-full md:w-auto"
+                  >
+                    {isValidating ? (
+                      "Validando..."
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Validar e Salvar Configurações
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  As credenciais serão validadas com a AWS antes de serem salvas.
+                </p>
               </CardContent>
             </Card>
 

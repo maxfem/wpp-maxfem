@@ -9,7 +9,7 @@ import {
   AtSign, UserX, FolderOpen, Users, ChevronDown, ChevronRight,
   SlidersHorizontal, Instagram
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatSP, toSaoPaulo } from "@/lib/utils";
 import { Conversation, DateFilter, StatusFilter, SidebarTab, ChannelFilter } from "./types";
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -34,18 +34,20 @@ interface ChatSidebarProps {
 }
 
 const formatTime = (dateStr: string) => {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(now.getDate() - 1);
-
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const d = toSaoPaulo(dateStr);
+  const now = toSaoPaulo(new Date());
+  
+  if (formatSP(d, "dd/MM/yyyy") === formatSP(now, "dd/MM/yyyy")) {
+    return formatSP(d, "HH:mm");
   }
-  if (d.toDateString() === yesterday.toDateString()) {
+  
+  const yesterday = toSaoPaulo(new Date());
+  yesterday.setDate(now.getDate() - 1);
+  if (formatSP(d, "dd/MM/yyyy") === formatSP(yesterday, "dd/MM/yyyy")) {
     return "Ontem";
   }
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  
+  return formatSP(d, "dd/MM");
 };
 
 const navItems = [

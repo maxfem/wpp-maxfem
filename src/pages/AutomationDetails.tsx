@@ -27,7 +27,7 @@ import {
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
   ChevronLeft, ChevronRight, Trash2,
 } from "lucide-react";
-import { formatSP } from "@/lib/utils";
+import { formatSP, toSaoPaulo } from "@/lib/utils";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 
@@ -218,7 +218,7 @@ export default function AutomationDetails() {
               <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Criada em {formatSP(new Date(campaign.created_at), "dd/MM/yyyy 'às' HH:mm")}
+              Criada em {formatSP(campaign.created_at, "dd/MM/yyyy 'às' HH:mm")}
             </p>
           </div>
           {pendingCount > 0 && (
@@ -389,9 +389,9 @@ export default function AutomationDetails() {
                             <TableRow key={a.id}>
                               <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
                               <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
-                              <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                              <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                              <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(a.sent_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(a.delivered_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(a.read_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell className="text-right font-medium">

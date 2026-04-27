@@ -33,6 +33,7 @@ const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const SettingsInstagram = lazy(() => import("./pages/SettingsInstagram"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
 const CRMPlanner = lazy(() => import("./pages/CRMPlanner"));
+const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
 
 const queryClient = new QueryClient();
 
@@ -81,6 +82,7 @@ const App = () => (
                   <Route path="/automations/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />
                   <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
                   <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+                  <Route path="/email-marketing" element={<ProtectedRoute><EmailMarketing /></ProtectedRoute>} />
                   <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
                   <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
                   <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />

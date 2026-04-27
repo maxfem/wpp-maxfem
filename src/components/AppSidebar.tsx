@@ -12,6 +12,7 @@ import {
   Zap,
   List,
   Sparkles,
+  Mail,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
@@ -52,6 +53,7 @@ const planItems = [
 const executeItems = [
   { title: "Atividades", url: "/activities", icon: Activity },
   { title: "Atendimento", url: "/atendimento", icon: MessageSquare },
+  { title: "E-mail Marketing", url: "/email-marketing", icon: Mail },
 ];
 
 const manageItems = [

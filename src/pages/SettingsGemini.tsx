@@ -25,7 +25,7 @@ const TONE_OPTIONS = [
   { value: "technical", label: "Técnico", description: "Preciso e objetivo" },
 ];
 
-const DEFAULT_PROMPT = `Você é um assistente de atendimento ao cliente via WhatsApp. Seu papel é ajudar o atendente a responder mensagens de forma eficiente e profissional.
+const DEFAULT_WHATSAPP_PROMPT = `Você é um assistente de atendimento ao cliente via WhatsApp. Seu papel é ajudar o atendente a responder mensagens de forma eficiente e profissional.
 
 Regras:
 - Responda sempre em português brasileiro
@@ -34,6 +34,15 @@ Regras:
 - Use informações do contexto do cliente quando disponíveis
 - Sugira respostas completas que o atendente possa enviar diretamente`;
 
+const DEFAULT_INSTAGRAM_PROMPT = `Você é um assistente de atendimento ao cliente via Instagram. Seu papel é ajudar o atendente a responder direct messages e comentários de forma eficiente e engajadora.
+
+Regras:
+- Responda sempre em português brasileiro
+- Seja visual e use emojis moderadamente
+- Mantenha o tom configurado pelo atendente
+- Foque em engajamento e conversão
+- Sugira respostas adequadas para a plataforma Instagram`;
+
 export default function SettingsGemini() {
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
@@ -41,7 +50,8 @@ export default function SettingsGemini() {
 
   const [tone, setTone] = useState("friendly");
   const [model, setModel] = useState("google/gemini-2.5-flash");
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT);
+  const [whatsappPrompt, setWhatsappPrompt] = useState(DEFAULT_WHATSAPP_PROMPT);
+  const [instagramPrompt, setInstagramPrompt] = useState(DEFAULT_INSTAGRAM_PROMPT);
 
   const { data: integration, isLoading } = useQuery({
     queryKey: ["integration-gemini", currentTenant?.id],
@@ -63,7 +73,8 @@ export default function SettingsGemini() {
       const config = integration.config as any;
       setTone(config?.tone || "friendly");
       setModel(config?.model || "google/gemini-2.5-flash");
-      setSystemPrompt(config?.system_prompt || DEFAULT_PROMPT);
+      setWhatsappPrompt(config?.whatsapp_prompt || config?.system_prompt || DEFAULT_WHATSAPP_PROMPT);
+      setInstagramPrompt(config?.instagram_prompt || DEFAULT_INSTAGRAM_PROMPT);
     }
   }, [integration]);
 
@@ -77,7 +88,9 @@ export default function SettingsGemini() {
         config: {
           tone,
           model,
-          system_prompt: systemPrompt,
+          whatsapp_prompt: whatsappPrompt,
+          instagram_prompt: instagramPrompt,
+          system_prompt: whatsappPrompt, // Compatibilidade
           ai_enabled: true,
         },
         sync_settings: {},
@@ -137,7 +150,7 @@ export default function SettingsGemini() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Gemini AI</h1>
               <p className="text-sm text-muted-foreground">
-                IA multimodal para atendimento — imagem, vídeo e áudio
+                IA multimodal para WhatsApp e Instagram
               </p>
             </div>
           </div>
@@ -203,17 +216,38 @@ export default function SettingsGemini() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Prompt do sistema (instruções da agente)</Label>
-              <Textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="Instruções para o assistente de IA..."
-                className="min-h-[160px] text-xs"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Estas instruções definem como o assistente se comporta ao sugerir respostas.
-              </p>
+            <div className="space-y-4 pt-2 border-t">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Prompt do WhatsApp (instruções da agente)
+                </Label>
+                <Textarea
+                  value={whatsappPrompt}
+                  onChange={(e) => setWhatsappPrompt(e.target.value)}
+                  placeholder="Instruções para o assistente de WhatsApp..."
+                  className="min-h-[140px] text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Estas instruções definem como o assistente se comporta no WhatsApp.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  Prompt do Instagram (instruções da agente)
+                </Label>
+                <Textarea
+                  value={instagramPrompt}
+                  onChange={(e) => setInstagramPrompt(e.target.value)}
+                  placeholder="Instruções para o assistente de Instagram..."
+                  className="min-h-[140px] text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Estas instruções definem como o assistente se comporta no Instagram.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

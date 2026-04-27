@@ -26,7 +26,7 @@ const MODEL_OPTIONS = [
   { value: "gpt-4-turbo", label: "GPT-4 Turbo", description: "Avançado — máxima qualidade" },
 ];
 
-const DEFAULT_PROMPT = `Você é um assistente de atendimento ao cliente via WhatsApp. Seu papel é ajudar o atendente a responder mensagens de forma eficiente e profissional.
+const DEFAULT_WHATSAPP_PROMPT = `Você é um assistente de atendimento ao cliente via WhatsApp. Seu papel é ajudar o atendente a responder mensagens de forma eficiente e profissional.
 
 Regras:
 - Responda sempre em português brasileiro
@@ -34,6 +34,15 @@ Regras:
 - Mantenha o tom configurado pelo atendente
 - Use informações do contexto do cliente quando disponíveis
 - Sugira respostas completas que o atendente possa enviar diretamente`;
+
+const DEFAULT_INSTAGRAM_PROMPT = `Você é um assistente de atendimento ao cliente via Instagram. Seu papel é ajudar o atendente a responder direct messages e comentários de forma eficiente e engajadora.
+
+Regras:
+- Responda sempre em português brasileiro
+- Seja visual e use emojis moderadamente
+- Mantenha o tom configurado pelo atendente
+- Foque em engajamento e conversão
+- Sugira respostas adequadas para a plataforma Instagram`;
 
 export default function SettingsOpenAI() {
   const navigate = useNavigate();
@@ -44,7 +53,8 @@ export default function SettingsOpenAI() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [tone, setTone] = useState("friendly");
   const [model, setModel] = useState("gpt-4o-mini");
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT);
+  const [whatsappPrompt, setWhatsappPrompt] = useState(DEFAULT_WHATSAPP_PROMPT);
+  const [instagramPrompt, setInstagramPrompt] = useState(DEFAULT_INSTAGRAM_PROMPT);
 
   const { data: integration, isLoading } = useQuery({
     queryKey: ["integration-openai", currentTenant?.id],
@@ -67,7 +77,8 @@ export default function SettingsOpenAI() {
       setApiKey(config?.openai_api_key || "");
       setTone(config?.tone || "friendly");
       setModel(config?.model || "gpt-4o-mini");
-      setSystemPrompt(config?.system_prompt || DEFAULT_PROMPT);
+      setWhatsappPrompt(config?.whatsapp_prompt || config?.system_prompt || DEFAULT_WHATSAPP_PROMPT);
+      setInstagramPrompt(config?.instagram_prompt || DEFAULT_INSTAGRAM_PROMPT);
     }
   }, [integration]);
 
@@ -82,7 +93,9 @@ export default function SettingsOpenAI() {
           openai_api_key: apiKey,
           tone,
           model,
-          system_prompt: systemPrompt,
+          whatsapp_prompt: whatsappPrompt,
+          instagram_prompt: instagramPrompt,
+          system_prompt: whatsappPrompt, // Mantém compatibilidade por enquanto
           ai_enabled: true,
         },
         sync_settings: {},
@@ -144,7 +157,7 @@ export default function SettingsOpenAI() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">OpenAI</h1>
               <p className="text-sm text-muted-foreground">
-                Assistente de IA para atendimento via WhatsApp
+                Assistente de IA para WhatsApp e Instagram
               </p>
             </div>
           </div>
@@ -234,17 +247,38 @@ export default function SettingsOpenAI() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Prompt do sistema (instruções da agente)</Label>
-              <Textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="Instruções para o assistente de IA..."
-                className="min-h-[160px] text-xs"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Estas instruções definem como o assistente se comporta ao sugerir respostas.
-              </p>
+            <div className="space-y-4 pt-2 border-t">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Prompt do WhatsApp (instruções da agente)
+                </Label>
+                <Textarea
+                  value={whatsappPrompt}
+                  onChange={(e) => setWhatsappPrompt(e.target.value)}
+                  placeholder="Instruções para o assistente de WhatsApp..."
+                  className="min-h-[140px] text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Estas instruções definem como o assistente se comporta no WhatsApp.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  Prompt do Instagram (instruções da agente)
+                </Label>
+                <Textarea
+                  value={instagramPrompt}
+                  onChange={(e) => setInstagramPrompt(e.target.value)}
+                  placeholder="Instruções para o assistente de Instagram..."
+                  className="min-h-[140px] text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Estas instruções definem como o assistente se comporta no Instagram.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

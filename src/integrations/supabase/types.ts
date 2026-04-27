@@ -432,6 +432,87 @@ export type Database = {
           },
         ]
       }
+      email_campaigns: {
+        Row: {
+          content_html: string
+          created_at: string | null
+          id: string
+          name: string
+          scheduled_for: string | null
+          status: string | null
+          subject: string
+          target_segment: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          content_html: string
+          created_at?: string | null
+          id?: string
+          name: string
+          scheduled_for?: string | null
+          status?: string | null
+          subject: string
+          target_segment?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          content_html?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          scheduled_for?: string | null
+          status?: string | null
+          subject?: string
+          target_segment?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      email_logs: {
+        Row: {
+          aws_message_id: string | null
+          body_html: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          sent_at: string | null
+          status: string | null
+          subject: string
+          to_email: string
+          user_id: string | null
+        }
+        Insert: {
+          aws_message_id?: string | null
+          body_html?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          sent_at?: string | null
+          status?: string | null
+          subject: string
+          to_email: string
+          user_id?: string | null
+        }
+        Update: {
+          aws_message_id?: string | null
+          body_html?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          sent_at?: string | null
+          status?: string | null
+          subject?: string
+          to_email?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       instagram_accounts: {
         Row: {
           access_token: string | null

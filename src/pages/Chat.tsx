@@ -606,6 +606,7 @@ export default function Chat() {
                       }
                       disabled={sendMutation.isPending || sendMediaMutation.isPending}
                       tenantId={tenantId}
+                      channel={selectedConv?.channel}
                     />
                   </>
                 )}

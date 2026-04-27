@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
+import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand } from "npm:@aws-sdk/client-ses@3.645.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,17 +13,16 @@ serve(async (req) => {
   try {
     const payload = await req.json();
     const { to, subject, html, text, fromName, fromEmail, validate_only, accessKey, secretKey, region: reqRegion } = payload;
-    
-    let AWS_REGION = reqRegion || Deno.env.get("AWS_REGION") || "sa-east-1";
+
+    let AWS_REGION = (reqRegion || Deno.env.get("AWS_REGION") || "sa-east-1").trim();
     let AWS_ACCESS_KEY_ID = (accessKey || Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
     let AWS_SECRET_ACCESS_KEY = (secretKey || Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
     let SENDER_EMAIL = (fromEmail || Deno.env.get("SENDER_EMAIL") || "").trim();
 
-    // If credentials not provided in request, try to get from DB
+    // Fallback to DB-stored config
     if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !SENDER_EMAIL) {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       const { data } = await supabase.from("integrations").select("config").eq("provider", "aws").eq("is_active", true).limit(1).maybeSingle();
-      
       if (data?.config) {
         const config = data.config as any;
         if (!AWS_ACCESS_KEY_ID) AWS_ACCESS_KEY_ID = (config.access_key || "").trim();
@@ -33,158 +33,66 @@ serve(async (req) => {
     }
 
     if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) throw new Error("Credenciais AWS não configuradas.");
-    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado.");
+    if (!SENDER_EMAIL) throw new Error("E-mail do remetente não configurado.");
+
+    const ses = new SESClient({
+      region: AWS_REGION,
+      credentials: {
+        accessKeyId: AWS_ACCESS_KEY_ID,
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
+      },
+    });
 
     if (validate_only) {
-      const now = new Date();
-      const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "");
-      const date = datetime.slice(0, 8);
-      const host = `email.${AWS_REGION}.amazonaws.com`;
-      const endpoint = `https://${host}/`;
-
-      // 1. GetSendQuota to validate credentials
-      const quotaBody = new URLSearchParams();
-      quotaBody.append("Action", "GetSendQuota");
-      const quotaBodyStr = quotaBody.toString().replace(/\+/g, "%20");
-      
-      const bodyHash = await sha256(quotaBodyStr);
-      const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
-      const signedHeaders = "content-type;host;x-amz-date";
-      const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, bodyHash].join("\n");
-      const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
-      const stringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(canonicalRequest)].join("\n");
-      const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
-      const kRegion = await hmacRaw(new Uint8Array(kDate), AWS_REGION);
-      const kService = await hmacRaw(new Uint8Array(kRegion), "ses");
-      const kSigning = await hmacRaw(new Uint8Array(kService), "aws4_request");
-      const signature = await hmacHex(new Uint8Array(kSigning), stringToSign);
-      const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Host": host,
-          "X-Amz-Date": datetime,
-          "Authorization": authHeader,
-        },
-        body: quotaBodyStr,
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Credenciais inválidas ou sem permissão GetSendQuota: ${errText}`);
+      // 1. Validate credentials & permission
+      try {
+        await ses.send(new GetSendQuotaCommand({}));
+      } catch (e: any) {
+        throw new Error(`Credenciais inválidas ou sem permissão ses:GetSendQuota: ${e.message}`);
       }
 
-      // 2. GetIdentityVerificationAttributes to check senderEmail
-      const verifyBody = new URLSearchParams();
-      verifyBody.append("Action", "GetIdentityVerificationAttributes");
-      verifyBody.append("Identities.member.1", SENDER_EMAIL);
-      const verifyBodyStr = verifyBody.toString().replace(/\+/g, "%20");
-      
-      const vBodyHash = await sha256(verifyBodyStr);
-      const vCanonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, vBodyHash].join("\n");
-      const vStringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(vCanonicalRequest)].join("\n");
-      const vSignature = await hmacHex(new Uint8Array(kSigning), vStringToSign);
-      const vAuthHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${vSignature}`;
-
-      const vResponse = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Host": host,
-          "X-Amz-Date": datetime,
-          "Authorization": vAuthHeader,
-        },
-        body: verifyBodyStr,
-      });
-
-      const vResultText = await vResponse.text();
-      if (!vResponse.ok) {
-        throw new Error(`Erro ao verificar identidade: ${vResultText}`);
+      // 2. Validate sender email is verified in SES
+      try {
+        const verifyResult = await ses.send(
+          new GetIdentityVerificationAttributesCommand({ Identities: [SENDER_EMAIL] })
+        );
+        const attr = verifyResult.VerificationAttributes?.[SENDER_EMAIL];
+        if (!attr || attr.VerificationStatus !== "Success") {
+          throw new Error(
+            `O e-mail "${SENDER_EMAIL}" não está verificado no SES (status: ${attr?.VerificationStatus || "não encontrado"}). Verifique a identidade no console AWS SES.`
+          );
+        }
+      } catch (e: any) {
+        if (e.message.includes("não está verificado")) throw e;
+        throw new Error(`Erro ao verificar identidade no SES: ${e.message}`);
       }
 
-      if (!vResultText.includes("<VerificationStatus>Success</VerificationStatus>")) {
-        throw new Error(`O e-mail ${SENDER_EMAIL} não está verificado no SES (Status: Pending ou Not Started).`);
-      }
-
-      return new Response(JSON.stringify({ success: true, validated: true }), {
+      return new Response(JSON.stringify({ success: true, validated: true, message: "Credenciais, região e remetente validados com sucesso." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado.");
+    // Send email
+    console.log(`[SES] Sending: To=${Array.isArray(to) ? to[0] : to}, From=${SENDER_EMAIL}, Region=${AWS_REGION}`);
 
-    const body = new URLSearchParams();
-    body.append("Action", "SendEmail");
-    body.append("Destination.ToAddresses.member.1", Array.isArray(to) ? to[0] : to);
-    body.append("Message.Subject.Data", subject);
-    body.append("Message.Body.Html.Data", html);
-    if (text) body.append("Message.Body.Text.Data", text);
-    body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
-
-    const bodyStr = body.toString().replace(/\+/g, "%20");
-    const now = new Date();
-    const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "");
-    const date = datetime.slice(0, 8);
-    const host = `email.${AWS_REGION}.amazonaws.com`;
-    const endpoint = `https://${host}/`;
-
-    // 1. Canonical Request
-    const bodyHash = await sha256(bodyStr);
-    // Explicit headers order for canonical request
-    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
-    const signedHeaders = "content-type;host;x-amz-date";
-    const canonicalRequest = [
-      "POST",
-      "/",
-      "",
-      canonicalHeaders,
-      signedHeaders,
-      bodyHash
-    ].join("\n");
-
-    // 2. String to Sign
-    const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
-    const stringToSign = [
-      "AWS4-HMAC-SHA256",
-      datetime,
-      scope,
-      await sha256(canonicalRequest)
-    ].join("\n");
-
-    // 3. Signature
-    const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
-    const kRegion = await hmacRaw(new Uint8Array(kDate), AWS_REGION);
-    const kService = await hmacRaw(new Uint8Array(kRegion), "ses");
-    const kSigning = await hmacRaw(new Uint8Array(kService), "aws4_request");
-    const signature = await hmacHex(new Uint8Array(kSigning), stringToSign);
-
-    const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-    console.log(`[SES] Attempting send: To=${Array.isArray(to) ? to[0] : to}, From=${SENDER_EMAIL}, Region=${AWS_REGION}`);
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Host": host,
-        "X-Amz-Date": datetime,
-        "Authorization": authHeader,
+    const result = await ses.send(new SendEmailCommand({
+      Source: fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL,
+      Destination: {
+        ToAddresses: Array.isArray(to) ? to : [to],
       },
-      body: bodyStr,
-    });
+      Message: {
+        Subject: { Data: subject, Charset: "UTF-8" },
+        Body: {
+          Html: { Data: html, Charset: "UTF-8" },
+          ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
+        },
+      },
+    }));
 
-    const resultText = await response.text();
-    if (!response.ok) {
-      console.error(`[SES] AWS Error (Signature Check): ${resultText}`);
-      throw new Error(`AWS SES Error: ${resultText}`);
-    }
-
-    return new Response(JSON.stringify({ success: true, messageId: resultText }), {
+    return new Response(JSON.stringify({ success: true, messageId: result.MessageId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[SES] Handler Error: ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -192,27 +100,3 @@ serve(async (req) => {
     });
   }
 });
-
-async function sha256(message: string) {
-  const msgUint8 = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string | Uint8Array) {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw", 
-    key, 
-    { name: "HMAC", hash: "SHA-256" }, 
-    false, 
-    ["sign"]
-  );
-  const dataUint8 = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return await crypto.subtle.sign("HMAC", cryptoKey, dataUint8);
-}
-
-async function hmacHex(key: ArrayBuffer | Uint8Array, data: string) {
-  const signature = await hmacRaw(key, data);
-  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
-}

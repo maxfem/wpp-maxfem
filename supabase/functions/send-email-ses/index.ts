@@ -54,10 +54,10 @@ serve(async (req) => {
       const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(canonicalRequest)].join("\n");
       const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
-      const kRegion = await hmacRaw(kDate, AWS_REGION);
-      const kService = await hmacRaw(kRegion, "ses");
-      const kSigning = await hmacRaw(kService, "aws4_request");
-      const signature = await hmacHex(kSigning, stringToSign);
+      const kRegion = await hmacRaw(new Uint8Array(kDate), AWS_REGION);
+      const kService = await hmacRaw(new Uint8Array(kRegion), "ses");
+      const kSigning = await hmacRaw(new Uint8Array(kService), "aws4_request");
+      const signature = await hmacHex(new Uint8Array(kSigning), stringToSign);
       const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
       const response = await fetch(endpoint, {
@@ -122,12 +122,11 @@ serve(async (req) => {
     ].join("\n");
 
     // 3. Signature
-    // Important: secret key used in first hmacRaw must be prepended with "AWS4"
     const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
-    const kRegion = await hmacRaw(kDate, AWS_REGION);
-    const kService = await hmacRaw(kRegion, "ses");
-    const kSigning = await hmacRaw(kService, "aws4_request");
-    const signature = await hmacHex(kSigning, stringToSign);
+    const kRegion = await hmacRaw(new Uint8Array(kDate), AWS_REGION);
+    const kService = await hmacRaw(new Uint8Array(kRegion), "ses");
+    const kSigning = await hmacRaw(new Uint8Array(kService), "aws4_request");
+    const signature = await hmacHex(new Uint8Array(kSigning), stringToSign);
 
     const authHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
@@ -165,15 +164,23 @@ serve(async (req) => {
 async function sha256(message: string) {
   const msgUint8 = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmacRaw(key: ArrayBuffer, data: string) {
-  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
+async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string | Uint8Array) {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", 
+    key, 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
+    ["sign"]
+  );
+  const dataUint8 = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  return await crypto.subtle.sign("HMAC", cryptoKey, dataUint8);
 }
 
-async function hmacHex(key: ArrayBuffer, data: string) {
+async function hmacHex(key: ArrayBuffer | Uint8Array, data: string) {
   const signature = await hmacRaw(key, data);
   return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, "0")).join("");
 }

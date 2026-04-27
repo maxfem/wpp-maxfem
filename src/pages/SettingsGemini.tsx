@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Loader2, Trash2, Sparkles, Image, Video, Mic, MessageSquare } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Trash2, Sparkles, Image, Video, Mic, MessageSquare, Bot } from "lucide-react";
 
 const MODEL_OPTIONS = [
   { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Rápido e econômico — ideal para atendimento" },

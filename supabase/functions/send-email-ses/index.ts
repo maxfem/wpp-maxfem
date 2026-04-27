@@ -41,15 +41,16 @@ serve(async (req) => {
       const body = new URLSearchParams();
       body.append("Action", "GetSendQuota");
       const bodyStr = body.toString().replace(/\+/g, "%20");
-      const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
+      const now = new Date();
+      const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "");
       const date = datetime.slice(0, 8);
       const host = `email.${AWS_REGION}.amazonaws.com`;
       const endpoint = `https://${host}/`;
 
       const bodyHash = await sha256(bodyStr);
-      const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}`;
+      const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
       const signedHeaders = "content-type;host;x-amz-date";
-      const canonicalRequest = ["POST", "/", "", canonicalHeaders + "\n", signedHeaders, bodyHash].join("\n");
+      const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, bodyHash].join("\n");
       const scope = `${date}/${AWS_REGION}/ses/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(canonicalRequest)].join("\n");
       const kDate = await hmacRaw(new TextEncoder().encode("AWS4" + AWS_SECRET_ACCESS_KEY), date);
@@ -91,7 +92,8 @@ serve(async (req) => {
     body.append("Source", fromName ? `${fromName} <${SENDER_EMAIL}>` : SENDER_EMAIL);
 
     const bodyStr = body.toString().replace(/\+/g, "%20");
-    const datetime = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, "");
+    const now = new Date();
+    const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "");
     const date = datetime.slice(0, 8);
     const host = `email.${AWS_REGION}.amazonaws.com`;
     const endpoint = `https://${host}/`;
@@ -99,13 +101,13 @@ serve(async (req) => {
     // 1. Canonical Request
     const bodyHash = await sha256(bodyStr);
     // Explicit headers order for canonical request
-    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}`;
+    const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
     const signedHeaders = "content-type;host;x-amz-date";
     const canonicalRequest = [
       "POST",
       "/",
       "",
-      canonicalHeaders + "\n",
+      canonicalHeaders,
       signedHeaders,
       bodyHash
     ].join("\n");

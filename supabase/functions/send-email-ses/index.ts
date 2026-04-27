@@ -36,18 +36,18 @@ serve(async (req) => {
     if (!SENDER_EMAIL) throw new Error("SENDER_EMAIL não configurado.");
 
     if (validate_only) {
-      // To validate, we'll try to list identities or just send a GetSendQuota request
-      // Action: GetSendQuota is a lightweight read action
-      const body = new URLSearchParams();
-      body.append("Action", "GetSendQuota");
-      const bodyStr = body.toString().replace(/\+/g, "%20");
       const now = new Date();
       const datetime = now.toISOString().replace(/[:\-]|\.\d{3}/g, "");
       const date = datetime.slice(0, 8);
       const host = `email.${AWS_REGION}.amazonaws.com`;
       const endpoint = `https://${host}/`;
 
-      const bodyHash = await sha256(bodyStr);
+      // 1. GetSendQuota to validate credentials
+      const quotaBody = new URLSearchParams();
+      quotaBody.append("Action", "GetSendQuota");
+      const quotaBodyStr = quotaBody.toString().replace(/\+/g, "%20");
+      
+      const bodyHash = await sha256(quotaBodyStr);
       const canonicalHeaders = `content-type:application/x-www-form-urlencoded\nhost:${host}\nx-amz-date:${datetime}\n`;
       const signedHeaders = "content-type;host;x-amz-date";
       const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, bodyHash].join("\n");
@@ -68,12 +68,44 @@ serve(async (req) => {
           "X-Amz-Date": datetime,
           "Authorization": authHeader,
         },
-        body: bodyStr,
+        body: quotaBodyStr,
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Credenciais inválidas: ${errText}`);
+        throw new Error(`Credenciais inválidas ou sem permissão GetSendQuota: ${errText}`);
+      }
+
+      // 2. GetIdentityVerificationAttributes to check senderEmail
+      const verifyBody = new URLSearchParams();
+      verifyBody.append("Action", "GetIdentityVerificationAttributes");
+      verifyBody.append("Identities.member.1", SENDER_EMAIL);
+      const verifyBodyStr = verifyBody.toString().replace(/\+/g, "%20");
+      
+      const vBodyHash = await sha256(verifyBodyStr);
+      const vCanonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, vBodyHash].join("\n");
+      const vStringToSign = ["AWS4-HMAC-SHA256", datetime, scope, await sha256(vCanonicalRequest)].join("\n");
+      const vSignature = await hmacHex(new Uint8Array(kSigning), vStringToSign);
+      const vAuthHeader = `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${vSignature}`;
+
+      const vResponse = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Host": host,
+          "X-Amz-Date": datetime,
+          "Authorization": vAuthHeader,
+        },
+        body: verifyBodyStr,
+      });
+
+      const vResultText = await vResponse.text();
+      if (!vResponse.ok) {
+        throw new Error(`Erro ao verificar identidade: ${vResultText}`);
+      }
+
+      if (!vResultText.includes("<VerificationStatus>Success</VerificationStatus>")) {
+        throw new Error(`O e-mail ${SENDER_EMAIL} não está verificado no SES (Status: Pending ou Not Started).`);
       }
 
       return new Response(JSON.stringify({ success: true, validated: true }), {

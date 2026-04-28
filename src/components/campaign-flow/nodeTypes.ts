@@ -1,7 +1,7 @@
 export const NODE_PALETTE = {
   action: [
     { type: "sendWhatsApp", label: "Enviar WhatsApp", icon: "MessageCircle", color: "#22c55e", enabled: true },
-    { type: "sendEmail", label: "Enviar E-mail", icon: "Mail", color: "#6366f1", enabled: false },
+    { type: "sendEmail", label: "Enviar E-mail", icon: "Mail", color: "#6366f1", enabled: true },
     { type: "sendSms", label: "Enviar SMS", icon: "MessageSquare", color: "#3b82f6", enabled: false },
     { type: "sendCall", label: "Ligação telefônica", icon: "Phone", color: "#f97316", enabled: false },
     { type: "sendWebhook", label: "Enviar Webhook", icon: "Globe", color: "#8b5cf6", enabled: false },

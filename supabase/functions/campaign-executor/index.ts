@@ -135,9 +135,11 @@ function buildTemplateComponents(
   if (copyCodeButtons) {
     for (const btn of copyCodeButtons) {
       if (btn.value && btn.value !== "-") {
-        // According to Meta, coupon_code must be 15 chars max. 
+        // According to Meta, coupon_code must be 15 chars max.
         // For PIX, this button type might not be the right one if we want to copy the full code.
-        // However, if the template was approved with COPY_CODE, we must provide a value.
+        if (btn.value.length > 15) {
+          console.warn(`[automation] COPY_CODE button value too long (${btn.value.length} chars). Meta limit is 15. Truncating...`);
+        }
         const finalValue = btn.value.length > 15 ? btn.value.substring(0, 15) : btn.value;
         components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: finalValue }] });
       }

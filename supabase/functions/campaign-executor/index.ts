@@ -59,6 +59,47 @@ function generateCode(len = 8): string {
   return result;
 }
 
+async function wrapHtmlLinks(
+  supabase: any,
+  html: string,
+  ctx: { tenantId: string; campaignId: string; customerId: string; campaignName: string }
+): Promise<string> {
+  const urlRegex = /href="([^"]+)"/g;
+  let match;
+  let newHtml = html;
+  
+  // To avoid issues with multiple replacements changing indices, we'll collect matches first
+  const replacements: { original: string; wrapped: string }[] = [];
+  
+  while ((match = urlRegex.exec(html)) !== null) {
+    const originalUrl = match[1];
+    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!)) {
+      const code = generateCode(10);
+      
+      // Store in tracked_links
+      await supabase.from("tracked_links").insert({
+        tenant_id: ctx.tenantId,
+        campaign_id: ctx.campaignId,
+        customer_id: ctx.customerId,
+        code,
+        original_url: originalUrl,
+        utm_source: "email",
+        utm_medium: "automation",
+        utm_campaign: ctx.campaignName,
+      });
+      
+      const wrappedUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/link-redirect?c=${code}`;
+      replacements.push({ original: originalUrl, wrapped: wrappedUrl });
+    }
+  }
+  
+  for (const r of replacements) {
+    newHtml = newHtml.replace(`href="${r.original}"`, `href="${r.wrapped}"`);
+  }
+  
+  return newHtml;
+}
+
 function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
@@ -324,8 +365,90 @@ async function processAutomationQueue(supabase: any) {
             break;
           }
 
+          // SEND EMAIL
+          if (nodeType === "sendEmail") {
+            const subject = node.data?.subject || "E-mail importante";
+            const bodyHtml = node.data?.content || node.data?.body || "";
+            const fromName = node.data?.fromName || "";
+            const configurationSet = node.data?.configurationSet || "default";
+
+            const { data: customer } = await supabase.from("customers")
+              .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
+
+            if (!customer?.email) {
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            const triggerData = (item.trigger_data || {}) as any;
+            let orderRecord: any = null;
+            if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
+              let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
+              if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);
+              else if (triggerData.order_id) oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_number) oq = oq.eq("order_number", triggerData.order_number);
+              const { data: ord } = await oq.limit(1).single();
+              orderRecord = ord;
+            }
+
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+
+            // Resolve variables in subject and body
+            let resolvedSubject = subject;
+            let resolvedBody = bodyHtml;
+
+            // Simple variable replacement: {{customer.name}} -> "John"
+            const varRegex = /\{\{([^}]+)\}\}/g;
+            resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+
+            // Wrap links for tracking
+            const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
+              tenantId: campaign.tenant_id,
+              campaignId: campaign.id,
+              customerId: customer.id,
+              campaignName: campaign.name
+            });
+
+            // Call send-email-ses edge function
+            const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
+              method: "POST",
+              headers: { 
+                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                "Content-Type": "application/json" 
+              },
+              body: JSON.stringify({
+                to: customer.email,
+                subject: resolvedSubject,
+                html: finalBody,
+                fromName,
+                configurationSet,
+                tenantId: campaign.tenant_id,
+                campaignId: campaign.id,
+                customerId: customer.id
+              }),
+            });
+
+            if (!sendRes.ok) {
+              const err = await sendRes.text();
+              console.error(`[automation] Error sending email: ${err}`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              break;
+            }
+
+            const nextId = getNextNodeId(edges, currentNodeId);
+            if (nextId) {
+              currentNodeId = nextId;
+              await supabase.from("automation_queue").update({ current_node_id: currentNodeId, scheduled_for: null }).eq("id", item.id);
+              continue;
+            }
+            await supabase.from("automation_queue").update({ status: "completed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+            break;
+          }
+
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
+
             const templateName = node.data?.template || node.data?.templateName;
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
             const triggerData = (item.trigger_data || {}) as any;

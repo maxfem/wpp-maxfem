@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus } from "lucide-react";
+import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
@@ -128,19 +128,31 @@ const EmailMarketing = () => {
 
 // ============== OVERVIEW TAB ==============
 const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
-  // Aggregates from email_events (last 30d) for Open/Click/Delivered detail
+  // Aggregates from email_events and campaign_activities (last 30d)
   const { data: events } = useQuery({
     queryKey: ["email-events-overview", tenantId],
     queryFn: async () => {
-      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0 };
+      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, conversions: 0, revenue: 0 };
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
+      
+      // Get events
+      const { data: evData } = await supabase
         .from("email_events")
         .select("event_type")
         .eq("tenant_id", tenantId)
         .gte("timestamp", since);
-      const counts = { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0 };
-      for (const e of data || []) {
+      
+      // Get conversions from campaign_activities
+      const { data: activityData } = await supabase
+        .from("campaign_activities")
+        .select("converted_at, conversion_value")
+        .eq("tenant_id", tenantId)
+        .eq("channel", "email")
+        .gte("sent_at", since);
+
+      const counts = { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0, conversions: 0, revenue: 0 };
+      
+      for (const e of evData || []) {
         if (e.event_type === "Send") counts.sent++;
         else if (e.event_type === "Delivery") counts.delivered++;
         else if (e.event_type === "Open") counts.opens++;
@@ -149,10 +161,19 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
         else if (e.event_type === "Complaint") counts.complaints++;
         else if (e.event_type === "Reject") counts.rejects++;
       }
+
+      for (const a of activityData || []) {
+        if (a.converted_at) {
+          counts.conversions++;
+          counts.revenue += Number(a.conversion_value) || 0;
+        }
+      }
+      
       return counts;
     },
     enabled: !!tenantId,
   });
+
 
   // Aggregate datapoints from SES (last 14 days summed by day)
   const dailyData = React.useMemo(() => {
@@ -191,6 +212,7 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
   const openRate = events && events.delivered > 0 ? (events.opens / events.delivered) * 100 : 0;
   const clickRate = events && events.delivered > 0 ? (events.clicks / events.delivered) * 100 : 0;
   const ctor = events && events.opens > 0 ? (events.clicks / events.opens) * 100 : 0;
+  const conversionRate = events && events.sent > 0 ? (events.conversions / events.sent) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -202,7 +224,7 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
         <KpiCard icon={<Ban className="h-4 w-4" />} label="Complaint Rate" value={`${complaintRate.toFixed(3)}%`} hint={`${totals.complaints} reclamações`} negative={complaintRate > 0.1} />
         <KpiCard icon={<Activity className="h-4 w-4" />} label="Open Rate (30d)" value={events ? `${openRate.toFixed(1)}%` : "—"} hint={events ? `${events.opens} aberturas` : "Aguardando SNS"} />
         <KpiCard icon={<Activity className="h-4 w-4" />} label="Click Rate (30d)" value={events ? `${clickRate.toFixed(1)}%` : "—"} hint={events ? `${events.clicks} cliques` : "Aguardando SNS"} />
-        <KpiCard icon={<Activity className="h-4 w-4" />} label="CTOR (30d)" value={events ? `${ctor.toFixed(1)}%` : "—"} hint="Click-to-Open" />
+        <KpiCard icon={<TrendingUp className="h-4 w-4" />} label="Conversões (30d)" value={events ? `${events.conversions}` : "—"} hint={events ? `R$ ${events.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Vendas atribuídas"} positive={events && events.conversions > 0} />
         <KpiCard icon={<AlertTriangle className="h-4 w-4" />} label="Rejects (14d)" value={totals.rejects.toLocaleString("pt-BR")} hint="Rejeitados pelo SES" negative={totals.rejects > 0} />
       </div>
 
@@ -329,14 +351,30 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
     queryKey: ["email-logs", tenantId, statusFilter],
     queryFn: async () => {
       if (!tenantId) return [];
-      let q = supabase.from("email_logs").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
+      // Join with campaign_activities to show conversions
+      // Note: we link via campaign_id and customer_id
+      let q = supabase
+        .from("email_logs")
+        .select(`
+          *,
+          activity:campaign_activities(converted_at, conversion_value)
+        `)
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
       if (statusFilter !== "all") q = q.eq("status", statusFilter);
       const { data, error } = await q;
       if (error) throw error;
+      
+      // email_logs is linked to campaign_activities via campaign_id and customer_id
+      // but Supabase join might return multiple activities if not careful.
+      // In our case, we want to show if THIS send eventually led to a conversion.
       return data || [];
     },
     enabled: !!tenantId,
   });
+
 
   const statusBadge = (s: string) => {
     const map: any = {
@@ -381,23 +419,39 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Aberturas</TableHead>
                 <TableHead className="text-right">Cliques</TableHead>
+                <TableHead className="text-right">Venda</TableHead>
                 <TableHead>MessageId</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {logs && logs.length > 0 ? logs.map((l: any) => (
-                <TableRow key={l.id}>
-                  <TableCell className="text-xs whitespace-nowrap">{l.created_at ? localeSP(l.created_at) : "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.to_email}</TableCell>
-                  <TableCell className="max-w-xs truncate">{l.subject}</TableCell>
-                  <TableCell>{statusBadge(l.status)}</TableCell>
-                  <TableCell className="text-right font-mono">{l.opens || 0}</TableCell>
-                  <TableCell className="text-right font-mono">{l.clicks || 0}</TableCell>
-                  <TableCell className="font-mono text-[10px] text-muted-foreground truncate max-w-[120px]">{l.aws_message_id}</TableCell>
-                </TableRow>
-              )) : (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
+              {logs && logs.length > 0 ? logs.map((l: any) => {
+                const activity = Array.isArray(l.activity) ? l.activity[0] : l.activity;
+                const converted = activity?.converted_at;
+                const value = activity?.conversion_value;
+                
+                return (
+                  <TableRow key={l.id}>
+                    <TableCell className="text-xs whitespace-nowrap">{l.created_at ? localeSP(l.created_at) : "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{l.to_email}</TableCell>
+                    <TableCell className="max-w-xs truncate">{l.subject}</TableCell>
+                    <TableCell>{statusBadge(l.status)}</TableCell>
+                    <TableCell className="text-right font-mono">{l.opens || 0}</TableCell>
+                    <TableCell className="text-right font-mono">{l.clicks || 0}</TableCell>
+                    <TableCell className="text-right">
+                      {converted ? (
+                        <div className="flex flex-col items-end">
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">Convertido</Badge>
+                          {value > 0 && <span className="text-[10px] text-muted-foreground">R$ {value.toLocaleString("pt-BR")}</span>}
+                        </div>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] text-muted-foreground truncate max-w-[120px]">{l.aws_message_id}</TableCell>
+                  </TableRow>
+                );
+              }) : (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
               )}
+
             </TableBody>
           </Table>
         )}

@@ -31,12 +31,13 @@ const getNodeConfigs = (templateOptions: string[]): Record<string, { title: stri
   sendEmail: {
     title: "Enviar E-mail",
     fields: [
+      { key: "fromName", label: "Nome do Remetente", type: "text", placeholder: "Ex: Minha Loja" },
       { key: "subject", label: "Assunto", type: "text", placeholder: "Assunto do e-mail" },
-      { key: "template", label: "Template", type: "select", options: ["Boas-vindas", "Promoção", "Newsletter"] },
-      { key: "from", label: "Remetente", type: "text", placeholder: "nome@empresa.com" },
-      { key: "trackOpens", label: "Rastrear aberturas", type: "toggle" },
+      { key: "content", label: "Conteúdo (HTML)", type: "textarea", placeholder: "<html><body>Olá {{customer.first_name}}...</body></html>" },
+      { key: "configurationSet", label: "Configuration Set (SES)", type: "text", placeholder: "default" },
     ],
   },
+
   sendSms: {
     title: "Enviar SMS",
     fields: [

@@ -176,7 +176,7 @@ serve(async (req) => {
     }
 
     // ========== TEST & SEND MODE ==========
-    const { to, subject, html, text, fromName } = payload;
+    const { to, subject, html, text, fromName, configurationSet, tenantId } = payload;
     if (!to || !subject || !html) {
       throw new Error("Campos obrigatórios: to, subject, html.");
     }
@@ -190,10 +190,28 @@ serve(async (req) => {
       senderEmail = await getSenderEmailFromDb();
     }
 
-    console.log(`[SES] mode=${mode} To=${Array.isArray(to) ? to[0] : to} From=${senderEmail} Region=${env.region}`);
+    // Resolve user via auth header for logging
+    let userId: string | null = null;
+    let resolvedTenant: string | null = tenantId || null;
+    try {
+      const authHeader = req.headers.get("Authorization");
+      if (authHeader) {
+        const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } });
+        const { data: { user } } = await sb.auth.getUser();
+        userId = user?.id || null;
+        if (!resolvedTenant && userId) {
+          const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          const { data: tm } = await sbAdmin.from("tenant_members").select("tenant_id").eq("user_id", userId).limit(1).maybeSingle();
+          resolvedTenant = tm?.tenant_id || null;
+        }
+      }
+    } catch {}
+
+    console.log(`[SES] mode=${mode} To=${Array.isArray(to) ? to[0] : to} From=${senderEmail} Region=${env.region} CS=${configurationSet || "-"}`);
 
     try {
-      const result = await sesClient.send(new SendEmailCommand({
+      const sendParams: any = {
         Source: fromName ? `${fromName} <${senderEmail}>` : senderEmail,
         Destination: { ToAddresses: Array.isArray(to) ? to : [to] },
         Message: {
@@ -203,9 +221,36 @@ serve(async (req) => {
             ...(text ? { Text: { Data: text, Charset: "UTF-8" } } : {}),
           },
         },
-      }));
+      };
+      if (configurationSet) sendParams.ConfigurationSetName = configurationSet;
+      if (resolvedTenant) {
+        sendParams.Tags = [{ Name: "tenant_id", Value: resolvedTenant }];
+      }
 
+      const result = await sesClient.send(new SendEmailCommand(sendParams));
       console.log(`[SES] ✅ Sent messageId=${result.MessageId}`);
+
+      // Log to email_logs (best-effort)
+      if (userId || resolvedTenant) {
+        try {
+          const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          await sbAdmin.from("email_logs").insert({
+            user_id: userId,
+            tenant_id: resolvedTenant,
+            to_email: Array.isArray(to) ? to.join(", ") : to,
+            from_email: senderEmail,
+            subject,
+            body_html: html,
+            status: "sent",
+            sent_at: new Date().toISOString(),
+            aws_message_id: result.MessageId,
+            configuration_set: configurationSet || null,
+          });
+        } catch (logErr) {
+          console.error("[SES] log error:", logErr);
+        }
+      }
+
       return new Response(JSON.stringify({ success: true, messageId: result.MessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

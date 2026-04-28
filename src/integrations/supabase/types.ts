@@ -471,43 +471,139 @@ export type Database = {
         }
         Relationships: []
       }
+      email_events: {
+        Row: {
+          bounce_subtype: string | null
+          bounce_type: string | null
+          complaint_type: string | null
+          configuration_set: string | null
+          created_at: string
+          diagnostic_code: string | null
+          event_type: string
+          id: string
+          link_url: string | null
+          message_id: string
+          raw: Json | null
+          recipient: string | null
+          smtp_response: string | null
+          source_email: string | null
+          source_ip: string | null
+          tenant_id: string | null
+          timestamp: string
+          user_agent: string | null
+        }
+        Insert: {
+          bounce_subtype?: string | null
+          bounce_type?: string | null
+          complaint_type?: string | null
+          configuration_set?: string | null
+          created_at?: string
+          diagnostic_code?: string | null
+          event_type: string
+          id?: string
+          link_url?: string | null
+          message_id: string
+          raw?: Json | null
+          recipient?: string | null
+          smtp_response?: string | null
+          source_email?: string | null
+          source_ip?: string | null
+          tenant_id?: string | null
+          timestamp?: string
+          user_agent?: string | null
+        }
+        Update: {
+          bounce_subtype?: string | null
+          bounce_type?: string | null
+          complaint_type?: string | null
+          configuration_set?: string | null
+          created_at?: string
+          diagnostic_code?: string | null
+          event_type?: string
+          id?: string
+          link_url?: string | null
+          message_id?: string
+          raw?: Json | null
+          recipient?: string | null
+          smtp_response?: string | null
+          source_email?: string | null
+          source_ip?: string | null
+          tenant_id?: string | null
+          timestamp?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       email_logs: {
         Row: {
           aws_message_id: string | null
           body_html: string | null
+          bounce_subtype: string | null
+          bounce_type: string | null
+          clicks: number
+          complaint_type: string | null
+          configuration_set: string | null
           created_at: string | null
           error_message: string | null
+          from_email: string | null
           id: string
+          last_event_at: string | null
           metadata: Json | null
+          opens: number
           sent_at: string | null
+          source_ip: string | null
           status: string | null
           subject: string
+          tags: Json | null
+          tenant_id: string | null
           to_email: string
           user_id: string | null
         }
         Insert: {
           aws_message_id?: string | null
           body_html?: string | null
+          bounce_subtype?: string | null
+          bounce_type?: string | null
+          clicks?: number
+          complaint_type?: string | null
+          configuration_set?: string | null
           created_at?: string | null
           error_message?: string | null
+          from_email?: string | null
           id?: string
+          last_event_at?: string | null
           metadata?: Json | null
+          opens?: number
           sent_at?: string | null
+          source_ip?: string | null
           status?: string | null
           subject: string
+          tags?: Json | null
+          tenant_id?: string | null
           to_email: string
           user_id?: string | null
         }
         Update: {
           aws_message_id?: string | null
           body_html?: string | null
+          bounce_subtype?: string | null
+          bounce_type?: string | null
+          clicks?: number
+          complaint_type?: string | null
+          configuration_set?: string | null
           created_at?: string | null
           error_message?: string | null
+          from_email?: string | null
           id?: string
+          last_event_at?: string | null
           metadata?: Json | null
+          opens?: number
           sent_at?: string | null
+          source_ip?: string | null
           status?: string | null
           subject?: string
+          tags?: Json | null
+          tenant_id?: string | null
           to_email?: string
           user_id?: string | null
         }

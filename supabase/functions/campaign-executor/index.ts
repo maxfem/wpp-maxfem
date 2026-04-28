@@ -360,8 +360,90 @@ async function processAutomationQueue(supabase: any) {
             break;
           }
 
+          // SEND EMAIL
+          if (nodeType === "sendEmail") {
+            const subject = node.data?.subject || "E-mail importante";
+            const bodyHtml = node.data?.content || node.data?.body || "";
+            const fromName = node.data?.fromName || "";
+            const configurationSet = node.data?.configurationSet || "default";
+
+            const { data: customer } = await supabase.from("customers")
+              .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
+
+            if (!customer?.email) {
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              break;
+            }
+
+            const triggerData = (item.trigger_data || {}) as any;
+            let orderRecord: any = null;
+            if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
+              let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
+              if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);
+              else if (triggerData.order_id) oq = oq.eq("id", triggerData.order_id);
+              else if (triggerData.order_number) oq = oq.eq("order_number", triggerData.order_number);
+              const { data: ord } = await oq.limit(1).single();
+              orderRecord = ord;
+            }
+
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+
+            // Resolve variables in subject and body
+            let resolvedSubject = subject;
+            let resolvedBody = bodyHtml;
+
+            // Simple variable replacement: {{customer.name}} -> "John"
+            const varRegex = /\{\{([^}]+)\}\}/g;
+            resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+
+            // Wrap links for tracking
+            const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
+              tenantId: campaign.tenant_id,
+              campaignId: campaign.id,
+              customerId: customer.id,
+              campaignName: campaign.name
+            });
+
+            // Call send-email-ses edge function
+            const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
+              method: "POST",
+              headers: { 
+                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                "Content-Type": "application/json" 
+              },
+              body: JSON.stringify({
+                to: customer.email,
+                subject: resolvedSubject,
+                html: finalBody,
+                fromName,
+                configurationSet,
+                tenantId: campaign.tenant_id,
+                campaignId: campaign.id,
+                customerId: customer.id
+              }),
+            });
+
+            if (!sendRes.ok) {
+              const err = await sendRes.text();
+              console.error(`[automation] Error sending email: ${err}`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              break;
+            }
+
+            const nextId = getNextNodeId(edges, currentNodeId);
+            if (nextId) {
+              currentNodeId = nextId;
+              await supabase.from("automation_queue").update({ current_node_id: currentNodeId, scheduled_for: null }).eq("id", item.id);
+              continue;
+            }
+            await supabase.from("automation_queue").update({ status: "completed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+            break;
+          }
+
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
+
             const templateName = node.data?.template || node.data?.templateName;
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
             const triggerData = (item.trigger_data || {}) as any;

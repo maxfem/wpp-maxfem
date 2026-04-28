@@ -128,6 +128,9 @@ const sanitizeHeaderForMeta = (input: string) =>
 export default function MessageTemplates() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
+  const [activeChannel, setActiveChannel] = useState<"whatsapp" | "email">("whatsapp");
+  
+  // WhatsApp States
   const [dialogOpen, setDialogOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -142,14 +145,41 @@ export default function MessageTemplates() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [formErrors, setFormErrors] = useState<TemplateValidationError[]>([]);
 
+  // Email States
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [emailForm, setEmailForm] = useState({
+    name: "",
+    subject: "",
+    body_html: "",
+    category: "marketing"
+  });
+
   const tenantId = currentTenant?.id;
 
+  // WhatsApp Queries
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ["message-templates", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
       const { data, error } = await supabase
         .from("message_templates")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!tenantId,
+  });
+
+  // Email Queries
+  const { data: emailTemplates = [], isLoading: isLoadingEmail } = useQuery({
+    queryKey: ["email-templates", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const { data, error } = await supabase
+        .from("email_templates")
         .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
@@ -198,7 +228,61 @@ export default function MessageTemplates() {
     },
   });
 
+  const saveEmailMutation = useMutation({
+    mutationFn: async (values: typeof emailForm) => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const payload = {
+        tenant_id: tenantId,
+        name: values.name,
+        subject: values.subject,
+        body_html: values.body_html,
+        category: values.category,
+      };
+
+      if (editingEmailId) {
+        const { error } = await supabase
+          .from("email_templates")
+          .update(payload)
+          .eq("id", editingEmailId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("email_templates")
+          .insert(payload);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
+      setEmailDialogOpen(false);
+      setEditingEmailId(null);
+      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" });
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao salvar e-mail: " + err.message);
+    },
+  });
+
+  const deleteEmailMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("email_templates")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      toast.success("Template de e-mail excluído!");
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao excluir: " + err.message);
+    },
+  });
+
   const deleteMutation = useMutation({
+
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("message_templates")

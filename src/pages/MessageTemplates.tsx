@@ -662,24 +662,37 @@ export default function MessageTemplates() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Templates de Mensagem
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Crie e gerencie modelos de mensagem (HSM) para envio via WhatsApp
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => syncTemplatesMutation.mutate()}
-              disabled={syncTemplatesMutation.isPending}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
-              {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
-            </Button>
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-bold tracking-tight">Templates</h1>
+          <p className="text-muted-foreground">Gerencie seus modelos de mensagem para WhatsApp e E-mail.</p>
+        </div>
+
+        <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as any)} className="space-y-6">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="whatsapp" className="gap-2">
+              <MessageSquare className="h-4 w-4" /> WhatsApp
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-2">
+              <Mail className="h-4 w-4" /> E-mail
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="whatsapp" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Templates do WhatsApp</h2>
+                <p className="text-sm text-muted-foreground">Modelos HSM aprovados pela Meta</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => syncTemplatesMutation.mutate()}
+                  disabled={syncTemplatesMutation.isPending}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
+                  {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
+                </Button>
+
             <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
             <DialogTrigger asChild>
               <Button onClick={() => { setForm(emptyForm); setEditingId(null); }}>

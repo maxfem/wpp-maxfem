@@ -14,7 +14,7 @@ function translateAwsError(err: any): string {
   const msg = err?.message || String(err);
 
   if (msg.includes("SignatureDoesNotMatch") || msg.toLowerCase().includes("request signature we calculated")) {
-    return "AWS Secret Access Key incorreta. Atualize o secret AWS_SECRET_ACCESS_KEY no projeto com o valor exato do console IAM (40 caracteres, sem espaços).";
+    return "AWS Secret Access Key incorreta. Atualize AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY juntos, usando o mesmo par gerado no IAM, sem espaços.";
   }
   if (msg.includes("InvalidClientTokenId") || code === "InvalidClientTokenId") {
     return "AWS Access Key ID não existe ou foi desativada. Atualize o secret AWS_ACCESS_KEY_ID no projeto.";

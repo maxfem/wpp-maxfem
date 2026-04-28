@@ -128,19 +128,31 @@ const EmailMarketing = () => {
 
 // ============== OVERVIEW TAB ==============
 const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
-  // Aggregates from email_events (last 30d) for Open/Click/Delivered detail
+  // Aggregates from email_events and campaign_activities (last 30d)
   const { data: events } = useQuery({
     queryKey: ["email-events-overview", tenantId],
     queryFn: async () => {
-      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0 };
+      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, conversions: 0, revenue: 0 };
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await supabase
+      
+      // Get events
+      const { data: evData } = await supabase
         .from("email_events")
         .select("event_type")
         .eq("tenant_id", tenantId)
         .gte("timestamp", since);
-      const counts = { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0 };
-      for (const e of data || []) {
+      
+      // Get conversions from campaign_activities
+      const { data: activityData } = await supabase
+        .from("campaign_activities")
+        .select("converted_at, conversion_value")
+        .eq("tenant_id", tenantId)
+        .eq("channel", "email")
+        .gte("sent_at", since);
+
+      const counts = { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0, conversions: 0, revenue: 0 };
+      
+      for (const e of evData || []) {
         if (e.event_type === "Send") counts.sent++;
         else if (e.event_type === "Delivery") counts.delivered++;
         else if (e.event_type === "Open") counts.opens++;
@@ -149,10 +161,19 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
         else if (e.event_type === "Complaint") counts.complaints++;
         else if (e.event_type === "Reject") counts.rejects++;
       }
+
+      for (const a of activityData || []) {
+        if (a.converted_at) {
+          counts.conversions++;
+          counts.revenue += Number(a.conversion_value) || 0;
+        }
+      }
+      
       return counts;
     },
     enabled: !!tenantId,
   });
+
 
   // Aggregate datapoints from SES (last 14 days summed by day)
   const dailyData = React.useMemo(() => {

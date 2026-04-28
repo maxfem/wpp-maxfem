@@ -903,7 +903,7 @@ async function processScheduledCampaigns(supabase: any) {
       }
 
       if (customers.length === 0) {
-        const errMsg = "Nenhum contato válido com telefone encontrado";
+        const errMsg = "Nenhum contato válido encontrado (com telefone ou e-mail)";
         await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
         results.push({ campaign_id: campaign.id, sent: 0, failed: 0, total: 0, status: "failed", error: errMsg });
         continue;
@@ -914,55 +914,97 @@ async function processScheduledCampaigns(supabase: any) {
 
       for (const customer of customers) {
         try {
-          let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
-          if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
-
           const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars };
 
-          let buttonUrlCode: string | undefined;
-          if (hasDynamicUrlButton) {
-            const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
-            if (dynamicUrl) {
-              const code = generateCode(10);
-              await supabase.from("tracked_links").insert({
-                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
+          // 1. WhatsApp send
+          if (templateName && customer.phone) {
+            let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
+            if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
+
+            let buttonUrlCode: string | undefined;
+            if (hasDynamicUrlButton) {
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
+              if (dynamicUrl) {
+                const code = generateCode(10);
+                await supabase.from("tracked_links").insert({
+                  tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
+                });
+                buttonUrlCode = code;
+              }
+            }
+
+            const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messaging_product: "whatsapp", to: phone, type: "template",
+                template: {
+                  name: templateName, language: { code: templateLanguage },
+                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+                },
+              }),
+            });
+
+            const waData = await waRes.json();
+            if (waData.messages?.[0]?.id) {
+              await supabase.from("whatsapp_messages").insert({
+                tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
+                direction: "outbound", message_type: "template", template_name: templateName,
+                wamid: waData.messages[0].id, status: "sent", content: `[Template: ${templateName}]`,
               });
-              buttonUrlCode = code;
+              await supabase.from("campaign_activities").upsert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
+              }, { onConflict: "campaign_id, customer_id" });
+              sentCount++;
+            } else {
+              lastError = waData?.error?.message || JSON.stringify(waData);
+              failedCount++;
             }
           }
 
-          const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              messaging_product: "whatsapp", to: phone, type: "template",
-              template: {
-                name: templateName, language: { code: templateLanguage },
-                components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+          // 2. Email send
+          if (emailTemplate && customer.email) {
+            const varRegex = /\{\{([^}]+)\}\}/g;
+            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            
+            const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
+              tenantId: campaign.tenant_id,
+              campaignId: campaign.id,
+              customerId: customer.id,
+              campaignName: campaign.name
+            });
+
+            const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
+              method: "POST",
+              headers: { 
+                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                "Content-Type": "application/json" 
               },
-            }),
-          });
-
-          const waData = await waRes.json();
-
-          if (waData.messages?.[0]?.id) {
-            await supabase.from("whatsapp_messages").insert({
-              tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
-              direction: "outbound", message_type: "template", template_name: templateName,
-              wamid: waData.messages[0].id, status: "sent", content: `[Template: ${templateName}]`,
+              body: JSON.stringify({
+                to: customer.email,
+                subject: resolvedSubject,
+                html: finalBody,
+                fromName: emailTemplate.fromName,
+                configurationSet: emailTemplate.configurationSet,
+                tenantId: campaign.tenant_id,
+                campaignId: campaign.id,
+                customerId: customer.id
+              }),
             });
-            await supabase.from("campaign_activities").insert({
-              tenant_id: campaign.tenant_id, campaign_id: campaign.id,
-              customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
-            });
-            sentCount++;
-          } else {
-            lastError = waData?.error?.message || JSON.stringify(waData);
-            failedCount++;
+
+            if (sendRes.ok) {
+              sentCount++;
+            } else {
+              const errTxt = await sendRes.text();
+              lastError = `Email error: ${errTxt}`;
+              failedCount++;
+            }
           }
 
-          await new Promise((r) => setTimeout(r, 100));
+          await new Promise((r) => setTimeout(r, 50));
         } catch (err) {
           console.error(`Error sending to customer ${customer.id}:`, err);
           failedCount++;

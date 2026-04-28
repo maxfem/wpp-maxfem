@@ -101,7 +101,12 @@ async function wrapHtmlLinks(
 }
 
 function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
-
+  const attrs = customer?.custom_attributes || {};
+  const cart = attrs?.abandoned_cart || {};
+  if (templateName.startsWith("carrinho_abandonado") && cart?.recovery_url) return cart.recovery_url;
+  if (templateName.startsWith("pix_nao_pago")) return attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
+  return null;
+}
 
 // ===== TEMPLATE BUILDER =====
 

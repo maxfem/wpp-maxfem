@@ -31,12 +31,12 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "cart.value": return cart?.value ? formatCurrency(cart.value) : "-";
     case "cart.items_count": return String(cart?.items_count || 0);
     case "cart.items_summary": return cart?.items_summary || "seus itens selecionados";
-    case "order.number": return order?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
-    case "order.total": return order?.total ? formatCurrency(order.total) : "-";
-    case "order.status": return order?.mapped_status || order?.status || "-";
-    case "order.tracking_code": return order?.tracking_code || "-";
-    case "order.delivery_days": return order?.delivery_days || "5 a 8";
-    case "order.pix_code": return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || "-";
+    case "order.number": return order?.order_number || ctx.triggerData?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
+    case "order.total": return (order?.total || ctx.triggerData?.total) ? formatCurrency(order?.total || ctx.triggerData?.total) : "-";
+    case "order.status": return order?.mapped_status || ctx.triggerData?.status || order?.status || "-";
+    case "order.tracking_code": return order?.tracking_code || ctx.triggerData?.tracking_code || "-";
+    case "order.delivery_days": return order?.delivery_days || ctx.triggerData?.delivery_days || "5 a 8";
+    case "order.pix_code": return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || ctx.triggerData?.pix_code || "-";
     case "campaign.coupon": return campaign?.coupon || "-";
     case "campaign.discount": return campaign?.discount || "-";
     case "campaign.product_name": return campaign?.product_name || "-";

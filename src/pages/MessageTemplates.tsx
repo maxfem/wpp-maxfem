@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -51,12 +52,21 @@ import {
   RefreshCw,
   Send,
   Copy,
+  Mail,
+  MoreVertical,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
 import { validateTemplate, type TemplateValidationError } from "@/lib/templateValidation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 
 interface TemplateButton {
   type: string;
@@ -118,6 +128,9 @@ const sanitizeHeaderForMeta = (input: string) =>
 export default function MessageTemplates() {
   const { currentTenant } = useAuth();
   const queryClient = useQueryClient();
+  const [activeChannel, setActiveChannel] = useState<"whatsapp" | "email">("whatsapp");
+  
+  // WhatsApp States
   const [dialogOpen, setDialogOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,14 +145,41 @@ export default function MessageTemplates() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [formErrors, setFormErrors] = useState<TemplateValidationError[]>([]);
 
+  // Email States
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [emailForm, setEmailForm] = useState({
+    name: "",
+    subject: "",
+    body_html: "",
+    category: "marketing"
+  });
+
   const tenantId = currentTenant?.id;
 
+  // WhatsApp Queries
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ["message-templates", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
       const { data, error } = await supabase
         .from("message_templates")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!tenantId,
+  });
+
+  // Email Queries
+  const { data: emailTemplates = [], isLoading: isLoadingEmail } = useQuery({
+    queryKey: ["email-templates", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const { data, error } = await supabase
+        .from("email_templates")
         .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
@@ -188,7 +228,61 @@ export default function MessageTemplates() {
     },
   });
 
+  const saveEmailMutation = useMutation({
+    mutationFn: async (values: typeof emailForm) => {
+      if (!tenantId) throw new Error("Tenant não encontrado");
+      const payload = {
+        tenant_id: tenantId,
+        name: values.name,
+        subject: values.subject,
+        body_html: values.body_html,
+        category: values.category,
+      };
+
+      if (editingEmailId) {
+        const { error } = await supabase
+          .from("email_templates")
+          .update(payload)
+          .eq("id", editingEmailId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("email_templates")
+          .insert(payload);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
+      setEmailDialogOpen(false);
+      setEditingEmailId(null);
+      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" });
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao salvar e-mail: " + err.message);
+    },
+  });
+
+  const deleteEmailMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("email_templates")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      toast.success("Template de e-mail excluído!");
+    },
+    onError: (err: Error) => {
+      toast.error("Erro ao excluir: " + err.message);
+    },
+  });
+
   const deleteMutation = useMutation({
+
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("message_templates")
@@ -568,24 +662,37 @@ export default function MessageTemplates() {
   return (
     <AppLayout>
       <div className="flex-1 space-y-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Templates de Mensagem
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Crie e gerencie modelos de mensagem (HSM) para envio via WhatsApp
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => syncTemplatesMutation.mutate()}
-              disabled={syncTemplatesMutation.isPending}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
-              {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
-            </Button>
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-bold tracking-tight">Templates</h1>
+          <p className="text-muted-foreground">Gerencie seus modelos de mensagem para WhatsApp e E-mail.</p>
+        </div>
+
+        <Tabs value={activeChannel} onValueChange={(v) => setActiveChannel(v as any)} className="space-y-6">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="whatsapp" className="gap-2">
+              <MessageSquare className="h-4 w-4" /> WhatsApp
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-2">
+              <Mail className="h-4 w-4" /> E-mail
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="whatsapp" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Templates do WhatsApp</h2>
+                <p className="text-sm text-muted-foreground">Modelos HSM aprovados pela Meta</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => syncTemplatesMutation.mutate()}
+                  disabled={syncTemplatesMutation.isPending}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${syncTemplatesMutation.isPending ? "animate-spin" : ""}`} />
+                  {syncTemplatesMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
+                </Button>
+
             <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); else setDialogOpen(true); }}>
             <DialogTrigger asChild>
               <Button onClick={() => { setForm(emptyForm); setEditingId(null); }}>
@@ -1061,6 +1168,154 @@ export default function MessageTemplates() {
           </Card>
         )}
 
+          </TabsContent>
+
+          <TabsContent value="email" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Templates de E-mail</h2>
+                <p className="text-sm text-muted-foreground">Modelos HTML para campanhas SES</p>
+              </div>
+              <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" }); setEditingEmailId(null); }}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Novo Template
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl">
+                  <DialogHeader>
+                    <DialogTitle>{editingEmailId ? "Editar Template" : "Criar Template de E-mail"}</DialogTitle>
+                    <DialogDescription>Crie modelos profissionais para suas campanhas de e-mail marketing.</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={(e) => { e.preventDefault(); saveEmailMutation.mutate(emailForm); }} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Nome Interno</Label>
+                        <Input 
+                          placeholder="Ex: boas_vindas_v1" 
+                          value={emailForm.name} 
+                          onChange={(e) => setEmailForm({...emailForm, name: e.target.value})}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Categoria</Label>
+                        <Select value={emailForm.category} onValueChange={(v) => setEmailForm({...emailForm, category: v})}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="marketing">Marketing</SelectItem>
+                            <SelectItem value="transactional">Transacional</SelectItem>
+                            <SelectItem value="utility">Utilidade</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assunto do E-mail</Label>
+                      <Input 
+                        placeholder="Ex: Bem-vindo à nossa loja!" 
+                        value={emailForm.subject} 
+                        onChange={(e) => setEmailForm({...emailForm, subject: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Conteúdo HTML</Label>
+                      <Textarea 
+                        placeholder="<html>...</html>" 
+                        value={emailForm.body_html} 
+                        onChange={(e) => setEmailForm({...emailForm, body_html: e.target.value})}
+                        className="font-mono text-xs min-h-[300px]"
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">Em breve: Editor Visual Drag & Drop</p>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button type="button" variant="outline" onClick={() => setEmailDialogOpen(false)}>Cancelar</Button>
+                      <Button type="submit" disabled={saveEmailMutation.isPending}>
+                        {saveEmailMutation.isPending ? "Salvando..." : editingEmailId ? "Atualizar" : "Salvar Template"}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {isLoadingEmail ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : emailTemplates.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <Mail className="h-12 w-12 text-muted-foreground mb-4" />
+                  <CardTitle className="text-lg mb-2">Nenhum template de e-mail</CardTitle>
+                  <CardDescription>Crie modelos HTML para usar em suas automações e campanhas.</CardDescription>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {emailTemplates.map((t: any) => (
+                  <Card key={t.id} className="overflow-hidden group">
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-base truncate max-w-[200px]">{t.name}</CardTitle>
+                          <CardDescription className="text-xs truncate max-w-[200px]">{t.subject}</CardDescription>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-2">
+                      <div className="bg-muted rounded h-32 mb-4 overflow-hidden border relative">
+                         {/* Simple HTML Preview using iframe sandbox */}
+                         <iframe 
+                           srcDoc={t.body_html} 
+                           className="w-full h-full border-none pointer-events-none scale-50 origin-top-left" 
+                           style={{ width: '200%', height: '200%' }}
+                           title={t.name}
+                         />
+                         <div className="absolute inset-0 bg-transparent" />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setEmailForm({
+                            name: t.name,
+                            subject: t.subject || "",
+                            body_html: t.body_html || "",
+                            category: t.category || "marketing"
+                          });
+                          setEditingEmailId(t.id);
+                          setEmailDialogOpen(true);
+                        }}>
+                          <Pencil className="h-3 w-3 mr-2" /> Editar
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem className="text-destructive" onClick={() => {
+                              if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                            }}>
+                              <Trash2 className="h-4 w-4 mr-2" /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+
         <BulkSendDialog
           open={!!bulkSendTemplate}
           onOpenChange={(open) => { if (!open) setBulkSendTemplate(null); }}
@@ -1070,3 +1325,4 @@ export default function MessageTemplates() {
     </AppLayout>
   );
 }
+

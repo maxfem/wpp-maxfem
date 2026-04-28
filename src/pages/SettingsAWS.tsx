@@ -144,7 +144,7 @@ export default function SettingsAWS() {
           ? { state: "ok", detail: `Conta AWS: ${c.credentials.account_id}` }
           : { state: "error", error: c.credentials.error },
         region: c.region.ok
-          ? { state: "ok", detail: c.region.sandbox === true ? `${c.region.region} (modo Sandbox)` : c.region.sandbox === false ? `${c.region.region} (modo Produção)` : c.region.region }
+          ? { state: "ok", detail: c.quota.is_sandbox ? `${c.region.region} (modo Sandbox)` : `${c.region.region} (modo Produção)` }
           : { state: "error", error: c.region.error || "Região inválida" },
         identity: c.identity.ok
           ? { state: "ok", detail: `${senderEmail} verificado` }

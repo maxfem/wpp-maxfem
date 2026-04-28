@@ -148,6 +148,7 @@ serve(async (req) => {
           max_24h: quota.Max24HourSend,
           sent_24h: quota.SentLast24Hours,
           max_per_second: quota.MaxSendRate,
+          is_sandbox: quota.Max24HourSend === 200, // Standard SES sandbox limit is 200 emails/24h
         };
       } catch (e: any) {
         checks.quota = { ok: false, error: translateAwsError(e) };

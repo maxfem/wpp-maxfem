@@ -40,6 +40,8 @@ serve(async (req) => {
     const recipients: string[] = mail.destination || [];
     const tags = mail.tags || {};
     const tenantId = Array.isArray(tags["tenant_id"]) ? tags["tenant_id"][0] : null;
+    const campaignId = Array.isArray(tags["campaign_id"]) ? tags["campaign_id"][0] : null;
+    const customerId = Array.isArray(tags["customer_id"]) ? tags["customer_id"][0] : null;
     const configSet = mail.configurationSet || sesEvent.configurationSet;
 
     if (!messageId || !eventType) {

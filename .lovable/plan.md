@@ -1,185 +1,110 @@
-# Plano: Refatoração Completa da Integração AWS SES
+## Diagnóstico
 
-## Diagnóstico do problema atual
+Encontrei **3 problemas críticos** na integração atual:
 
-A integração já foi migrada para o AWS SDK oficial (`@aws-sdk/client-ses`), portanto o algoritmo de assinatura está **correto**. O erro `SignatureDoesNotMatch` que persiste vem da própria AWS validando as credenciais e indica uma de três causas reais:
+### 1. Credenciais não salvas no banco (causa raiz do "send" nunca funcionar)
+A configuração ativa em `integrations` (provider=`aws`) contém **apenas** `sender_email`:
+```
+{ sender_email: "marketing@maxfem.com.br", updated_at: "..." }
+```
+Faltam `access_key`, `secret_key` e `region`. O modo `send` (usado por campanhas/EmailMarketing) lê do banco e falha silenciosamente. Apenas o modo `test` funciona porque recebe credenciais direto do formulário.
 
-1. **Secret Access Key incorreta/truncada** — caractere copiado a menos, espaço extra, ou chave de outra conta. É a causa #1 desse erro quando o SDK oficial está em uso.
-2. **Access Key ID e Secret Key de contas/IAM users diferentes** — par incompatível.
-3. **Credenciais salvas no banco estão desatualizadas** — o front envia as do formulário, mas em algum fluxo o backend lê do banco/secret antigo.
+### 2. Erro `SignatureDoesNotMatch` no teste
+A Secret Access Key digitada no formulário está incorreta (espaço, caractere faltando ou key antiga). A AWS valida assinatura HMAC-SHA256 e rejeita.
 
-Além disso, a UX atual não dá feedback claro de qual etapa falhou (credenciais? região? identidade não verificada? permissão IAM?), o que torna impossível para o usuário se autodiagnosticar.
+### 3. Arquitetura insegura e confusa
+Hoje as credenciais ficam:
+- No formulário do usuário (digitadas toda vez)
+- No banco em texto plano (quando salvas)
+- E também existem como secrets do projeto (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`)
 
-## Objetivo
-
-Reconstruir a integração inteira para que:
-- A validação seja **passo a passo** com mensagens específicas (credenciais OK → região OK → identidade verificada OK → permissão de envio OK).
-- O envio de teste use **exatamente** as credenciais validadas (sem mistura com banco/secrets antigos).
-- Erros da AWS sejam **traduzidos** em português com instruções acionáveis.
-- O usuário consiga corrigir sem precisar abrir logs.
+Três fontes da verdade = bugs garantidos. A produção exige uma única fonte confiável.
 
 ---
 
-## Arquitetura
+## Solução proposta
 
-### Edge Function `send-email-ses` (reescrita)
+### Mudança arquitetural
+Passar a usar **exclusivamente os secrets do projeto** (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) como fonte única para credenciais. Isso é mais seguro (nada em texto plano no banco), elimina divergência entre formulário/banco/secrets, e funciona automaticamente para qualquer chamada (campanhas, automações, testes).
 
-Três modos de operação claros, controlados pelo body:
+O banco passa a guardar apenas:
+- `sender_email` (qual remetente verificado usar)
+- `is_active` (liga/desliga)
+- `last_validated_at` + `last_validation_checks` (auditoria)
 
-| Modo | Quando | Faz |
-|------|--------|-----|
-| `mode: "validate"` | Botão "Validar e Salvar" | 4 chamadas SES sequenciais com diagnóstico granular |
-| `mode: "test"` | Botão "Enviar e-mail de teste" | Envia para o e-mail do usuário logado |
-| `mode: "send"` | Campanhas/automações reais | Envio em produção lendo credenciais do banco |
+### Passo a passo
 
-**Resolução de credenciais (regra única e explícita):**
-- Se `mode = "validate"` ou `"test"` → usa **somente** as credenciais do payload (formulário). Nunca cai pro banco.
-- Se `mode = "send"` → usa **somente** as credenciais salvas no banco (`integrations.config`). Nunca aceita do payload.
-- Isso elimina a confusão atual onde o front envia credenciais novas mas o backend pode ler antigas.
+**1. Reescrever `send-email-ses` edge function**
+- Sempre ler `accessKeyId`, `secretAccessKey`, `region` de `Deno.env.get(...)`
+- Validar presença dos 3 secrets na entrada — se faltar, retornar erro claro
+- 3 modos: `validate`, `test`, `send`
+  - `validate`: STS GetCallerIdentity + GetSendQuota + verificar identidade do `senderEmail` enviado
+  - `test`: envia e-mail de teste para destinatário fornecido
+  - `send`: lê `sender_email` do banco e envia (usado por campanhas)
+- Detectar Sandbox via `Max24HourSend === 200`
+- Logging estruturado para debug em produção
 
-**Fluxo de validação (4 etapas com feedback individual):**
+**2. Reescrever página `SettingsAWS.tsx`**
+- Remover campos de Access Key e Secret Key do formulário
+- Mostrar status dos secrets: "AWS_ACCESS_KEY_ID configurado ✓" / "Não configurado ✗"
+- Se faltar secret, mostrar instrução clara de como adicionar via Lovable
+- Manter apenas: select de Região (apenas exibe `AWS_REGION` atual) + input de E-mail Remetente
+- Botão "Validar conexão" → chama modo `validate`
+- Botão "Enviar e-mail de teste" → chama modo `test` para o e-mail do usuário logado
+- Botão "Salvar e ativar" → grava só `sender_email` + `is_active=true`
+- Mostrar Sandbox/Produção baseado na quota retornada
 
-```text
-Etapa 1: GetCallerIdentity (STS)
-  → confirma que Access Key + Secret Key formam par válido
-  → erro: "Suas credenciais AWS estão incorretas..."
+**3. Atualizar/garantir secrets**
+- Confirmar que `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_REGION` estão preenchidos com valores corretos. Se a Secret Key atual está dando `SignatureDoesNotMatch`, pedir nova key gerada no IAM (40 caracteres exatos, sem espaços).
 
-Etapa 2: GetAccount (SES)
-  → confirma região correta e conta SES habilitada
-  → detecta sandbox vs produção
-  → erro: "Região inválida ou SES não habilitado nesta região"
+**4. Atualizar `EmailMarketing.tsx`**
+- Garantir que continua chamando modo `send` sem passar credenciais (já está correto)
+- Validar que se a integração estiver inativa, exibe aviso para o usuário
 
-Etapa 3: GetIdentityVerificationAttributes
-  → confirma que SENDER_EMAIL está verificado
-  → erro: "E-mail X não verificado. Status: Pending. Verifique sua caixa de entrada..."
-
-Etapa 4: GetSendQuota
-  → confirma permissão IAM ses:SendEmail (e mostra quota)
-  → erro: "IAM user sem permissão ses:SendEmail. Anexe a policy AmazonSESFullAccess"
-```
-
-Cada etapa retorna um objeto detalhado:
-```json
-{
-  "validated": true,
-  "checks": {
-    "credentials": { "ok": true, "account_id": "..." },
-    "region": { "ok": true, "region": "sa-east-1", "sandbox": true },
-    "identity": { "ok": true, "status": "Success" },
-    "quota": { "ok": true, "max_24h": 200, "sent_24h": 5 }
-  }
-}
-```
-
-**Tradução de erros AWS:**
-Wrapper que mapeia códigos AWS → mensagens em português:
-- `SignatureDoesNotMatch` → "Sua Secret Access Key está incorreta. Copie-a novamente do console IAM."
-- `InvalidClientTokenId` → "Access Key ID não existe ou foi desativado."
-- `MessageRejected` → "E-mail rejeitado pelo SES (provavelmente sandbox bloqueando destinatário)."
-- `MailFromDomainNotVerified` → "Domínio do remetente não verificado."
-
-### Tela `/settings/integrations/aws` (reformulada)
-
-Substitui o card único atual por um **wizard de 3 passos visuais** com indicador de progresso:
-
-```text
-[1] Credenciais  →  [2] Validação  →  [3] Teste & Ativar
-```
-
-**Passo 1 — Credenciais:**
-- Inputs: Access Key ID, Secret Key (com botão "mostrar/ocultar"), Região (select com opções comuns: us-east-1, sa-east-1, eu-west-1...), E-mail remetente.
-- Validação client-side: formato AKIA*, comprimento da secret (40 chars), e-mail válido.
-- Link "Como obter" → abre dialog com tutorial passo a passo.
-
-**Passo 2 — Validação (executa as 4 etapas):**
-- UI mostra checklist em tempo real:
-  - ✅ Credenciais válidas (Conta: 123456789012)
-  - ✅ Região acessível (sa-east-1, modo Sandbox)
-  - ✅ E-mail verificado (marketing@maxfem.com.br)
-  - ✅ Permissão de envio (200 e-mails/24h, 5 enviados)
-- Se qualquer etapa falhar: mostra ❌ com mensagem específica e botão "Voltar e corrigir".
-- Avisos contextuais: se sandbox → alerta amarelo "Você só pode enviar para e-mails verificados. Solicite saída do sandbox no console AWS."
-
-**Passo 3 — Teste & Ativar:**
-- Botão "Enviar e-mail de teste" envia para o e-mail do usuário logado.
-- Mostra resultado em tempo real (toast + linha na UI com Message-ID).
-- Botão "Salvar e Ativar Integração" persiste no banco e marca `is_active = true`.
-
-**Card de status (após ativação):**
-- Badge "Ativo" + última validação.
-- Botão "Revalidar agora" (re-executa as 4 etapas sem precisar reinserir credenciais — usa as do banco).
-- Botão "Reenviar teste".
-- Botão "Editar credenciais" → volta ao Passo 1 pré-preenchido (mascarado).
-- Botão "Desativar integração" → seta `is_active = false` (não apaga config).
-
-### Persistência
-
-Sem mudanças no schema: continua usando a tabela `integrations` com `provider='aws'`. Adiciona campos no `config` jsonb:
-- `last_validated_at`
-- `last_validation_checks` (snapshot das 4 etapas)
-- `account_id` (para referência)
-- `is_sandbox` (bool detectado)
+**5. Migrar config existente no banco**
+- Limpar `access_key`/`secret_key` do `integrations.config` (caso existam) por segurança
+- Manter `sender_email` e `is_active`
 
 ---
 
-## Detalhes Técnicos
+## Detalhes técnicos
 
-### Arquivos afetados
-
-**Backend:**
-- `supabase/functions/send-email-ses/index.ts` — reescrita completa
-- Adicionar dependência `@aws-sdk/client-sts@3.645.0` para `GetCallerIdentity`
-
-**Frontend:**
-- `src/pages/SettingsAWS.tsx` — reescrita completa (wizard de 3 passos)
-- Componente novo: `src/components/aws/ValidationChecklist.tsx` — exibe as 4 etapas com ícones de status
-- Componente novo: `src/components/aws/AWSCredentialsHelp.tsx` — dialog tutorial
-
-### Comportamento das chamadas SES
-
-```typescript
-// Resolução de credenciais — função única, sem fallback cruzado
-function resolveCredentials(mode, payload) {
-  if (mode === "validate" || mode === "test") {
-    // SEMPRE do payload, nunca do banco
-    return payload;
+**Edge function — mudança chave:**
+```ts
+async function resolveCredentials(payload) {
+  const accessKeyId = Deno.env.get("AWS_ACCESS_KEY_ID")?.trim();
+  const secretAccessKey = Deno.env.get("AWS_SECRET_ACCESS_KEY")?.trim();
+  const region = Deno.env.get("AWS_REGION")?.trim() || "us-east-1";
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error("Secrets AWS não configurados no projeto.");
   }
-  if (mode === "send") {
-    // SEMPRE do banco
-    return readFromDB();
-  }
+  // senderEmail vem do payload (validate/test) ou do banco (send)
+  ...
 }
 ```
 
-### IAM Policy mínima necessária (documentada na UI)
-
-```json
-{
-  "Effect": "Allow",
-  "Action": [
-    "ses:SendEmail",
-    "ses:SendRawEmail",
-    "ses:GetSendQuota",
-    "ses:GetIdentityVerificationAttributes",
-    "ses:GetAccount",
-    "sts:GetCallerIdentity"
-  ],
-  "Resource": "*"
-}
+**Banco — limpar campos sensíveis:**
+```sql
+UPDATE integrations
+SET config = jsonb_build_object(
+  'sender_email', config->>'sender_email',
+  'updated_at', now()
+)
+WHERE provider = 'aws';
 ```
 
-### Compatibilidade com EmailMarketing.tsx
-
-O `mode` default (sem o campo) será `"send"` para manter retrocompatibilidade com chamadas existentes do módulo de E-mail Marketing.
+**Secret check no front:**
+Adicionar endpoint `mode: "status"` que retorna `{ has_access_key: bool, has_secret_key: bool, region: string }` (sem expor valores) para a UI mostrar o estado.
 
 ---
 
 ## Resultado esperado
 
-Ao final, o usuário:
-1. Cola credenciais → vê em 5 segundos exatamente o que está errado (se algo estiver).
-2. Recebe e-mail de teste no próprio inbox antes de ativar.
-3. Tem botão de revalidação para diagnosticar problemas futuros sem reinserir nada.
-4. Nunca mais vê a mensagem genérica "SignatureDoesNotMatch" — sempre uma mensagem em português acionável.
+- ✅ Campanhas e EmailMarketing enviam e-mails sem erro
+- ✅ Sem credenciais em texto plano no banco
+- ✅ Uma única fonte da verdade (secrets do projeto)
+- ✅ Erros claros se algo falhar (secret faltando, identidade não verificada, sandbox, etc.)
+- ✅ Validação completa (STS + identidade + quota) antes de ativar
+- ✅ Detecção automática de Sandbox vs Produção
 
-Após sua aprovação, executo a refatoração e faço o deploy da edge function.
+Após sua aprovação, vou implementar tudo e te pedir para confirmar os valores corretos da Access Key e Secret Key (caso a atual esteja gerando `SignatureDoesNotMatch`).

@@ -394,16 +394,40 @@ async function processAutomationQueue(supabase: any) {
 
           // SEND EMAIL
           if (nodeType === "sendEmail") {
-            const subject = node.data?.subject || "E-mail importante";
-            const bodyHtml = node.data?.content || node.data?.body || "";
+            let subject = node.data?.subject || "E-mail importante";
+            let bodyHtml = node.data?.content || node.data?.body || "";
             const fromName = node.data?.fromName || "";
             const configurationSet = node.data?.configurationSet || "default";
+            const emailTemplateName = node.data?.emailTemplate;
+
+            if (emailTemplateName && !bodyHtml) {
+              const { data: tpl } = await supabase.from("email_templates")
+                .select("subject, body_html")
+                .eq("name", emailTemplateName)
+                .eq("tenant_id", campaign.tenant_id)
+                .maybeSingle();
+              
+              if (tpl) {
+                if (subject === "SEM SSUNTO" || !subject || subject === "E-mail importante") subject = tpl.subject;
+                bodyHtml = tpl.body_html;
+              } else {
+                console.warn(`[automation] Email template "${emailTemplateName}" not found for tenant ${campaign.tenant_id}`);
+              }
+            }
 
             const { data: customer } = await supabase.from("customers")
               .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
 
-            if (!customer?.email) {
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+            if (!customer?.email || !bodyHtml) {
+              const reason = !customer?.email ? "missing email" : "missing content";
+              console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);
+              const nextId = getNextNodeId(edges, currentNodeId);
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id);
+                continue;
+              }
+              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now }).eq("id", item.id);
               break;
             }
 
@@ -750,32 +774,74 @@ async function processScheduledCampaigns(supabase: any) {
       const flowData = campaign.flow_data as any;
       let templateName: string | null = null;
       let templateLanguage = "pt_BR";
+      let emailTemplate: any = null;
 
       if (flowData?.nodes) {
-        const sendNode = flowData.nodes.find((n: any) => n.data?.nodeType === "sendWhatsApp" && (n.data?.template || n.data?.templateName));
-        if (sendNode) {
-          templateName = sendNode.data.template || sendNode.data.templateName;
-          templateLanguage = sendNode.data.templateLanguage || "pt_BR";
+        const waNode = flowData.nodes.find((n: any) => (n.data?.nodeType === "sendWhatsApp" || n.type === "sendWhatsApp") && (n.data?.template || n.data?.templateName));
+        if (waNode) {
+          templateName = waNode.data.template || waNode.data.templateName;
+          templateLanguage = waNode.data.templateLanguage || "pt_BR";
+        }
+
+        const emNode = flowData.nodes.find((n: any) => n.data?.nodeType === "sendEmail" || n.type === "sendEmail");
+        if (emNode) {
+          let emSubject = emNode.data.subject || "E-mail importante";
+          let emBody = emNode.data.content || emNode.data.body || "";
+          const emTemplateName = emNode.data.emailTemplate;
+
+          if (emTemplateName && !emBody) {
+             const { data: tpl } = await supabase.from("email_templates")
+                .select("subject, body_html")
+                .eq("name", emTemplateName)
+                .eq("tenant_id", campaign.tenant_id)
+                .maybeSingle();
+              if (tpl) {
+                if (emSubject === "SEM SSUNTO" || !emSubject || emSubject === "E-mail importante") emSubject = tpl.subject;
+                emBody = tpl.body_html;
+              }
+          }
+
+          if (emBody) {
+            emailTemplate = {
+              subject: emSubject,
+              bodyHtml: emBody,
+              fromName: emNode.data.fromName || "",
+              configurationSet: emNode.data.configurationSet || "default"
+            };
+          }
         }
       }
 
-      if (!templateName) {
-        const errMsg = "Nenhum template de WhatsApp encontrado no fluxo";
+      if (!templateName && !emailTemplate) {
+        const errMsg = "Nenhum template de WhatsApp ou E-mail encontrado no fluxo";
         await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
         results.push({ campaign_id: campaign.id, error: errMsg });
         continue;
       }
 
-      const { data: templateRecord } = await supabase.from("message_templates")
-        .select("body, header_type, header_content, sample_values, buttons")
-        .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
+      let templateRecord: any = null;
+      let bodyVarCount = 0;
+      let hasHeaderVar = false;
+      let variableMappings: string[] = [];
+      let templateButtons: any[] = [];
+      let dynamicUrlBtnIndex = -1;
+      let hasDynamicUrlButton = false;
 
-      const bodyVarCount = templateRecord?.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
-      const hasHeaderVar = templateRecord?.header_type === "text" && templateRecord?.header_content?.includes("{{");
-      const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
-      const templateButtons = (templateRecord?.buttons as any[]) || [];
-      const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
-      const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+      if (templateName) {
+        const { data: tRecord } = await supabase.from("message_templates")
+          .select("body, header_type, header_content, sample_values, buttons")
+          .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
+        
+        templateRecord = tRecord;
+        if (templateRecord) {
+          bodyVarCount = templateRecord.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
+          hasHeaderVar = templateRecord.header_type === "text" && templateRecord.header_content?.includes("{{");
+          variableMappings = (templateRecord.sample_values as string[]) || [];
+          templateButtons = (templateRecord.buttons as any[]) || [];
+          dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
+          hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+        }
+      }
 
       const campaignVars: any = {};
       if (flowData?.nodes) {
@@ -800,7 +866,7 @@ async function processScheduledCampaigns(supabase: any) {
             .select("customer_id, customers(id, name, phone, email, custom_attributes)")
             .eq("list_id", campaign.list_id).range(from, from + pageSize - 1);
           if (!members || members.length === 0) break;
-          customers.push(...members.map((m: any) => m.customers).filter((c: any) => c?.phone));
+          customers.push(...members.map((m: any) => m.customers).filter((c: any) => (templateName && c?.phone) || (emailTemplate && c?.email)));
           if (members.length < pageSize) break;
           from += pageSize;
         }
@@ -810,7 +876,8 @@ async function processScheduledCampaigns(supabase: any) {
         while (true) {
           const { data } = await supabase.from("customers")
             .select("id, name, phone, email, custom_attributes")
-            .eq("tenant_id", campaign.tenant_id).not("phone", "is", null)
+            .eq("tenant_id", campaign.tenant_id)
+            .or(`phone.not.is.null,email.not.is.null`)
             .range(from, from + pageSize - 1);
           if (!data || data.length === 0) break;
           customers.push(...data);
@@ -836,7 +903,7 @@ async function processScheduledCampaigns(supabase: any) {
       }
 
       if (customers.length === 0) {
-        const errMsg = "Nenhum contato válido com telefone encontrado";
+        const errMsg = "Nenhum contato válido encontrado (com telefone ou e-mail)";
         await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
         results.push({ campaign_id: campaign.id, sent: 0, failed: 0, total: 0, status: "failed", error: errMsg });
         continue;
@@ -847,55 +914,97 @@ async function processScheduledCampaigns(supabase: any) {
 
       for (const customer of customers) {
         try {
-          let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
-          if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
-
           const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars };
 
-          let buttonUrlCode: string | undefined;
-          if (hasDynamicUrlButton) {
-            const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
-            if (dynamicUrl) {
-              const code = generateCode(10);
-              await supabase.from("tracked_links").insert({
-                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
+          // 1. WhatsApp send
+          if (templateName && customer.phone) {
+            let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
+            if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
+
+            let buttonUrlCode: string | undefined;
+            if (hasDynamicUrlButton) {
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
+              if (dynamicUrl) {
+                const code = generateCode(10);
+                await supabase.from("tracked_links").insert({
+                  tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
+                });
+                buttonUrlCode = code;
+              }
+            }
+
+            const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messaging_product: "whatsapp", to: phone, type: "template",
+                template: {
+                  name: templateName, language: { code: templateLanguage },
+                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+                },
+              }),
+            });
+
+            const waData = await waRes.json();
+            if (waData.messages?.[0]?.id) {
+              await supabase.from("whatsapp_messages").insert({
+                tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
+                direction: "outbound", message_type: "template", template_name: templateName,
+                wamid: waData.messages[0].id, status: "sent", content: `[Template: ${templateName}]`,
               });
-              buttonUrlCode = code;
+              await supabase.from("campaign_activities").upsert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
+              }, { onConflict: "campaign_id, customer_id" });
+              sentCount++;
+            } else {
+              lastError = waData?.error?.message || JSON.stringify(waData);
+              failedCount++;
             }
           }
 
-          const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              messaging_product: "whatsapp", to: phone, type: "template",
-              template: {
-                name: templateName, language: { code: templateLanguage },
-                components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+          // 2. Email send
+          if (emailTemplate && customer.email) {
+            const varRegex = /\{\{([^}]+)\}\}/g;
+            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            
+            const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
+              tenantId: campaign.tenant_id,
+              campaignId: campaign.id,
+              customerId: customer.id,
+              campaignName: campaign.name
+            });
+
+            const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
+              method: "POST",
+              headers: { 
+                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+                "Content-Type": "application/json" 
               },
-            }),
-          });
-
-          const waData = await waRes.json();
-
-          if (waData.messages?.[0]?.id) {
-            await supabase.from("whatsapp_messages").insert({
-              tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
-              direction: "outbound", message_type: "template", template_name: templateName,
-              wamid: waData.messages[0].id, status: "sent", content: `[Template: ${templateName}]`,
+              body: JSON.stringify({
+                to: customer.email,
+                subject: resolvedSubject,
+                html: finalBody,
+                fromName: emailTemplate.fromName,
+                configurationSet: emailTemplate.configurationSet,
+                tenantId: campaign.tenant_id,
+                campaignId: campaign.id,
+                customerId: customer.id
+              }),
             });
-            await supabase.from("campaign_activities").insert({
-              tenant_id: campaign.tenant_id, campaign_id: campaign.id,
-              customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
-            });
-            sentCount++;
-          } else {
-            lastError = waData?.error?.message || JSON.stringify(waData);
-            failedCount++;
+
+            if (sendRes.ok) {
+              sentCount++;
+            } else {
+              const errTxt = await sendRes.text();
+              lastError = `Email error: ${errTxt}`;
+              failedCount++;
+            }
           }
 
-          await new Promise((r) => setTimeout(r, 100));
+          await new Promise((r) => setTimeout(r, 50));
         } catch (err) {
           console.error(`Error sending to customer ${customer.id}:`, err);
           failedCount++;

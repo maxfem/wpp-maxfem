@@ -313,6 +313,7 @@ async function processAutomationQueue(supabase: any) {
 
     for (const item of items) {
       try {
+        console.log(`[automation] Processing item ${item.id} (trigger: ${item.trigger_type}, customer: ${item.customer_id})`);
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;

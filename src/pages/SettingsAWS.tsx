@@ -5,22 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Send, ShieldCheck, AlertTriangle, Save, RefreshCw, ChevronRight, ExternalLink } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, Send, ShieldCheck, AlertTriangle, Save, RefreshCw, ExternalLink, Key } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 
-type Step = 1 | 2 | 3;
 type CheckState = "pending" | "running" | "ok" | "error";
-
-interface CheckResult {
-  state: CheckState;
-  detail?: string;
-  error?: string;
-}
-
+interface CheckResult { state: CheckState; detail?: string; error?: string; }
 interface ValidationChecks {
   credentials: CheckResult;
   region: CheckResult;
@@ -35,26 +28,22 @@ const initialChecks: ValidationChecks = {
   quota: { state: "pending" },
 };
 
-const REGIONS = [
-  { value: "us-east-1", label: "US East (N. Virginia) — us-east-1" },
-  { value: "us-west-2", label: "US West (Oregon) — us-west-2" },
-  { value: "sa-east-1", label: "South America (São Paulo) — sa-east-1" },
-  { value: "eu-west-1", label: "Europe (Ireland) — eu-west-1" },
-  { value: "eu-central-1", label: "Europe (Frankfurt) — eu-central-1" },
-  { value: "ap-southeast-1", label: "Asia Pacific (Singapore) — ap-southeast-1" },
-];
+interface SecretsStatus {
+  has_access_key: boolean;
+  has_secret_key: boolean;
+  has_region: boolean;
+  region: string | null;
+  access_key_prefix: string | null;
+}
 
 export default function SettingsAWS() {
   const navigate = useNavigate();
   const { currentTenant, user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [step, setStep] = useState<Step>(1);
-  const [accessKey, setAccessKey] = useState("");
-  const [secretKey, setSecretKey] = useState("");
-  const [region, setRegion] = useState("us-east-1");
   const [senderEmail, setSenderEmail] = useState("");
-  const [showSecret, setShowSecret] = useState(false);
+  const [secretsStatus, setSecretsStatus] = useState<SecretsStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
   const [checks, setChecks] = useState<ValidationChecks>(initialChecks);
   const [isValidating, setIsValidating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -79,33 +68,42 @@ export default function SettingsAWS() {
   useEffect(() => {
     if (integration?.config) {
       const cfg = integration.config as any;
-      setAccessKey(cfg.access_key || "");
-      setSecretKey(cfg.secret_key || "");
-      setRegion(cfg.region || "us-east-1");
       setSenderEmail(cfg.sender_email || "");
     }
   }, [integration]);
 
-  const isConnected = integration?.is_active;
+  // Fetch secrets status on mount
+  useEffect(() => {
+    const fetchStatus = async () => {
+      setLoadingStatus(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("send-email-ses", {
+          body: { mode: "status" },
+        });
+        if (error) throw error;
+        setSecretsStatus(data as SecretsStatus);
+      } catch (e: any) {
+        toast.error(`Erro ao verificar credenciais: ${e.message}`);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+    fetchStatus();
+  }, []);
 
-  // Client-side validation for step 1
-  const canAdvanceToStep2 = () => {
-    if (!accessKey.startsWith("AKIA") && !accessKey.startsWith("ASIA")) {
-      toast.error("Access Key ID inválida (deve começar com AKIA ou ASIA).");
-      return false;
-    }
-    if (secretKey.length !== 40) {
-      toast.error(`Secret Access Key deve ter exatamente 40 caracteres (atual: ${secretKey.length}).`);
-      return false;
-    }
-    if (!senderEmail.includes("@")) {
-      toast.error("E-mail do remetente inválido.");
-      return false;
-    }
-    return true;
-  };
+  const isConnected = integration?.is_active;
+  const allSecretsReady = secretsStatus?.has_access_key && secretsStatus?.has_secret_key && secretsStatus?.has_region;
 
   const runValidation = async () => {
+    if (!senderEmail.includes("@")) {
+      toast.error("Informe um e-mail remetente válido.");
+      return;
+    }
+    if (!allSecretsReady) {
+      toast.error("Configure os secrets AWS no projeto antes de validar.");
+      return;
+    }
+
     setIsValidating(true);
     setValidationCompleted(false);
     setChecks({
@@ -117,17 +115,10 @@ export default function SettingsAWS() {
 
     try {
       const { data, error } = await supabase.functions.invoke("send-email-ses", {
-        body: {
-          mode: "validate",
-          accessKey: accessKey.trim(),
-          secretKey: secretKey.trim(),
-          region: region.trim(),
-          fromEmail: senderEmail.trim(),
-        },
+        body: { mode: "validate", fromEmail: senderEmail.trim() },
       });
 
       if (error) {
-        // Network/function error
         setChecks({
           credentials: { state: "error", error: error.message || "Falha ao chamar a função" },
           region: { state: "pending" },
@@ -137,14 +128,13 @@ export default function SettingsAWS() {
         return;
       }
 
-      // Map backend response to UI state
       const c = data.checks;
       setChecks({
         credentials: c.credentials.ok
           ? { state: "ok", detail: `Conta AWS: ${c.credentials.account_id}` }
           : { state: "error", error: c.credentials.error },
         region: c.region.ok
-          ? { state: "ok", detail: c.quota.is_sandbox ? `${c.region.region} (modo Sandbox)` : `${c.region.region} (modo Produção)` }
+          ? { state: "ok", detail: c.quota?.is_sandbox ? `${c.region.region} (modo Sandbox)` : `${c.region.region} (modo Produção)` }
           : { state: "error", error: c.region.error || "Região inválida" },
         identity: c.identity.ok
           ? { state: "ok", detail: `${senderEmail} verificado` }
@@ -155,7 +145,6 @@ export default function SettingsAWS() {
       });
 
       setValidationCompleted(true);
-
       if (data.validated) {
         toast.success("Todas as validações passaram!");
       } else {
@@ -181,24 +170,25 @@ export default function SettingsAWS() {
       toast.error("E-mail do usuário não encontrado.");
       return;
     }
+    if (!senderEmail) {
+      toast.error("Configure o e-mail remetente primeiro.");
+      return;
+    }
     setIsSendingTest(true);
     try {
       const { data, error } = await supabase.functions.invoke("send-email-ses", {
         body: {
           mode: "test",
           to: user.email,
+          fromEmail: senderEmail.trim(),
           subject: "✅ Teste AWS SES — Maxfem CRM",
           html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #eee;border-radius:8px;">
             <h1 style="color:#ED2B75;margin-bottom:16px;">Tudo certo! 🎉</h1>
             <p>Sua integração com o AWS SES está funcionando perfeitamente.</p>
-            <p>Este e-mail foi enviado de <strong>${senderEmail}</strong> via região <strong>${region}</strong>.</p>
+            <p>Este e-mail foi enviado de <strong>${senderEmail}</strong> via região <strong>${secretsStatus?.region || "—"}</strong>.</p>
             <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
             <p style="color:#888;font-size:12px;">Maxfem CRM — Sistema de Email Marketing</p>
           </div>`,
-          accessKey: accessKey.trim(),
-          secretKey: secretKey.trim(),
-          region: region.trim(),
-          fromEmail: senderEmail.trim(),
         },
       });
       if (error || data?.error) {
@@ -216,15 +206,17 @@ export default function SettingsAWS() {
 
   const saveAndActivate = async () => {
     if (!currentTenant) return;
+    if (!senderEmail.includes("@")) {
+      toast.error("E-mail remetente inválido.");
+      return;
+    }
     setIsSaving(true);
     try {
       const config: any = {
-        access_key: accessKey.trim(),
-        secret_key: secretKey.trim(),
-        region: region.trim(),
         sender_email: senderEmail.trim(),
         last_validated_at: new Date().toISOString(),
         last_validation_checks: JSON.parse(JSON.stringify(checks)),
+        updated_at: new Date().toISOString(),
       };
 
       if (integration) {
@@ -240,7 +232,7 @@ export default function SettingsAWS() {
         if (error) throw error;
       }
 
-      toast.success("Integração AWS SES ativada com sucesso!");
+      toast.success("Integração AWS SES ativada!");
       queryClient.invalidateQueries({ queryKey: ["aws-integration"] });
       queryClient.invalidateQueries({ queryKey: ["integrations"] });
     } catch (e: any) {
@@ -261,11 +253,21 @@ export default function SettingsAWS() {
     queryClient.invalidateQueries({ queryKey: ["aws-integration"] });
   };
 
-  const stepLabels = ["Credenciais", "Validação", "Teste & Ativar"];
+  const SecretRow = ({ label, ok, value }: { label: string; ok: boolean; value?: string | null }) => (
+    <div className="flex items-center justify-between py-2 border-b last:border-b-0">
+      <div className="flex items-center gap-2">
+        {ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-destructive" />}
+        <code className="text-xs font-mono">{label}</code>
+      </div>
+      <span className="text-xs text-muted-foreground">
+        {ok ? (value || "Configurado") : "Não configurado"}
+      </span>
+    </div>
+  );
 
   return (
     <AppLayout>
-      <div className="p-6 space-y-6 animate-fade-in max-w-5xl mx-auto">
+      <div className="p-6 space-y-6 animate-fade-in max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/settings/integrations")}>
@@ -275,225 +277,150 @@ export default function SettingsAWS() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg text-white font-bold text-lg bg-[#FF9900]">A</div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-foreground">Amazon AWS SES</h1>
-              <p className="text-sm text-muted-foreground">Configure o envio de e-mails transacionais e de marketing</p>
+              <p className="text-sm text-muted-foreground">Envio de e-mails transacionais e de marketing</p>
             </div>
             {isConnected && (
               <Badge className="bg-green-600 text-white">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                Ativo
+                <CheckCircle2 className="h-3 w-3 mr-1" /> Ativo
               </Badge>
             )}
           </div>
         </div>
 
-        {/* Step indicator */}
-        <div className="flex items-center gap-2 px-2">
-          {stepLabels.map((label, idx) => {
-            const num = (idx + 1) as Step;
-            const active = step === num;
-            const completed = step > num;
-            return (
-              <div key={num} className="flex items-center gap-2 flex-1">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                  completed ? "bg-green-600 text-white" : active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}>
-                  {completed ? <CheckCircle2 className="h-4 w-4" /> : num}
-                </div>
-                <span className={`text-sm ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</span>
-                {idx < stepLabels.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        {/* Secrets status */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Key className="h-4 w-4" /> Credenciais AWS (secrets do projeto)
+            </CardTitle>
+            <CardDescription>
+              As credenciais ficam armazenadas com segurança como secrets do projeto, não no banco de dados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingStatus ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Verificando secrets...
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <div className="space-y-1">
+                <SecretRow label="AWS_ACCESS_KEY_ID" ok={!!secretsStatus?.has_access_key} value={secretsStatus?.access_key_prefix} />
+                <SecretRow label="AWS_SECRET_ACCESS_KEY" ok={!!secretsStatus?.has_secret_key} value={secretsStatus?.has_secret_key ? "•••••• (40 caracteres)" : null} />
+                <SecretRow label="AWS_REGION" ok={!!secretsStatus?.has_region} value={secretsStatus?.region} />
 
-        {/* STEP 1 — Credenciais */}
-        {step === 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Passo 1 — Credenciais AWS</CardTitle>
-              <CardDescription>
-                Cole as credenciais do usuário IAM com permissão para AWS SES.{" "}
-                <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html" target="_blank" rel="noopener noreferrer" className="text-primary underline inline-flex items-center gap-1">
-                  Como obter <ExternalLink className="h-3 w-3" />
-                </a>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="accessKey">AWS Access Key ID</Label>
-                <Input
-                  id="accessKey"
-                  placeholder="AKIAIOSFODNN7EXAMPLE"
-                  value={accessKey}
-                  onChange={(e) => setAccessKey(e.target.value)}
-                  className="font-mono text-sm"
-                />
-                <p className="text-xs text-muted-foreground">20 caracteres, começa com AKIA</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="secretKey">AWS Secret Access Key</Label>
-                <div className="relative">
-                  <Input
-                    id="secretKey"
-                    type={showSecret ? "text" : "password"}
-                    placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                    value={secretKey}
-                    onChange={(e) => setSecretKey(e.target.value)}
-                    className="font-mono text-sm pr-10"
-                  />
-                  <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setShowSecret(!showSecret)}>
-                    {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Exatamente 40 caracteres ({secretKey.length}/40).
-                  {secretKey.length > 0 && secretKey.length !== 40 && (
-                    <span className="text-destructive ml-1">⚠ Comprimento incorreto</span>
-                  )}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="region">Região AWS</Label>
-                  <select
-                    id="region"
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                  >
-                    {REGIONS.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="senderEmail">E-mail do remetente</Label>
-                  <Input
-                    id="senderEmail"
-                    type="email"
-                    placeholder="contato@suaempresa.com"
-                    value={senderEmail}
-                    onChange={(e) => setSenderEmail(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">Deve estar verificado no AWS SES</p>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <Button onClick={() => { if (canAdvanceToStep2()) setStep(2); }}>
-                  Próximo: Validar
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* STEP 2 — Validação */}
-        {step === 2 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Passo 2 — Validação com a AWS</CardTitle>
-              <CardDescription>Vamos checar se as credenciais funcionam, a região é válida, o remetente está verificado e o usuário IAM tem permissão para enviar.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ValidationItem label="1. Credenciais válidas" result={checks.credentials} />
-              <ValidationItem label="2. Região acessível" result={checks.region} />
-              <ValidationItem label="3. E-mail remetente verificado" result={checks.identity} />
-              <ValidationItem label="4. Permissão de envio (IAM)" result={checks.quota} />
-
-              {checks.region.state === "ok" && checks.region.detail?.includes("Sandbox") && (
-                <div className="flex gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-yellow-900">Sua conta está em modo Sandbox</p>
-                    <p className="text-yellow-800 text-xs mt-1">Você só consegue enviar para e-mails verificados. Solicite saída do sandbox no console AWS para enviar para qualquer destinatário.</p>
+                {!allSecretsReady && (
+                  <div className="mt-4 flex gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-yellow-900">
+                      <p className="font-medium">Secrets faltando</p>
+                      <p className="text-xs mt-1">Configure os secrets ausentes no projeto (Lovable Cloud → Secrets) para habilitar o envio de e-mails.</p>
+                    </div>
                   </div>
+                )}
+
+                {secretsStatus?.has_access_key && (
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Para alterar as credenciais, atualize os secrets pelo painel do Lovable Cloud.
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sender email */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">E-mail remetente</CardTitle>
+            <CardDescription>O endereço deve estar verificado no AWS SES → Verified Identities.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="senderEmail">From address</Label>
+              <Input
+                id="senderEmail"
+                type="email"
+                placeholder="contato@suaempresa.com"
+                value={senderEmail}
+                onChange={(e) => setSenderEmail(e.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Validation */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Validação</CardTitle>
+            <CardDescription>Verifica credenciais (STS), identidade verificada e cota de envio.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ValidationItem label="1. Credenciais válidas" result={checks.credentials} />
+            <ValidationItem label="2. Região acessível" result={checks.region} />
+            <ValidationItem label="3. E-mail remetente verificado" result={checks.identity} />
+            <ValidationItem label="4. Permissão de envio (IAM + cota)" result={checks.quota} />
+
+            {checks.region.state === "ok" && checks.region.detail?.includes("Sandbox") && (
+              <div className="flex gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
+                <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-yellow-900">Conta em modo Sandbox</p>
+                  <p className="text-yellow-800 text-xs mt-1">Você só envia para e-mails verificados. Solicite saída do sandbox no console AWS SES para enviar para qualquer destinatário.</p>
                 </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button onClick={runValidation} disabled={isValidating || !allSecretsReady || !senderEmail}>
+                {isValidating ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Validando...</> : <><RefreshCw className="h-4 w-4 mr-1" /> {validationCompleted ? "Revalidar" : "Validar conexão"}</>}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Test & activate */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Teste e ativação</CardTitle>
+            <CardDescription>Envie um e-mail de teste e ative a integração para uso em campanhas.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="p-3 bg-secondary/30 rounded-md text-sm space-y-1">
+              <p><strong>Destinatário do teste:</strong> {user?.email}</p>
+              <p><strong>Remetente:</strong> {senderEmail || <span className="text-muted-foreground">não definido</span>}</p>
+              <p><strong>Região:</strong> {secretsStatus?.region || "—"}</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={sendTestEmail} disabled={isSendingTest || !allSecretsReady || !senderEmail} variant="outline">
+                {isSendingTest ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enviando...</> : <><Send className="h-4 w-4 mr-2" /> Enviar teste para mim</>}
+              </Button>
+              <Button onClick={saveAndActivate} disabled={isSaving || !senderEmail}>
+                {isSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Salvando...</> : <><Save className="h-4 w-4 mr-2" /> {isConnected ? "Atualizar" : "Salvar e ativar"}</>}
+              </Button>
+              {isConnected && (
+                <Button variant="outline" onClick={deactivate} className="text-destructive hover:text-destructive ml-auto">
+                  Desativar integração
+                </Button>
               )}
+            </div>
+          </CardContent>
+        </Card>
 
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setStep(1)}>
-                  <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
-                </Button>
-                <div className="flex gap-2">
-                  <Button onClick={runValidation} disabled={isValidating}>
-                    {isValidating ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Validando...</> : <><RefreshCw className="h-4 w-4 mr-1" /> {validationCompleted ? "Revalidar" : "Iniciar validação"}</>}
-                  </Button>
-                  {validationCompleted && allChecksPassed && (
-                    <Button onClick={() => setStep(3)}>
-                      Próximo: Teste
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* STEP 3 — Teste & Ativar */}
-        {step === 3 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Passo 3 — Teste e Ativação</CardTitle>
-              <CardDescription>Envie um e-mail de teste para você mesmo e ative a integração.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 bg-secondary/30 rounded-lg space-y-2">
-                <p className="text-sm"><strong>Destinatário do teste:</strong> {user?.email}</p>
-                <p className="text-sm"><strong>Remetente:</strong> {senderEmail}</p>
-                <p className="text-sm"><strong>Região:</strong> {region}</p>
-              </div>
-
-              <Button onClick={sendTestEmail} disabled={isSendingTest} className="w-full" variant="outline">
-                {isSendingTest ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enviando...</> : <><Send className="h-4 w-4 mr-2" /> Enviar e-mail de teste para {user?.email}</>}
-              </Button>
-
-              <div className="flex justify-between pt-4 border-t">
-                <Button variant="outline" onClick={() => setStep(2)}>
-                  <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
-                </Button>
-                <Button onClick={saveAndActivate} disabled={isSaving}>
-                  {isSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Salvando...</> : <><Save className="h-4 w-4 mr-2" /> {isConnected ? "Atualizar integração" : "Salvar e ativar integração"}</>}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Active integration management */}
-        {isConnected && step === 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Integração ativa</CardTitle>
-              <CardDescription>Você já tem uma integração AWS SES salva. Você pode revalidar, testar novamente ou desativar.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setStep(2)}>
-                <RefreshCw className="h-4 w-4 mr-1" /> Revalidar
-              </Button>
-              <Button variant="outline" size="sm" onClick={sendTestEmail} disabled={isSendingTest}>
-                <Send className="h-4 w-4 mr-1" /> {isSendingTest ? "Enviando..." : "Enviar teste"}
-              </Button>
-              <Button variant="outline" size="sm" onClick={deactivate} className="text-destructive hover:text-destructive">
-                Desativar
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* IAM policy hint */}
+        {/* IAM hint */}
         <Card className="border-dashed">
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" /> Permissões IAM mínimas
+              <a href="https://docs.aws.amazon.com/ses/latest/dg/setting-up.html" target="_blank" rel="noopener noreferrer" className="text-primary text-xs ml-auto inline-flex items-center gap-1">
+                Documentação <ExternalLink className="h-3 w-3" />
+              </a>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xs text-muted-foreground mb-2">Anexe esta policy ao usuário IAM (ou use a managed policy <code className="text-xs bg-muted px-1 rounded">AmazonSESFullAccess</code>):</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Anexe esta policy ao usuário IAM (ou use a managed policy <code className="text-xs bg-muted px-1 rounded">AmazonSESFullAccess</code>):
+            </p>
             <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
 {`{
   "Effect": "Allow",

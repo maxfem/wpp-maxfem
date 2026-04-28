@@ -394,16 +394,40 @@ async function processAutomationQueue(supabase: any) {
 
           // SEND EMAIL
           if (nodeType === "sendEmail") {
-            const subject = node.data?.subject || "E-mail importante";
-            const bodyHtml = node.data?.content || node.data?.body || "";
+            let subject = node.data?.subject || "E-mail importante";
+            let bodyHtml = node.data?.content || node.data?.body || "";
             const fromName = node.data?.fromName || "";
             const configurationSet = node.data?.configurationSet || "default";
+            const emailTemplateName = node.data?.emailTemplate;
+
+            if (emailTemplateName && !bodyHtml) {
+              const { data: tpl } = await supabase.from("email_templates")
+                .select("subject, body_html")
+                .eq("name", emailTemplateName)
+                .eq("tenant_id", campaign.tenant_id)
+                .maybeSingle();
+              
+              if (tpl) {
+                if (subject === "SEM SSUNTO" || !subject || subject === "E-mail importante") subject = tpl.subject;
+                bodyHtml = tpl.body_html;
+              } else {
+                console.warn(`[automation] Email template "${emailTemplateName}" not found for tenant ${campaign.tenant_id}`);
+              }
+            }
 
             const { data: customer } = await supabase.from("customers")
               .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
 
-            if (!customer?.email) {
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+            if (!customer?.email || !bodyHtml) {
+              const reason = !customer?.email ? "missing email" : "missing content";
+              console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);
+              const nextId = getNextNodeId(edges, currentNodeId);
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id);
+                continue;
+              }
+              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now }).eq("id", item.id);
               break;
             }
 

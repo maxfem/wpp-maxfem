@@ -866,7 +866,7 @@ async function processScheduledCampaigns(supabase: any) {
             .select("customer_id, customers(id, name, phone, email, custom_attributes)")
             .eq("list_id", campaign.list_id).range(from, from + pageSize - 1);
           if (!members || members.length === 0) break;
-          customers.push(...members.map((m: any) => m.customers).filter((c: any) => c?.phone));
+          customers.push(...members.map((m: any) => m.customers).filter((c: any) => (templateName && c?.phone) || (emailTemplate && c?.email)));
           if (members.length < pageSize) break;
           from += pageSize;
         }

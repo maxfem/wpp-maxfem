@@ -256,7 +256,7 @@ export default function SettingsAWS() {
   const SecretRow = ({ label, ok, value }: { label: string; ok: boolean; value?: string | null }) => (
     <div className="flex items-center justify-between py-2 border-b last:border-b-0">
       <div className="flex items-center gap-2">
-        {ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-destructive" />}
+        {ok ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <XCircle className="h-4 w-4 text-destructive" />}
         <code className="text-xs font-mono">{label}</code>
       </div>
       <span className="text-xs text-muted-foreground">
@@ -274,13 +274,13 @@ export default function SettingsAWS() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex items-center gap-3 flex-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg text-white font-bold text-lg bg-[#FF9900]">A</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">A</div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-foreground">Amazon AWS SES</h1>
               <p className="text-sm text-muted-foreground">Envio de e-mails transacionais e de marketing</p>
             </div>
             {isConnected && (
-              <Badge className="bg-green-600 text-white">
+              <Badge className="bg-primary text-primary-foreground">
                 <CheckCircle2 className="h-3 w-3 mr-1" /> Ativo
               </Badge>
             )}
@@ -309,9 +309,9 @@ export default function SettingsAWS() {
                 <SecretRow label="AWS_REGION" ok={!!secretsStatus?.has_region} value={secretsStatus?.region} />
 
                 {!allSecretsReady && (
-                  <div className="mt-4 flex gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-yellow-900">
+                  <div className="mt-4 flex gap-2 p-3 bg-muted border border-border rounded-md text-sm">
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                    <div className="text-foreground">
                       <p className="font-medium">Secrets faltando</p>
                       <p className="text-xs mt-1">Configure os secrets ausentes no projeto (Lovable Cloud → Secrets) para habilitar o envio de e-mails.</p>
                     </div>
@@ -361,11 +361,11 @@ export default function SettingsAWS() {
             <ValidationItem label="4. Permissão de envio (IAM + cota)" result={checks.quota} />
 
             {checks.region.state === "ok" && checks.region.detail?.includes("Sandbox") && (
-              <div className="flex gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
-                <AlertTriangle className="h-4 w-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div className="flex gap-2 p-3 bg-muted border border-border rounded-md text-sm">
+                <AlertTriangle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-yellow-900">Conta em modo Sandbox</p>
-                  <p className="text-yellow-800 text-xs mt-1">Você só envia para e-mails verificados. Solicite saída do sandbox no console AWS SES para enviar para qualquer destinatário.</p>
+                  <p className="font-medium text-foreground">Conta em modo Sandbox</p>
+                  <p className="text-muted-foreground text-xs mt-1">Você só envia para e-mails verificados. Solicite saída do sandbox no console AWS SES para enviar para qualquer destinatário.</p>
                 </div>
               </div>
             )}
@@ -448,7 +448,7 @@ function ValidationItem({ label, result }: { label: string; result: CheckResult 
       <div className="mt-0.5">
         {result.state === "pending" && <div className="h-5 w-5 rounded-full border-2 border-muted" />}
         {result.state === "running" && <Loader2 className="h-5 w-5 text-primary animate-spin" />}
-        {result.state === "ok" && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+        {result.state === "ok" && <CheckCircle2 className="h-5 w-5 text-primary" />}
         {result.state === "error" && <XCircle className="h-5 w-5 text-destructive" />}
       </div>
       <div className="flex-1 min-w-0">

@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +17,24 @@ const EmailMarketing = () => {
   const [subject, setSubject] = useState("");
   const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(false);
+  const { currentTenant } = useAuth();
+
+  const { data: awsIntegration } = useQuery({
+    queryKey: ["email-marketing-aws", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return null;
+      const { data } = await supabase
+        .from("integrations")
+        .select("is_active, config")
+        .eq("tenant_id", currentTenant.id)
+        .eq("provider", "aws")
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const isAwsActive = !!awsIntegration?.is_active;
 
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +49,7 @@ const EmailMarketing = () => {
         body: { to, subject, html },
       });
 
-      if (error) throw error;
+      if (error || data?.error) throw new Error(error?.message || data?.error);
 
       toast.success("E-mail enviado com sucesso!");
       setTo("");
@@ -96,7 +116,10 @@ const EmailMarketing = () => {
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full" disabled={loading}>
+                    {!isAwsActive && (
+                      <p className="text-sm text-destructive">Configure e ative o Amazon SES antes de enviar e-mails.</p>
+                    )}
+                    <Button type="submit" className="w-full" disabled={loading || !isAwsActive}>
                       {loading ? "Enviando..." : (
                         <>
                           <Send className="mr-2 h-4 w-4" /> Enviar Agora
@@ -115,8 +138,9 @@ const EmailMarketing = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm space-y-2">
-                    <p><strong>Status:</strong> <span className="text-green-500">Conectado</span></p>
-                    <p className="text-muted-foreground italic">As credenciais AWS foram configuradas via Lovable Secrets.</p>
+                    <p><strong>Status:</strong> <span className={isAwsActive ? "text-primary" : "text-destructive"}>{isAwsActive ? "Ativo" : "Inativo"}</span></p>
+                    <p><strong>Remetente:</strong> {(awsIntegration?.config as any)?.sender_email || "—"}</p>
+                    <p className="text-muted-foreground italic">As credenciais AWS são lidas com segurança pelos secrets do projeto.</p>
                   </CardContent>
                 </Card>
 

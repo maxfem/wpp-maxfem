@@ -540,10 +540,12 @@ export type Database = {
           body_html: string | null
           bounce_subtype: string | null
           bounce_type: string | null
+          campaign_id: string | null
           clicks: number
           complaint_type: string | null
           configuration_set: string | null
           created_at: string | null
+          customer_id: string | null
           error_message: string | null
           from_email: string | null
           id: string
@@ -564,10 +566,12 @@ export type Database = {
           body_html?: string | null
           bounce_subtype?: string | null
           bounce_type?: string | null
+          campaign_id?: string | null
           clicks?: number
           complaint_type?: string | null
           configuration_set?: string | null
           created_at?: string | null
+          customer_id?: string | null
           error_message?: string | null
           from_email?: string | null
           id?: string
@@ -588,10 +592,12 @@ export type Database = {
           body_html?: string | null
           bounce_subtype?: string | null
           bounce_type?: string | null
+          campaign_id?: string | null
           clicks?: number
           complaint_type?: string | null
           configuration_set?: string | null
           created_at?: string | null
+          customer_id?: string | null
           error_message?: string | null
           from_email?: string | null
           id?: string
@@ -607,7 +613,22 @@ export type Database = {
           to_email?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "email_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_logs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       instagram_accounts: {
         Row: {

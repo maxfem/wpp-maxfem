@@ -351,14 +351,30 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
     queryKey: ["email-logs", tenantId, statusFilter],
     queryFn: async () => {
       if (!tenantId) return [];
-      let q = supabase.from("email_logs").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
+      // Join with campaign_activities to show conversions
+      // Note: we link via campaign_id and customer_id
+      let q = supabase
+        .from("email_logs")
+        .select(`
+          *,
+          activity:campaign_activities(converted_at, conversion_value)
+        `)
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
       if (statusFilter !== "all") q = q.eq("status", statusFilter);
       const { data, error } = await q;
       if (error) throw error;
+      
+      // email_logs is linked to campaign_activities via campaign_id and customer_id
+      // but Supabase join might return multiple activities if not careful.
+      // In our case, we want to show if THIS send eventually led to a conversion.
       return data || [];
     },
     enabled: !!tenantId,
   });
+
 
   const statusBadge = (s: string) => {
     const map: any = {

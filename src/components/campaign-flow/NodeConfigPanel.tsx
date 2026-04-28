@@ -216,22 +216,28 @@ function ConfigField({ field, value, onChange }: { field: FieldDef; value: unkno
 
 export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProps) {
   const [templateOptions, setTemplateOptions] = useState<string[]>([]);
+  const [emailTemplateOptions, setEmailTemplateOptions] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchTemplates = async () => {
-      const { data } = await supabase
-        .from("message_templates")
-        .select("name")
-        .order("name");
-      if (data) {
-        setTemplateOptions(data.map((t) => t.name));
+      const [whatsappRes, emailRes] = await Promise.all([
+        supabase.from("message_templates").select("name").order("name"),
+        supabase.from("email_templates").select("name").order("name")
+      ]);
+
+      if (whatsappRes.data) {
+        setTemplateOptions(whatsappRes.data.map((t) => t.name));
+      }
+      if (emailRes.data) {
+        setEmailTemplateOptions(emailRes.data.map((t) => t.name));
       }
     };
     fetchTemplates();
   }, []);
 
   const nodeType = (node.data as Record<string, unknown>).nodeType as string;
-  const config = getNodeConfigs(templateOptions)[nodeType];
+  const config = getNodeConfigs(templateOptions, emailTemplateOptions)[nodeType];
+
 
   if (!config) {
     return (

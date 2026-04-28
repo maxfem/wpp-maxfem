@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus } from "lucide-react";
+import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";

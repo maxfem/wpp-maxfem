@@ -338,6 +338,30 @@ async function processAutomationQueue(supabase: any) {
 
           const nodeType = node.data?.nodeType || node.type;
 
+          // Support for "delay" property on any node (UI-specific)
+          if (node.data?.delay && node.data?.delay !== "Sem atraso" && (!item.scheduled_for || new Date(item.scheduled_for) > new Date(now))) {
+            const delayStr = String(node.data.delay);
+            let waitMs = 0;
+            const match = delayStr.match(/(\d+)\s*(minuto|hora|dia|min|hour|day)s?/i);
+            if (match) {
+              const val = parseInt(match[1]);
+              const unit = match[2].toLowerCase();
+              if (unit.startsWith("min")) waitMs = val * 60 * 1000;
+              else if (unit.startsWith("hor") || unit.startsWith("hou")) waitMs = val * 60 * 60 * 1000;
+              else if (unit.startsWith("dia") || unit.startsWith("day")) waitMs = val * 24 * 60 * 60 * 1000;
+            }
+            
+            if (waitMs > 0) {
+              const scheduledFor = new Date(Date.now() + waitMs).toISOString();
+              console.log(`[automation] Node ${currentNodeId} has delay ${delayStr}, rescheduling for ${scheduledFor}`);
+              await supabase.from("automation_queue").update({ 
+                scheduled_for: scheduledFor,
+                // We keep the current_node_id so it picks up here next time
+              }).eq("id", item.id);
+              break; 
+            }
+          }
+
           // WAIT
           if (nodeType === "wait" || nodeType === "waitDate" || nodeType === "waitCondition") {
             const waitMs = calculateWaitMs(node.data?.waitTime || 0, node.data?.waitUnit || "minutes");

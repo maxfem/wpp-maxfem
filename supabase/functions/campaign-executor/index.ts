@@ -876,7 +876,8 @@ async function processScheduledCampaigns(supabase: any) {
         while (true) {
           const { data } = await supabase.from("customers")
             .select("id, name, phone, email, custom_attributes")
-            .eq("tenant_id", campaign.tenant_id).not("phone", "is", null)
+            .eq("tenant_id", campaign.tenant_id)
+            .or(`phone.not.is.null,email.not.is.null`)
             .range(from, from + pageSize - 1);
           if (!data || data.length === 0) break;
           customers.push(...data);

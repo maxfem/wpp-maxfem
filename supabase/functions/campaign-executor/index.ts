@@ -397,7 +397,7 @@ async function processAutomationQueue(supabase: any) {
             let subject = node.data?.subject || "E-mail importante";
             let bodyHtml = node.data?.content || node.data?.body || "";
             const fromName = node.data?.fromName || "";
-            const configurationSet = node.data?.configurationSet || "default";
+            const configurationSet = (node.data?.configurationSet || "").trim() || null;
             const emailTemplateName = node.data?.emailTemplate;
 
             if (emailTemplateName && !bodyHtml) {
@@ -806,7 +806,7 @@ async function processScheduledCampaigns(supabase: any) {
               subject: emSubject,
               bodyHtml: emBody,
               fromName: emNode.data.fromName || "",
-              configurationSet: emNode.data.configurationSet || "default"
+              configurationSet: (emNode.data.configurationSet || "").trim() || null
             };
           }
         }
@@ -988,7 +988,7 @@ async function processScheduledCampaigns(supabase: any) {
                 subject: resolvedSubject,
                 html: finalBody,
                 fromName: emailTemplate.fromName,
-                configurationSet: emailTemplate.configurationSet,
+                ...(emailTemplate.configurationSet ? { configurationSet: emailTemplate.configurationSet } : {}),
                 tenantId: campaign.tenant_id,
                 campaignId: campaign.id,
                 customerId: customer.id

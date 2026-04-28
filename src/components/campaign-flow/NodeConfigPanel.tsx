@@ -35,7 +35,7 @@ const getNodeConfigs = (templateOptions: string[], emailTemplateOptions: string[
       { key: "fromName", label: "Nome do Remetente", type: "text", placeholder: "Ex: Minha Loja" },
       { key: "subject", label: "Assunto (Sobrescreve template)", type: "text", placeholder: "Deixe vazio para usar o do template" },
       { key: "content", label: "Conteúdo Personalizado (HTML)", type: "textarea", placeholder: "Sobrescreve o template se preenchido" },
-      { key: "configurationSet", label: "Configuration Set (SES)", type: "text", placeholder: "default" },
+      { key: "configurationSet", label: "Configuration Set (SES) — opcional", type: "text", placeholder: "Deixe em branco se não usar" },
     ],
   },
 

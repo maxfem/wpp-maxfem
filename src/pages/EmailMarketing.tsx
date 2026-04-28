@@ -138,7 +138,7 @@ const EmailMarketing = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm space-y-2">
-                    <p><strong>Status:</strong> <span className={isAwsActive ? "text-green-600" : "text-destructive"}>{isAwsActive ? "Ativo" : "Inativo"}</span></p>
+                    <p><strong>Status:</strong> <span className={isAwsActive ? "text-primary" : "text-destructive"}>{isAwsActive ? "Ativo" : "Inativo"}</span></p>
                     <p><strong>Remetente:</strong> {(awsIntegration?.config as any)?.sender_email || "—"}</p>
                     <p className="text-muted-foreground italic">As credenciais AWS são lidas com segurança pelos secrets do projeto.</p>
                   </CardContent>

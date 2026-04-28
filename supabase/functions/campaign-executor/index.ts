@@ -59,13 +59,49 @@ function generateCode(len = 8): string {
   return result;
 }
 
-function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
-  const attrs = customer?.custom_attributes || {};
-  const cart = attrs?.abandoned_cart || {};
-  if (templateName.startsWith("carrinho_abandonado") && cart?.recovery_url) return cart.recovery_url;
-  if (templateName.startsWith("pix_nao_pago")) return attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
-  return null;
+async function wrapHtmlLinks(
+  supabase: any,
+  html: string,
+  ctx: { tenantId: string; campaignId: string; customerId: string; campaignName: string }
+): Promise<string> {
+  const urlRegex = /href="([^"]+)"/g;
+  let match;
+  let newHtml = html;
+  
+  // To avoid issues with multiple replacements changing indices, we'll collect matches first
+  const replacements: { original: string; wrapped: string }[] = [];
+  
+  while ((match = urlRegex.exec(html)) !== null) {
+    const originalUrl = match[1];
+    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!)) {
+      const code = generateCode(10);
+      
+      // Store in tracked_links
+      await supabase.from("tracked_links").insert({
+        tenant_id: ctx.tenantId,
+        campaign_id: ctx.campaignId,
+        customer_id: ctx.customerId,
+        code,
+        original_url: originalUrl,
+        utm_source: "email",
+        utm_medium: "automation",
+        utm_campaign: ctx.campaignName,
+      });
+      
+      const wrappedUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/link-redirect?c=${code}`;
+      replacements.push({ original: originalUrl, wrapped: wrappedUrl });
+    }
+  }
+  
+  for (const r of replacements) {
+    newHtml = newHtml.replace(`href="${r.original}"`, `href="${r.wrapped}"`);
+  }
+  
+  return newHtml;
 }
+
+function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
+
 
 // ===== TEMPLATE BUILDER =====
 

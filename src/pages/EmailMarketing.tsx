@@ -419,23 +419,39 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Aberturas</TableHead>
                 <TableHead className="text-right">Cliques</TableHead>
+                <TableHead className="text-right">Venda</TableHead>
                 <TableHead>MessageId</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {logs && logs.length > 0 ? logs.map((l: any) => (
-                <TableRow key={l.id}>
-                  <TableCell className="text-xs whitespace-nowrap">{l.created_at ? localeSP(l.created_at) : "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.to_email}</TableCell>
-                  <TableCell className="max-w-xs truncate">{l.subject}</TableCell>
-                  <TableCell>{statusBadge(l.status)}</TableCell>
-                  <TableCell className="text-right font-mono">{l.opens || 0}</TableCell>
-                  <TableCell className="text-right font-mono">{l.clicks || 0}</TableCell>
-                  <TableCell className="font-mono text-[10px] text-muted-foreground truncate max-w-[120px]">{l.aws_message_id}</TableCell>
-                </TableRow>
-              )) : (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
+              {logs && logs.length > 0 ? logs.map((l: any) => {
+                const activity = Array.isArray(l.activity) ? l.activity[0] : l.activity;
+                const converted = activity?.converted_at;
+                const value = activity?.conversion_value;
+                
+                return (
+                  <TableRow key={l.id}>
+                    <TableCell className="text-xs whitespace-nowrap">{l.created_at ? localeSP(l.created_at) : "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{l.to_email}</TableCell>
+                    <TableCell className="max-w-xs truncate">{l.subject}</TableCell>
+                    <TableCell>{statusBadge(l.status)}</TableCell>
+                    <TableCell className="text-right font-mono">{l.opens || 0}</TableCell>
+                    <TableCell className="text-right font-mono">{l.clicks || 0}</TableCell>
+                    <TableCell className="text-right">
+                      {converted ? (
+                        <div className="flex flex-col items-end">
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">Convertido</Badge>
+                          {value > 0 && <span className="text-[10px] text-muted-foreground">R$ {value.toLocaleString("pt-BR")}</span>}
+                        </div>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] text-muted-foreground truncate max-w-[120px]">{l.aws_message_id}</TableCell>
+                  </TableRow>
+                );
+              }) : (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
               )}
+
             </TableBody>
           </Table>
         )}

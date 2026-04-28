@@ -774,32 +774,74 @@ async function processScheduledCampaigns(supabase: any) {
       const flowData = campaign.flow_data as any;
       let templateName: string | null = null;
       let templateLanguage = "pt_BR";
+      let emailTemplate: any = null;
 
       if (flowData?.nodes) {
-        const sendNode = flowData.nodes.find((n: any) => n.data?.nodeType === "sendWhatsApp" && (n.data?.template || n.data?.templateName));
-        if (sendNode) {
-          templateName = sendNode.data.template || sendNode.data.templateName;
-          templateLanguage = sendNode.data.templateLanguage || "pt_BR";
+        const waNode = flowData.nodes.find((n: any) => (n.data?.nodeType === "sendWhatsApp" || n.type === "sendWhatsApp") && (n.data?.template || n.data?.templateName));
+        if (waNode) {
+          templateName = waNode.data.template || waNode.data.templateName;
+          templateLanguage = waNode.data.templateLanguage || "pt_BR";
+        }
+
+        const emNode = flowData.nodes.find((n: any) => n.data?.nodeType === "sendEmail" || n.type === "sendEmail");
+        if (emNode) {
+          let emSubject = emNode.data.subject || "E-mail importante";
+          let emBody = emNode.data.content || emNode.data.body || "";
+          const emTemplateName = emNode.data.emailTemplate;
+
+          if (emTemplateName && !emBody) {
+             const { data: tpl } = await supabase.from("email_templates")
+                .select("subject, body_html")
+                .eq("name", emTemplateName)
+                .eq("tenant_id", campaign.tenant_id)
+                .maybeSingle();
+              if (tpl) {
+                if (emSubject === "SEM SSUNTO" || !emSubject || emSubject === "E-mail importante") emSubject = tpl.subject;
+                emBody = tpl.body_html;
+              }
+          }
+
+          if (emBody) {
+            emailTemplate = {
+              subject: emSubject,
+              bodyHtml: emBody,
+              fromName: emNode.data.fromName || "",
+              configurationSet: emNode.data.configurationSet || "default"
+            };
+          }
         }
       }
 
-      if (!templateName) {
-        const errMsg = "Nenhum template de WhatsApp encontrado no fluxo";
+      if (!templateName && !emailTemplate) {
+        const errMsg = "Nenhum template de WhatsApp ou E-mail encontrado no fluxo";
         await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
         results.push({ campaign_id: campaign.id, error: errMsg });
         continue;
       }
 
-      const { data: templateRecord } = await supabase.from("message_templates")
-        .select("body, header_type, header_content, sample_values, buttons")
-        .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
+      let templateRecord: any = null;
+      let bodyVarCount = 0;
+      let hasHeaderVar = false;
+      let variableMappings: string[] = [];
+      let templateButtons: any[] = [];
+      let dynamicUrlBtnIndex = -1;
+      let hasDynamicUrlButton = false;
 
-      const bodyVarCount = templateRecord?.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
-      const hasHeaderVar = templateRecord?.header_type === "text" && templateRecord?.header_content?.includes("{{");
-      const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
-      const templateButtons = (templateRecord?.buttons as any[]) || [];
-      const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
-      const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+      if (templateName) {
+        const { data: tRecord } = await supabase.from("message_templates")
+          .select("body, header_type, header_content, sample_values, buttons")
+          .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
+        
+        templateRecord = tRecord;
+        if (templateRecord) {
+          bodyVarCount = templateRecord.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
+          hasHeaderVar = templateRecord.header_type === "text" && templateRecord.header_content?.includes("{{");
+          variableMappings = (templateRecord.sample_values as string[]) || [];
+          templateButtons = (templateRecord.buttons as any[]) || [];
+          dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
+          hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
+        }
+      }
 
       const campaignVars: any = {};
       if (flowData?.nodes) {

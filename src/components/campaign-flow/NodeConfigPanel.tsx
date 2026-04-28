@@ -18,7 +18,7 @@ interface NodeConfigPanelProps {
 }
 
 // Will be populated dynamically for WhatsApp
-const getNodeConfigs = (templateOptions: string[]): Record<string, { title: string; fields: FieldDef[] }> => ({
+const getNodeConfigs = (templateOptions: string[], emailTemplateOptions: string[]): Record<string, { title: string; fields: FieldDef[] }> => ({
   sendWhatsApp: {
     title: "Enviar WhatsApp",
     fields: [
@@ -31,12 +31,14 @@ const getNodeConfigs = (templateOptions: string[]): Record<string, { title: stri
   sendEmail: {
     title: "Enviar E-mail",
     fields: [
+      { key: "emailTemplate", label: "Template de E-mail", type: "select", options: emailTemplateOptions.length > 0 ? emailTemplateOptions : ["Nenhum template encontrado"] },
       { key: "fromName", label: "Nome do Remetente", type: "text", placeholder: "Ex: Minha Loja" },
-      { key: "subject", label: "Assunto", type: "text", placeholder: "Assunto do e-mail" },
-      { key: "content", label: "Conteúdo (HTML)", type: "textarea", placeholder: "<html><body>Olá {{customer.first_name}}...</body></html>" },
+      { key: "subject", label: "Assunto (Sobrescreve template)", type: "text", placeholder: "Deixe vazio para usar o do template" },
+      { key: "content", label: "Conteúdo Personalizado (HTML)", type: "textarea", placeholder: "Sobrescreve o template se preenchido" },
       { key: "configurationSet", label: "Configuration Set (SES)", type: "text", placeholder: "default" },
     ],
   },
+
 
   sendSms: {
     title: "Enviar SMS",

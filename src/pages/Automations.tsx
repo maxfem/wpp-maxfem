@@ -78,6 +78,7 @@ export default function Automations() {
         .select("*")
         .eq("tenant_id", currentTenant.id)
         .eq("kind", "automation")
+        .order("status", { ascending: false }) // Prioritize 'running' (r) over 'draft' (d)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;

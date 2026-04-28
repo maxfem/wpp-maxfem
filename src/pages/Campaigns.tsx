@@ -85,6 +85,7 @@ export default function Campaigns() {
         .select("*")
         .eq("tenant_id", currentTenant.id)
         .eq("kind", "campaign")
+        .order("status", { ascending: false }) // Prioritize active statuses alphabetically (scheduled, sent, etc. vs draft)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;

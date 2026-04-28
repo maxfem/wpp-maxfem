@@ -31,12 +31,12 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "cart.value": return cart?.value ? formatCurrency(cart.value) : "-";
     case "cart.items_count": return String(cart?.items_count || 0);
     case "cart.items_summary": return cart?.items_summary || "seus itens selecionados";
-    case "order.number": return order?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
-    case "order.total": return order?.total ? formatCurrency(order.total) : "-";
-    case "order.status": return order?.mapped_status || order?.status || "-";
-    case "order.tracking_code": return order?.tracking_code || "-";
-    case "order.delivery_days": return order?.delivery_days || "5 a 8";
-    case "order.pix_code": return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || "-";
+    case "order.number": return order?.order_number || ctx.triggerData?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
+    case "order.total": return (order?.total || ctx.triggerData?.total) ? formatCurrency(order?.total || ctx.triggerData?.total) : "-";
+    case "order.status": return order?.mapped_status || ctx.triggerData?.status || order?.status || "-";
+    case "order.tracking_code": return order?.tracking_code || ctx.triggerData?.tracking_code || "-";
+    case "order.delivery_days": return order?.delivery_days || ctx.triggerData?.delivery_days || "5 a 8";
+    case "order.pix_code": return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || ctx.triggerData?.pix_code || "-";
     case "campaign.coupon": return campaign?.coupon || "-";
     case "campaign.discount": return campaign?.discount || "-";
     case "campaign.product_name": return campaign?.product_name || "-";
@@ -135,9 +135,11 @@ function buildTemplateComponents(
   if (copyCodeButtons) {
     for (const btn of copyCodeButtons) {
       if (btn.value && btn.value !== "-") {
-        // According to Meta, coupon_code must be 15 chars max. 
+        // According to Meta, coupon_code must be 15 chars max.
         // For PIX, this button type might not be the right one if we want to copy the full code.
-        // However, if the template was approved with COPY_CODE, we must provide a value.
+        if (btn.value.length > 15) {
+          console.warn(`[automation] COPY_CODE button value too long (${btn.value.length} chars). Meta limit is 15. Truncating...`);
+        }
         const finalValue = btn.value.length > 15 ? btn.value.substring(0, 15) : btn.value;
         components.push({ type: "button", sub_type: "copy_code", index: String(btn.index), parameters: [{ type: "coupon_code", coupon_code: finalValue }] });
       }
@@ -311,6 +313,7 @@ async function processAutomationQueue(supabase: any) {
 
     for (const item of items) {
       try {
+        console.log(`[automation] Processing item ${item.id} (trigger: ${item.trigger_type}, customer: ${item.customer_id})`);
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;
@@ -337,6 +340,30 @@ async function processAutomationQueue(supabase: any) {
           }
 
           const nodeType = node.data?.nodeType || node.type;
+
+          // Support for "delay" property on any node (UI-specific)
+          if (node.data?.delay && node.data?.delay !== "Sem atraso" && (!item.scheduled_for || new Date(item.scheduled_for) > new Date(now))) {
+            const delayStr = String(node.data.delay);
+            let waitMs = 0;
+            const match = delayStr.match(/(\d+)\s*(minuto|hora|dia|min|hour|day)s?/i);
+            if (match) {
+              const val = parseInt(match[1]);
+              const unit = match[2].toLowerCase();
+              if (unit.startsWith("min")) waitMs = val * 60 * 1000;
+              else if (unit.startsWith("hor") || unit.startsWith("hou")) waitMs = val * 60 * 60 * 1000;
+              else if (unit.startsWith("dia") || unit.startsWith("day")) waitMs = val * 24 * 60 * 60 * 1000;
+            }
+            
+            if (waitMs > 0) {
+              const scheduledFor = new Date(Date.now() + waitMs).toISOString();
+              console.log(`[automation] Node ${currentNodeId} has delay ${delayStr}, rescheduling for ${scheduledFor}`);
+              await supabase.from("automation_queue").update({ 
+                scheduled_for: scheduledFor,
+                // We keep the current_node_id so it picks up here next time
+              }).eq("id", item.id);
+              break; 
+            }
+          }
 
           // WAIT
           if (nodeType === "wait" || nodeType === "waitDate" || nodeType === "waitCondition") {
@@ -482,6 +509,18 @@ async function processAutomationQueue(supabase: any) {
               templateCache.set(templateName, tpl);
             }
             const templateRecord = templateCache.get(templateName);
+
+            if (!templateRecord) {
+              const errMsg = `Template "${templateName}" não encontrado no banco de dados local. Sincronize os templates.`;
+              console.error(`[automation] ${errMsg}`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
+                sent_at: new Date().toISOString(), error_message: errMsg,
+              });
+              break;
+            }
 
             const bodyVarCount = templateRecord?.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
             const hasHeaderVar = templateRecord?.header_type === "text" && templateRecord?.header_content?.includes("{{");

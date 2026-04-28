@@ -13,7 +13,7 @@ function translateAwsError(err: any): string {
   const code = err?.name || err?.Code || err?.$metadata?.httpStatusCode;
   const msg = err?.message || String(err);
 
-  if (msg.includes("SignatureDoesNotMatch")) {
+  if (msg.includes("SignatureDoesNotMatch") || msg.toLowerCase().includes("request signature we calculated")) {
     return "AWS Secret Access Key incorreta. Atualize o secret AWS_SECRET_ACCESS_KEY no projeto com o valor exato do console IAM (40 caracteres, sem espaços).";
   }
   if (msg.includes("InvalidClientTokenId") || code === "InvalidClientTokenId") {

@@ -212,6 +212,7 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
   const openRate = events && events.delivered > 0 ? (events.opens / events.delivered) * 100 : 0;
   const clickRate = events && events.delivered > 0 ? (events.clicks / events.delivered) * 100 : 0;
   const ctor = events && events.opens > 0 ? (events.clicks / events.opens) * 100 : 0;
+  const conversionRate = events && events.sent > 0 ? (events.conversions / events.sent) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -223,7 +224,7 @@ const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
         <KpiCard icon={<Ban className="h-4 w-4" />} label="Complaint Rate" value={`${complaintRate.toFixed(3)}%`} hint={`${totals.complaints} reclamações`} negative={complaintRate > 0.1} />
         <KpiCard icon={<Activity className="h-4 w-4" />} label="Open Rate (30d)" value={events ? `${openRate.toFixed(1)}%` : "—"} hint={events ? `${events.opens} aberturas` : "Aguardando SNS"} />
         <KpiCard icon={<Activity className="h-4 w-4" />} label="Click Rate (30d)" value={events ? `${clickRate.toFixed(1)}%` : "—"} hint={events ? `${events.clicks} cliques` : "Aguardando SNS"} />
-        <KpiCard icon={<Activity className="h-4 w-4" />} label="CTOR (30d)" value={events ? `${ctor.toFixed(1)}%` : "—"} hint="Click-to-Open" />
+        <KpiCard icon={<TrendingUp className="h-4 w-4" />} label="Conversões (30d)" value={events ? `${events.conversions}` : "—"} hint={events ? `R$ ${events.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Vendas atribuídas"} positive={events && events.conversions > 0} />
         <KpiCard icon={<AlertTriangle className="h-4 w-4" />} label="Rejects (14d)" value={totals.rejects.toLocaleString("pt-BR")} hint="Rejeitados pelo SES" negative={totals.rejects > 0} />
       </div>
 

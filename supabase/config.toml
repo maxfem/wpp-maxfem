@@ -1,1 +1,4 @@
 project_id = "poukhwsbskcvwroeqoct"
+
+[functions.ses-events-webhook]
+verify_jwt = false

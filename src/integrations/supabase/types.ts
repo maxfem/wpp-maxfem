@@ -630,6 +630,53 @@ export type Database = {
           },
         ]
       }
+      email_templates: {
+        Row: {
+          body_html: string | null
+          body_text: string | null
+          category: string | null
+          created_at: string
+          design: Json | null
+          id: string
+          name: string
+          subject: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          body_html?: string | null
+          body_text?: string | null
+          category?: string | null
+          created_at?: string
+          design?: Json | null
+          id?: string
+          name: string
+          subject?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          body_html?: string | null
+          body_text?: string | null
+          category?: string | null
+          created_at?: string
+          design?: Json | null
+          id?: string
+          name?: string
+          subject?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_accounts: {
         Row: {
           access_token: string | null

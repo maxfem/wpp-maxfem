@@ -176,7 +176,7 @@ serve(async (req) => {
     }
 
     // ========== TEST & SEND MODE ==========
-    const { to, subject, html, text, fromName, configurationSet, tenantId } = payload;
+    const { to, subject, html, text, fromName, configurationSet, tenantId, campaignId, customerId } = payload;
     if (!to || !subject || !html) {
       throw new Error("Campos obrigatórios: to, subject, html.");
     }
@@ -200,13 +200,17 @@ serve(async (req) => {
           { global: { headers: { Authorization: authHeader } } });
         const { data: { user } } = await sb.auth.getUser();
         userId = user?.id || null;
-        if (!resolvedTenant && userId) {
-          const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-          const { data: tm } = await sbAdmin.from("tenant_members").select("tenant_id").eq("user_id", userId).limit(1).maybeSingle();
-          resolvedTenant = tm?.tenant_id || null;
-        }
       }
     } catch {}
+
+    // Resolve tenant if not provided
+    if (!resolvedTenant && userId) {
+      try {
+        const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: tm } = await sbAdmin.from("tenant_members").select("tenant_id").eq("user_id", userId).limit(1).maybeSingle();
+        resolvedTenant = tm?.tenant_id || null;
+      } catch {}
+    }
 
     console.log(`[SES] mode=${mode} To=${Array.isArray(to) ? to[0] : to} From=${senderEmail} Region=${env.region} CS=${configurationSet || "-"}`);
 
@@ -222,34 +226,57 @@ serve(async (req) => {
           },
         },
       };
+      
       if (configurationSet) sendParams.ConfigurationSetName = configurationSet;
-      if (resolvedTenant) {
-        sendParams.Tags = [{ Name: "tenant_id", Value: resolvedTenant }];
-      }
+      
+      // SES Tags for tracking (metadata)
+      const tags = [];
+      if (resolvedTenant) tags.push({ Name: "tenant_id", Value: resolvedTenant });
+      if (campaignId) tags.push({ Name: "campaign_id", Value: campaignId });
+      if (customerId) tags.push({ Name: "customer_id", Value: customerId });
+      if (tags.length > 0) sendParams.Tags = tags;
 
       const result = await sesClient.send(new SendEmailCommand(sendParams));
-      console.log(`[SES] ✅ Sent messageId=${result.MessageId}`);
+      const messageId = result.MessageId;
+      console.log(`[SES] ✅ Sent messageId=${messageId}`);
 
-      // Log to email_logs (best-effort)
-      if (userId || resolvedTenant) {
+      // Log to email_logs and campaign_activities
+      if (resolvedTenant) {
         try {
           const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          
+          // Log in email_logs
           await sbAdmin.from("email_logs").insert({
             user_id: userId,
             tenant_id: resolvedTenant,
+            campaign_id: campaignId || null,
+            customer_id: customerId || null,
             to_email: Array.isArray(to) ? to.join(", ") : to,
             from_email: senderEmail,
             subject,
             body_html: html,
             status: "sent",
             sent_at: new Date().toISOString(),
-            aws_message_id: result.MessageId,
+            aws_message_id: messageId,
             configuration_set: configurationSet || null,
           });
+
+          // Log in campaign_activities if it's a campaign
+          if (campaignId && customerId) {
+            await sbAdmin.from("campaign_activities").upsert({
+              campaign_id: campaignId,
+              customer_id: customerId,
+              tenant_id: resolvedTenant,
+              channel: "email",
+              status: "sent",
+              sent_at: new Date().toISOString(),
+            }, { onConflict: "campaign_id, customer_id" });
+          }
         } catch (logErr) {
           console.error("[SES] log error:", logErr);
         }
       }
+
 
       return new Response(JSON.stringify({ success: true, messageId: result.MessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

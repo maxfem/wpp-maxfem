@@ -122,38 +122,59 @@ serve(async (req) => {
       const { error } = await supabase.from("email_events").insert(events);
       if (error) console.error("[ses-webhook] insert error:", error.message);
 
-      // Update email_logs counters / status
+      // Update email_logs and campaign_activities
       for (const ev of events) {
         const updates: any = { last_event_at: ev.timestamp };
-        if (ev.event_type === "Delivery") updates.status = "delivered";
+        const activityUpdates: any = {};
+
+        if (ev.event_type === "Delivery") {
+          updates.status = "delivered";
+          activityUpdates.delivered_at = ev.timestamp;
+          activityUpdates.status = "delivered";
+        }
         else if (ev.event_type === "Bounce") {
           updates.status = "bounced";
           updates.bounce_type = ev.bounce_type;
           updates.bounce_subtype = ev.bounce_subtype;
           updates.error_message = ev.diagnostic_code;
+          activityUpdates.status = "failed";
+          activityUpdates.error_message = ev.diagnostic_code || "Bounced";
         }
         else if (ev.event_type === "Complaint") {
           updates.status = "complained";
           updates.complaint_type = ev.complaint_type;
+          activityUpdates.status = "complained";
         }
         else if (ev.event_type === "Reject") {
           updates.status = "rejected";
           updates.error_message = "Rejected by SES";
+          activityUpdates.status = "failed";
+          activityUpdates.error_message = "Rejected by SES";
         }
 
         await supabase.from("email_logs").update(updates).eq("aws_message_id", messageId);
 
         if (ev.event_type === "Open") {
-          await supabase.rpc("exec_sql_safe").then(() => {}).catch(() => {});
-          // increment opens via raw query fallback
           const { data: log } = await supabase.from("email_logs").select("id, opens").eq("aws_message_id", messageId).maybeSingle();
           if (log) await supabase.from("email_logs").update({ opens: (log.opens || 0) + 1, last_event_at: ev.timestamp }).eq("id", log.id);
+          activityUpdates.read_at = ev.timestamp;
         }
+
         if (ev.event_type === "Click") {
           const { data: log } = await supabase.from("email_logs").select("id, clicks").eq("aws_message_id", messageId).maybeSingle();
           if (log) await supabase.from("email_logs").update({ clicks: (log.clicks || 0) + 1, last_event_at: ev.timestamp }).eq("id", log.id);
+          activityUpdates.clicked_at = ev.timestamp;
+        }
+
+        // Sync to campaign_activities if IDs are available
+        if (campaignId && customerId && Object.keys(activityUpdates).length > 0) {
+          await supabase.from("campaign_activities")
+            .update(activityUpdates)
+            .eq("campaign_id", campaignId)
+            .eq("customer_id", customerId);
         }
       }
+
     }
 
     return new Response(JSON.stringify({ ok: true, processed: events.length }), {

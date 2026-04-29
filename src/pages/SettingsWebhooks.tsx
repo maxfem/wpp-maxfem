@@ -145,45 +145,91 @@ export default function SettingsWebhooks() {
           </p>
         </div>
 
-        <div className="grid gap-6">
-          {WEBHOOKS.map((w) => (
-            <Card key={w.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{w.name}</CardTitle>
-                    <CardDescription>{w.description}</CardDescription>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => testWebhook(w)}
-                    disabled={testingId === w.id}
-                  >
-                    <Send className={`h-4 w-4 mr-2 ${testingId === w.id ? "animate-pulse" : ""}`} />
-                    Testar Agora
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground uppercase">Endpoint URL</label>
-                  <div className="flex gap-2">
-                    <Input 
-                      readOnly 
-                      value={`${baseUrl}/${w.endpoint}`} 
-                      className="bg-muted/50 font-mono text-xs"
-                    />
-                    <Button variant="secondary" size="icon" onClick={() => copyToClipboard(`${baseUrl}/${w.endpoint}`)}>
-                      <Copy className="h-4 w-4" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            {WEBHOOKS.map((w) => (
+              <Card key={w.id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{w.name}</CardTitle>
+                      <CardDescription>{w.description}</CardDescription>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => testWebhook(w)}
+                      disabled={testingId === w.id}
+                    >
+                      <Send className={`h-4 w-4 mr-2 ${testingId === w.id ? "animate-pulse" : ""}`} />
+                      Testar Agora
                     </Button>
                   </div>
-                </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase">Endpoint URL</label>
+                    <div className="flex gap-2">
+                      <Input 
+                        readOnly 
+                        value={`${baseUrl}/${w.endpoint}`} 
+                        className="bg-muted/50 font-mono text-xs"
+                      />
+                      <Button variant="secondary" size="icon" onClick={() => copyToClipboard(`${baseUrl}/${w.endpoint}`)}>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Dicas de Integração</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm text-muted-foreground">
+                <p>
+                  <strong>WhatsApp:</strong> Configure a URL acima no painel do Facebook Developers (Webhooks → WhatsApp Business Account). 
+                  A <i>Verify Token</i> é o próprio ID do seu Tenant.
+                </p>
+                <p>
+                  <strong>Shopify:</strong> Para rastrear abandono de carrinho, instale o script do Pixel (disponível em Configurações → Pixel) no seu <code>theme.liquid</code>.
+                </p>
+                <p>
+                  <strong>AWS SES:</strong> Configure uma notificação SNS para o endpoint acima para rastrear aberturas e cliques em tempo real.
+                </p>
               </CardContent>
             </Card>
-          ))}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Acompanhamento</CardTitle>
+                <CardDescription>Veja o processamento em tempo real</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/pixel"}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <span>Ver eventos do Pixel</span>
+                  </div>
+                  <Copy className="h-3 w-3 opacity-50" />
+                </Button>
+                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/activities"}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <span>Ver histórico de atividades</span>
+                  </div>
+                  <Copy className="h-3 w-3 opacity-50" />
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </AppLayout>
   );
 }
+

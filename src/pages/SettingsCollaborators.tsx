@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, UserPlus, Shield, Mail, Lock, User, Trash2, History, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Plus, UserPlus, Shield, Mail, Lock, User, Trash2, History, CheckCircle2, Edit2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -31,12 +31,14 @@ export default function SettingsCollaborators() {
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
+    user_id: "",
     name: "",
     email: "",
     password: "",
     role: "collaborator",
     permissions: [] as string[],
   });
+  const [isEditing, setIsEditing] = useState(false);
 
   const { data: collaborators, isLoading } = useQuery({
     queryKey: ["collaborators", currentTenant?.id],
@@ -86,7 +88,7 @@ export default function SettingsCollaborators() {
     onSuccess: () => {
       toast.success("Colaborador criado com sucesso! E-mail de convite enviado via SES.");
       setIsModalOpen(false);
-      setFormData({ name: "", email: "", password: "", role: "collaborator", permissions: [] });
+      setFormData({ user_id: "", name: "", email: "", password: "", role: "collaborator", permissions: [] });
       queryClient.invalidateQueries({ queryKey: ["collaborators"] });
       queryClient.invalidateQueries({ queryKey: ["collaborator-activities"] });
     },
@@ -112,6 +114,50 @@ export default function SettingsCollaborators() {
       queryClient.invalidateQueries({ queryKey: ["collaborators"] });
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const { data: res, error } = await supabase.functions.invoke("manage-collaborators", {
+        body: {
+          action: "update",
+          tenantId: currentTenant?.id,
+          userId: data.user_id,
+          collaboratorData: {
+            name: data.name,
+            role: data.role,
+            permissions: data.permissions,
+            password: data.password || undefined,
+          },
+        },
+      });
+      if (error) throw error;
+      return res;
+    },
+    onSuccess: () => {
+      toast.success("Colaborador atualizado com sucesso!");
+      setIsModalOpen(false);
+      setIsEditing(false);
+      setFormData({ user_id: "", name: "", email: "", password: "", role: "collaborator", permissions: [] });
+      queryClient.invalidateQueries({ queryKey: ["collaborators"] });
+      queryClient.invalidateQueries({ queryKey: ["collaborator-activities"] });
+    },
+    onError: (error: any) => {
+      toast.error(`Erro ao atualizar colaborador: ${error.message}`);
+    },
+  });
+
+  const handleEdit = (collab: any) => {
+    setFormData({
+      user_id: collab.user_id,
+      name: collab.profiles?.display_name || "",
+      email: collab.email || "",
+      password: "", // Senha vazia a menos que queira mudar
+      role: collab.role || "collaborator",
+      permissions: collab.permissions || [],
+    });
+    setIsEditing(true);
+    setIsModalOpen(true);
+  };
 
   const togglePermission = (id: string) => {
     setFormData((prev) => ({
@@ -144,9 +190,11 @@ export default function SettingsCollaborators() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Adicionar Colaborador</DialogTitle>
+                <DialogTitle>{isEditing ? "Editar Colaborador" : "Adicionar Colaborador"}</DialogTitle>
                 <DialogDescription>
-                  Preencha os dados abaixo. Um e-mail será enviado com as credenciais de acesso.
+                  {isEditing 
+                    ? "Atualize os dados do colaborador. Deixe a senha em branco para manter a atual." 
+                    : "Preencha os dados abaixo. Um e-mail será enviado com as credenciais de acesso."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -176,12 +224,13 @@ export default function SettingsCollaborators() {
                       className="pl-9"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      disabled={isEditing}
                     />
                   </div>
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="password">Senha Temporária</Label>
+                  <Label htmlFor="password">{isEditing ? "Nova Senha (opcional)" : "Senha Temporária"}</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -234,12 +283,16 @@ export default function SettingsCollaborators() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
+                <Button variant="outline" onClick={() => {
+                  setIsModalOpen(false);
+                  setIsEditing(false);
+                  setFormData({ user_id: "", name: "", email: "", password: "", role: "collaborator", permissions: [] });
+                }}>Cancelar</Button>
                 <Button 
-                  onClick={() => createMutation.mutate(formData)}
-                  disabled={createMutation.isPending || !formData.email || !formData.password || !formData.name}
+                  onClick={() => isEditing ? updateMutation.mutate(formData) : createMutation.mutate(formData)}
+                  disabled={createMutation.isPending || updateMutation.isPending || !formData.email || (!isEditing && !formData.password) || !formData.name}
                 >
-                  {createMutation.isPending ? "Criando..." : "Criar e Enviar Convite"}
+                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : (isEditing ? "Salvar Alterações" : "Criar e Enviar Convite")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -316,18 +369,28 @@ export default function SettingsCollaborators() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => {
-                              if(confirm("Tem certeza que deseja remover este colaborador?")) {
-                                deleteMutation.mutate(collab.user_id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-muted-foreground hover:text-primary"
+                              onClick={() => handleEdit(collab)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                if(confirm("Tem certeza que deseja remover este colaborador?")) {
+                                  deleteMutation.mutate(collab.user_id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

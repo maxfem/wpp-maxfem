@@ -23,7 +23,7 @@ const sections = [
 
   { title: "Atendimento", desc: "Configurações do inbox de suporte", icon: Headphones, path: null },
   { title: "Tags de Clientes", desc: "Tags para segmentação de clientes", icon: Tags, path: null },
-  { title: "Colaboradores", desc: "Gerenciar equipe e permissões", icon: UsersRound, path: null },
+  { title: "Colaboradores", desc: "Gerenciar equipe e permissões", icon: UsersRound, path: "/settings/collaborators" },
   { title: "Atributos Customizados", desc: "Campos extras no perfil do cliente", icon: SlidersHorizontal, path: null },
   { title: "Mapeamento de Status", desc: "Mapear status de pedidos da plataforma", icon: Map, path: null },
   { title: "Chaves de Acesso", desc: "API Keys para integração externa", icon: Key, path: null },

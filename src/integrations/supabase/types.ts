@@ -245,6 +245,44 @@ export type Database = {
           },
         ]
       }
+      collaborator_activities: {
+        Row: {
+          activity_type: string
+          created_at: string | null
+          description: string | null
+          id: string
+          metadata: Json | null
+          tenant_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          activity_type: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json | null
+          tenant_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json | null
+          tenant_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collaborator_activities_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_list_members: {
         Row: {
           added_at: string
@@ -1510,6 +1548,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          status: string | null
           updated_at: string
           user_id: string
         }
@@ -1518,6 +1557,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          status?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1526,6 +1566,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          status?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1535,6 +1576,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          permissions: Json | null
           role: Database["public"]["Enums"]["app_role"]
           tenant_id: string
           user_id: string
@@ -1542,6 +1584,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          permissions?: Json | null
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id: string
           user_id: string
@@ -1549,6 +1592,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          permissions?: Json | null
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id?: string
           user_id?: string

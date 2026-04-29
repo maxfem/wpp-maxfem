@@ -37,6 +37,7 @@ const CRMPlanner = lazy(() => import("./pages/CRMPlanner"));
 const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
 const SettingsPixel = lazy(() => import("./pages/SettingsPixel"));
 const PixelDashboard = lazy(() => import("./pages/PixelDashboard"));
+const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
 
 const queryClient = new QueryClient();
 

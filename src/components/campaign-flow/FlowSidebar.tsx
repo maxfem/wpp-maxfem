@@ -39,6 +39,10 @@ export const AUTOMATION_TRIGGERS = [
   ]},
   { group: "Carrinho abandonado", items: [
     { value: "cart_abandoned", label: "Carrinho abandonado criado", description: "Disparado quando houver novo carrinho abandonado" },
+    { value: "cart_abandonment_pixel", label: "Carrinho abandonado (Pixel)", description: "Cliente identificado iniciou checkout no site e não comprou" },
+  ]},
+  { group: "Pixel de Rastreamento", items: [
+    { value: "browse_abandonment", label: "Navegação abandonada", description: "Cliente identificado viu produtos no site mas não comprou" },
   ]},
   { group: "Número de rastreio", items: [
     { value: "tracking_created", label: "Número de rastreio criado", description: "Disparado quando houver novo número de rastreio" },

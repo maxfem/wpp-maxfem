@@ -1,110 +1,145 @@
-## Diagnóstico
+## Pixel de Rastreamento Maxfem para Shopify (e qualquer site)
 
-Encontrei **3 problemas críticos** na integração atual:
-
-### 1. Credenciais não salvas no banco (causa raiz do "send" nunca funcionar)
-A configuração ativa em `integrations` (provider=`aws`) contém **apenas** `sender_email`:
-```
-{ sender_email: "marketing@maxfem.com.br", updated_at: "..." }
-```
-Faltam `access_key`, `secret_key` e `region`. O modo `send` (usado por campanhas/EmailMarketing) lê do banco e falha silenciosamente. Apenas o modo `test` funciona porque recebe credenciais direto do formulário.
-
-### 2. Erro `SignatureDoesNotMatch` no teste
-A Secret Access Key digitada no formulário está incorreta (espaço, caractere faltando ou key antiga). A AWS valida assinatura HMAC-SHA256 e rejeita.
-
-### 3. Arquitetura insegura e confusa
-Hoje as credenciais ficam:
-- No formulário do usuário (digitadas toda vez)
-- No banco em texto plano (quando salvas)
-- E também existem como secrets do projeto (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`)
-
-Três fontes da verdade = bugs garantidos. A produção exige uma única fonte confiável.
+Criar um pixel JavaScript próprio (estilo Meta Pixel / RD Station) que, instalado na Shopify (ou em qualquer loja), identifica visitantes, registra páginas vistas e produtos visualizados, e dispara automações de remarketing por **E-mail** (SES) e **WhatsApp** (quando houver telefone conhecido).
 
 ---
 
-## Solução proposta
+### 1. Banco de dados (nova migration)
 
-### Mudança arquitetural
-Passar a usar **exclusivamente os secrets do projeto** (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) como fonte única para credenciais. Isso é mais seguro (nada em texto plano no banco), elimina divergência entre formulário/banco/secrets, e funciona automaticamente para qualquer chamada (campanhas, automações, testes).
+Aproveitar o que existe (`customers`, `tracked_links`, `link_clicks`, `automation_queue`) e adicionar:
 
-O banco passa a guardar apenas:
-- `sender_email` (qual remetente verificado usar)
-- `is_active` (liga/desliga)
-- `last_validated_at` + `last_validation_checks` (auditoria)
+- **`pixel_visitors`** — identidade anônima do navegador
+  - `id`, `tenant_id`, `visitor_id` (uuid gerado no browser, salvo em cookie/localStorage `mxf_vid`)
+  - `customer_id` (nullable — preenchido quando o visitante é identificado)
+  - `email`, `phone`, `document` (nullable)
+  - `first_seen_at`, `last_seen_at`, `user_agent`, `ip`, `country`, `city`
+  - Índice único `(tenant_id, visitor_id)`
 
-### Passo a passo
+- **`pixel_events`** — eventos brutos
+  - `id`, `tenant_id`, `visitor_id`, `customer_id` (nullable)
+  - `event_type` (`page_view`, `product_view`, `add_to_cart`, `checkout_started`, `purchase`, `identify`, `custom`)
+  - `url`, `referrer`, `page_title`
+  - `product_id`, `product_name`, `product_price`, `product_image`, `product_url`, `variant_id`, `currency`
+  - `cart_value`, `order_id` (para purchase)
+  - `metadata` (jsonb), `session_id`, `created_at`
+  - Índices: `(tenant_id, visitor_id, created_at desc)`, `(tenant_id, event_type, created_at desc)`, `(tenant_id, customer_id)`
 
-**1. Reescrever `send-email-ses` edge function**
-- Sempre ler `accessKeyId`, `secretAccessKey`, `region` de `Deno.env.get(...)`
-- Validar presença dos 3 secrets na entrada — se faltar, retornar erro claro
-- 3 modos: `validate`, `test`, `send`
-  - `validate`: STS GetCallerIdentity + GetSendQuota + verificar identidade do `senderEmail` enviado
-  - `test`: envia e-mail de teste para destinatário fornecido
-  - `send`: lê `sender_email` do banco e envia (usado por campanhas)
-- Detectar Sandbox via `Max24HourSend === 200`
-- Logging estruturado para debug em produção
+- **`pixel_sessions`** — agregado por sessão (para abandono de navegação)
+  - `id`, `tenant_id`, `visitor_id`, `customer_id`, `started_at`, `last_activity_at`, `ended` bool, `pages_viewed`, `products_viewed` (jsonb array dos últimos N), `cart_value`
 
-**2. Reescrever página `SettingsAWS.tsx`**
-- Remover campos de Access Key e Secret Key do formulário
-- Mostrar status dos secrets: "AWS_ACCESS_KEY_ID configurado ✓" / "Não configurado ✗"
-- Se faltar secret, mostrar instrução clara de como adicionar via Lovable
-- Manter apenas: select de Região (apenas exibe `AWS_REGION` atual) + input de E-mail Remetente
-- Botão "Validar conexão" → chama modo `validate`
-- Botão "Enviar e-mail de teste" → chama modo `test` para o e-mail do usuário logado
-- Botão "Salvar e ativar" → grava só `sender_email` + `is_active=true`
-- Mostrar Sandbox/Produção baseado na quota retornada
+- RLS: tenant isolation em todas (somente a Edge Function de ingestão escreve via service role; o frontend do CRM faz select por `tenant_id`).
 
-**3. Atualizar/garantir secrets**
-- Confirmar que `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_REGION` estão preenchidos com valores corretos. Se a Secret Key atual está dando `SignatureDoesNotMatch`, pedir nova key gerada no IAM (40 caracteres exatos, sem espaços).
-
-**4. Atualizar `EmailMarketing.tsx`**
-- Garantir que continua chamando modo `send` sem passar credenciais (já está correto)
-- Validar que se a integração estiver inativa, exibe aviso para o usuário
-
-**5. Migrar config existente no banco**
-- Limpar `access_key`/`secret_key` do `integrations.config` (caso existam) por segurança
-- Manter `sender_email` e `is_active`
+- Trigger: ao inserir `pixel_events` com `event_type='identify'` e email/phone, chamar função que faz **match com `customers`** (por email > phone > document) e propaga `customer_id` retroativamente para todos os `pixel_visitors`/`pixel_events` daquele `visitor_id`.
 
 ---
 
-## Detalhes técnicos
+### 2. Edge Functions
 
-**Edge function — mudança chave:**
-```ts
-async function resolveCredentials(payload) {
-  const accessKeyId = Deno.env.get("AWS_ACCESS_KEY_ID")?.trim();
-  const secretAccessKey = Deno.env.get("AWS_SECRET_ACCESS_KEY")?.trim();
-  const region = Deno.env.get("AWS_REGION")?.trim() || "us-east-1";
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error("Secrets AWS não configurados no projeto.");
-  }
-  // senderEmail vem do payload (validate/test) ou do banco (send)
-  ...
-}
-```
+- **`pixel-collect`** (verify_jwt = false, público)
+  - Recebe `POST` do pixel JS com batch de eventos
+  - Valida `tenant_key` (chave pública por tenant — adicionar coluna `pixel_public_key` em `tenants`)
+  - Faz upsert em `pixel_visitors`, insere `pixel_events`, atualiza `pixel_sessions`
+  - Lookup de IP → país/cidade (via header Cloudflare ou serviço grátis)
+  - CORS aberto
 
-**Banco — limpar campos sensíveis:**
-```sql
-UPDATE integrations
-SET config = jsonb_build_object(
-  'sender_email', config->>'sender_email',
-  'updated_at', now()
-)
-WHERE provider = 'aws';
-```
+- **`pixel-script`** (verify_jwt = false, público)
+  - Serve o JS do pixel dinamicamente: `GET /functions/v1/pixel-script?key=PUB_KEY`
+  - Retorna o bundle minificado com a `tenant_key` embutida e `endpoint` apontando para `pixel-collect`
 
-**Secret check no front:**
-Adicionar endpoint `mode: "status"` que retorna `{ has_access_key: bool, has_secret_key: bool, region: string }` (sem expor valores) para a UI mostrar o estado.
+- **`pixel-abandonment-cron`** (cron a cada 15min)
+  - Detecta sessões com `last_activity_at` entre 30min e 24h atrás, com `products_viewed > 0` e SEM `purchase` posterior
+  - Para visitantes com `customer_id` (identificados): cria item em `automation_queue` com trigger `browse_abandonment` ou `cart_abandonment` (se houve `checkout_started`)
+  - Garantir deduplicação via unique index na queue (já existe padrão)
 
 ---
 
-## Resultado esperado
+### 3. O Pixel JavaScript (`public/pixel/mxf.js` + servido pela edge)
 
-- ✅ Campanhas e EmailMarketing enviam e-mails sem erro
-- ✅ Sem credenciais em texto plano no banco
-- ✅ Uma única fonte da verdade (secrets do projeto)
-- ✅ Erros claros se algo falhar (secret faltando, identidade não verificada, sandbox, etc.)
-- ✅ Validação completa (STS + identidade + quota) antes de ativar
-- ✅ Detecção automática de Sandbox vs Produção
+Funções expostas em `window.mxf`:
+```js
+mxf('init', 'PUB_KEY')                          // auto no script
+mxf('page')                                      // page_view automático
+mxf('identify', { email, phone, name, document })// quando o cliente loga/checkout
+mxf('product', { id, name, price, image, url })  // product_view
+mxf('cart', { value, items })                    // add_to_cart
+mxf('checkout', { value, items })                // checkout_started
+mxf('purchase', { order_id, value, items })      // purchase
+mxf('track', 'custom_event', {...})              // custom
+```
 
-Após sua aprovação, vou implementar tudo e te pedir para confirmar os valores corretos da Access Key e Secret Key (caso a atual esteja gerando `SignatureDoesNotMatch`).
+Características:
+- Cookie `mxf_vid` (1 ano) + fallback `localStorage`
+- SPA-aware: hooks em `history.pushState` e `popstate`
+- Batch + `navigator.sendBeacon` no unload
+- Detecção automática Shopify: lê `window.ShopifyAnalytics`/`Shopify.checkout` para extrair `email`, `order_id`, `cart`
+- Parse de UTMs e atribuição persistente
+
+---
+
+### 4. Integração Shopify
+
+Página nova **`/settings/pixel`**:
+- Mostra `tenant.pixel_public_key` (gera se não existir)
+- Snippet pronto para colar no `theme.liquid` antes de `</head>`:
+  ```html
+  <script async src="https://<projeto>.functions.supabase.co/pixel-script?key=PUB_KEY"></script>
+  ```
+- Snippet alternativo via **Shopify Web Pixel** (Customer Events) com extração nativa de `product_viewed`, `checkout_started`, `checkout_completed`
+- Botão "Testar instalação" — chama edge que verifica último evento dos últimos 5 min
+- Documentação inline para Yampi, Nuvemshop, sites custom
+
+---
+
+### 5. Triggers de Automação
+
+Em `Automations` adicionar 2 novos gatilhos no seletor:
+
+- **Navegação Abandonada** (`browse_abandonment`)
+  - Cliente identificado viu produto(s) X minutos atrás e não comprou
+  - Variáveis disponíveis no template: `{{produto_nome}}`, `{{produto_url}}`, `{{produto_imagem}}`, `{{produto_preco}}`
+
+- **Carrinho Abandonado via Pixel** (`cart_abandonment_pixel`)
+  - Independente da Yampi — funciona em qualquer loja com pixel
+  - Variáveis: `{{carrinho_valor}}`, `{{carrinho_itens}}`, `{{checkout_url}}` se disponível
+
+Ambos podem ramificar para nó `sendEmail` (SES) e/ou `sendWhatsApp` condicionado a `phone IS NOT NULL` e janela de 24h.
+
+2 templates prontos em **Automações Prontas**:
+- "Você esteve no nosso site" (e-mail + WhatsApp)
+- "Esqueceu seu carrinho?" (e-mail + WhatsApp)
+
+---
+
+### 6. UI/Dashboard
+
+Nova página **`/pixel`** (sidebar em "Tracking"):
+- KPIs: visitantes únicos hoje/7d/30d, identificados vs anônimos, taxa identificação, produtos mais vistos, abandono detectado
+- Tabela de eventos recentes com filtro por `visitor_id`/`customer_id`
+- Funil: visita → produto visto → carrinho → checkout → compra
+- Linha do tempo de cada visitante (clicar abre drawer com todos os eventos)
+
+---
+
+### 7. Atribuição de conversão
+
+Estender o trigger de `orders` (já existe pra link click): quando uma order chega, procurar por `pixel_events` recentes (24h) do mesmo `customer_id` com `event_type='product_view'` e marcar `attributed_to_pixel=true` na `campaign_activities` se houve campanha de remarketing enviada antes.
+
+---
+
+### Stack técnico
+- Supabase (Postgres + RLS + 3 Edge Functions + cron)
+- Pixel JS vanilla (~5KB minificado, zero dependências)
+- Frontend React/TypeScript já existente
+- E-mail via SES (`campaign-executor` já implementado)
+- WhatsApp via `whatsapp-send` (respeitando janela 24h e templates HSM)
+
+---
+
+### Entregáveis desta fase
+1. Migration com 3 tabelas + RLS + trigger de identificação
+2. 3 Edge Functions (`pixel-collect`, `pixel-script`, `pixel-abandonment-cron`)
+3. Pixel JS (`public/pixel/mxf.js`)
+4. Página `/settings/pixel` com snippet e teste
+5. 2 novos triggers em Automations + 2 templates prontos
+6. Página `/pixel` com dashboard e timeline
+7. Atribuição automática de orders ao pixel

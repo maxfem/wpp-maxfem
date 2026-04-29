@@ -12,10 +12,12 @@ import {
   Map,
   Key,
   Webhook,
+  Radar,
 } from "lucide-react";
 
 const sections = [
   { title: "Integrações", desc: "Conectores com e-commerces, ERPs e canais", icon: Plug, path: "/settings/integrations" },
+  { title: "Pixel de Rastreamento", desc: "Pixel para Shopify e qualquer site — remarketing automático", icon: Radar, path: "/settings/pixel" },
   { title: "WhatsApp", desc: "Números e modelos de mensagem HSM", icon: MessageCircle, path: "/settings/whatsapp" },
   { title: "Instagram", desc: "Conectar contas para DMs, comentários e Lives", icon: Instagram, path: "/settings/instagram" },
 

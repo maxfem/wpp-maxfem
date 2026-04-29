@@ -234,6 +234,57 @@ serve(async (req) => {
         });
     }
 
+    if (action === "update") {
+      const { userId, collaboratorData: updateData } = payload;
+      const { name, role, permissions, password } = updateData;
+
+      if (!userId || !tenantId) {
+        return jsonResponse({ error: "UserId e TenantId são obrigatórios para atualizar." }, 400);
+      }
+
+      // 1. Update Profile (Name)
+      if (name) {
+        const { error: pErr } = await supabaseAdmin
+          .from("profiles")
+          .update({ display_name: name })
+          .eq("user_id", userId);
+        if (pErr) throw pErr;
+      }
+
+      // 2. Update Membership (Role/Permissions)
+      if (role || permissions) {
+        const updateObj: any = {};
+        if (role) updateObj.role = role === "admin" ? "admin" : "collaborator";
+        if (permissions) updateObj.permissions = permissions;
+
+        const { error: mErr } = await supabaseAdmin
+          .from("tenant_members")
+          .update(updateObj)
+          .eq("user_id", userId)
+          .eq("tenant_id", tenantId);
+        if (mErr) throw mErr;
+      }
+
+      // 3. Update Password in Auth
+      if (password) {
+        const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+          password: password
+        });
+        if (authErr) throw authErr;
+      }
+
+      // 4. Log Activity
+      await supabaseAdmin.from("collaborator_activities").insert({
+        user_id: userId,
+        tenant_id: tenantId,
+        activity_type: 'user_updated',
+        description: `Colaborador atualizado. Alterações: ${[name && 'nome', role && 'função', permissions && 'permissões', password && 'senha'].filter(Boolean).join(', ')}.`,
+        metadata: { updateData }
+      });
+
+      return jsonResponse({ success: true });
+    }
+
     return new Response(JSON.stringify({ error: "Ação inválida" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,

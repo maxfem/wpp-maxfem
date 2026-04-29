@@ -35,6 +35,8 @@ const SettingsAWS = lazy(() => import("./pages/SettingsAWS"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
 const CRMPlanner = lazy(() => import("./pages/CRMPlanner"));
 const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
+const SettingsPixel = lazy(() => import("./pages/SettingsPixel"));
+const PixelDashboard = lazy(() => import("./pages/PixelDashboard"));
 
 const queryClient = new QueryClient();
 
@@ -84,6 +86,8 @@ const App = () => (
                   <Route path="/activities" element={<ProtectedRoute><Activities /></ProtectedRoute>} />
                   <Route path="/atendimento" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
                   <Route path="/email-marketing" element={<ProtectedRoute><EmailMarketing /></ProtectedRoute>} />
+                  <Route path="/pixel" element={<ProtectedRoute><PixelDashboard /></ProtectedRoute>} />
+                  <Route path="/settings/pixel" element={<ProtectedRoute><SettingsPixel /></ProtectedRoute>} />
                   <Route path="/chat" element={<Navigate to="/atendimento" replace />} />
                   <Route path="/templates" element={<ProtectedRoute><MessageTemplates /></ProtectedRoute>} />
                   <Route path="/lists" element={<ProtectedRoute><Lists /></ProtectedRoute>} />

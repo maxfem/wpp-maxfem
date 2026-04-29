@@ -38,6 +38,7 @@ const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
 const SettingsPixel = lazy(() => import("./pages/SettingsPixel"));
 const PixelDashboard = lazy(() => import("./pages/PixelDashboard"));
 const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
+const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
 
 const queryClient = new QueryClient();
 
@@ -104,6 +105,7 @@ const App = () => (
                    <Route path="/settings/instagram" element={<ProtectedRoute><SettingsInstagram /></ProtectedRoute>} />
                    <Route path="/settings/integrations/aws" element={<ProtectedRoute><SettingsAWS /></ProtectedRoute>} />
                    <Route path="/settings/webhooks" element={<ProtectedRoute><SettingsWebhooks /></ProtectedRoute>} />
+                   <Route path="/settings/collaborators" element={<ProtectedRoute><SettingsCollaborators /></ProtectedRoute>} />
                   <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsOfUse />} />

@@ -157,7 +157,7 @@ serve(async (req) => {
                 </ul>
                 <p>Sua função: <strong>${selectedRole === 'admin' ? 'Administrador' : 'Colaborador'}</strong></p>
                 <p style="margin-top: 30px;">
-                  <a href="${req.headers.get("origin") || ""}/auth" style="background-color: #ED2B75; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Acessar Plataforma</a>
+                  <a href="https://wpp.maxapps.com.br/auth" style="background-color: #ED2B75; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Acessar Plataforma</a>
                 </p>
               </div>
             `

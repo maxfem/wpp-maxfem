@@ -2,3 +2,9 @@ project_id = "poukhwsbskcvwroeqoct"
 
 [functions.ses-events-webhook]
 verify_jwt = false
+
+[functions.pixel-collect]
+verify_jwt = false
+
+[functions.pixel-script]
+verify_jwt = false

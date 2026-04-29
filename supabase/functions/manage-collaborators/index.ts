@@ -130,12 +130,14 @@ serve(async (req) => {
 
       if (memberError) throw memberError;
 
-      // 5. Cleanup user_roles if needed (collaborators shouldn't necessarily be global admins)
-      // If role is admin in this tenant, they might still not be global admin
-      await supabaseAdmin
-        .from("user_roles")
-        .delete()
-        .eq("user_id", authUser.user.id);
+      // 5. Cleanup user_roles only for users created by this flow, because the signup trigger
+      // grants a global admin role that collaborators should not receive automatically.
+      if (createdNewUser) {
+        await supabaseAdmin
+          .from("user_roles")
+          .delete()
+          .eq("user_id", authUser.user.id);
+      }
 
 
       // 4. Send invitation email via SES (calling the other function or reusing logic)
@@ -148,12 +150,12 @@ serve(async (req) => {
               <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                 <h2 style="color: #ED2B75;">Olá, ${name}!</h2>
                 <p>Você foi convidado para colaborar no Maxfem CRM.</p>
-                <p>Seus dados de acesso:</p>
+                <p>${createdNewUser ? 'Seus dados de acesso:' : 'Seu usuário já existia. Use sua senha atual para acessar.'}</p>
                 <ul>
                   <li><strong>E-mail:</strong> ${email}</li>
-                  <li><strong>Senha:</strong> ${password}</li>
+                  ${createdNewUser ? `<li><strong>Senha:</strong> ${password}</li>` : ''}
                 </ul>
-                <p>Sua função: <strong>${role === 'admin' ? 'Administrador' : 'Colaborador'}</strong></p>
+                <p>Sua função: <strong>${selectedRole === 'admin' ? 'Administrador' : 'Colaborador'}</strong></p>
                 <p style="margin-top: 30px;">
                   <a href="${req.headers.get("origin") || ""}/auth" style="background-color: #ED2B75; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Acessar Plataforma</a>
                 </p>
@@ -170,14 +172,12 @@ serve(async (req) => {
       await supabaseAdmin.from("collaborator_activities").insert({
         user_id: authUser.user.id,
         tenant_id: tenantId,
-        activity_type: 'user_created',
-        description: `Usuário ${name} (${email}) criado com a função ${role}.`,
-        metadata: { permissions }
+        activity_type: createdNewUser ? 'user_created' : 'user_linked',
+        description: `Usuário ${name} (${email}) ${createdNewUser ? 'criado' : 'vinculado'} com a função ${selectedRole}.`,
+        metadata: { permissions, createdNewUser }
       });
 
-      return new Response(JSON.stringify({ success: true, user: authUser.user }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ success: true, user: authUser.user, createdNewUser });
     }
 
     if (action === "list") {

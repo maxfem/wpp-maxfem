@@ -31,17 +31,31 @@ serve(async (req) => {
 
       if (authError) throw authError;
 
-      // 2. Create profile
+      // 2. Upsert profile (trigger handle_new_user may have already created one)
       const { error: profileError } = await supabaseAdmin
         .from("profiles")
-        .insert([{
-          id: authUser.user.id,
-          user_id: authUser.user.id,
-          display_name: name,
-          status: 'active'
-        }]);
+        .upsert(
+          [{
+            user_id: authUser.user.id,
+            display_name: name,
+            status: 'active'
+          }],
+          { onConflict: 'user_id' }
+        );
 
       if (profileError) throw profileError;
+
+      // 2b. Remove auto-created tenant memberships from the trigger (we'll set the correct one below)
+      await supabaseAdmin
+        .from("tenant_members")
+        .delete()
+        .eq("user_id", authUser.user.id);
+
+      // 2c. Remove user_roles auto-set as admin (collaborator shouldn't be global admin)
+      await supabaseAdmin
+        .from("user_roles")
+        .delete()
+        .eq("user_id", authUser.user.id);
 
       // 3. Create tenant member with role and permissions
       const { error: memberError } = await supabaseAdmin

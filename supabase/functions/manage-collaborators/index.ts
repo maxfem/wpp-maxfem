@@ -31,7 +31,7 @@ serve(async (req) => {
 
       if (authError) throw authError;
 
-      // 2. Upsert profile (trigger handle_new_user may have already created one)
+      // 2. We use upsert for everything to handle the race condition with handle_new_user trigger
       const { error: profileError } = await supabaseAdmin
         .from("profiles")
         .upsert(
@@ -45,29 +45,50 @@ serve(async (req) => {
 
       if (profileError) throw profileError;
 
-      // 2b. Remove auto-created tenant memberships from the trigger (we'll set the correct one below)
-      await supabaseAdmin
+      // 3. Ensure the user is a member of the CORRECT tenant with the CORRECT role/permissions
+      // If the trigger created a different tenant/membership, we delete it to keep it clean.
+      
+      // First, get any auto-created tenant_id from the trigger so we can potentially cleanup the auto-created tenant too
+      const { data: autoMembers } = await supabaseAdmin
         .from("tenant_members")
-        .delete()
+        .select("tenant_id")
         .eq("user_id", authUser.user.id);
 
-      // 2c. Remove user_roles auto-set as admin (collaborator shouldn't be global admin)
+      const autoTenantIds = (autoMembers ?? []).map(m => m.tenant_id).filter(id => id !== tenantId);
+
+      // Clean up auto-created memberships
+      if (autoTenantIds.length > 0) {
+        await supabaseAdmin
+          .from("tenant_members")
+          .delete()
+          .eq("user_id", authUser.user.id)
+          .in("tenant_id", autoTenantIds);
+          
+        // Optional: delete the auto-created tenants themselves if they are empty
+        // for (const id of autoTenantIds) {
+        //   await supabaseAdmin.from("tenants").delete().eq("id", id);
+        // }
+      }
+
+      // 4. Create or Update the intended membership
+      const { error: memberError } = await supabaseAdmin
+        .from("tenant_members")
+        .upsert([{
+          tenant_id: tenantId,
+          user_id: authUser.user.id,
+          role: role || 'collaborator',
+          permissions: permissions || []
+        }], { onConflict: 'tenant_id,user_id' });
+
+      if (memberError) throw memberError;
+
+      // 5. Cleanup user_roles if needed (collaborators shouldn't necessarily be global admins)
+      // If role is admin in this tenant, they might still not be global admin
       await supabaseAdmin
         .from("user_roles")
         .delete()
         .eq("user_id", authUser.user.id);
 
-      // 3. Create tenant member with role and permissions
-      const { error: memberError } = await supabaseAdmin
-        .from("tenant_members")
-        .insert([{
-          tenant_id: tenantId,
-          user_id: authUser.user.id,
-          role: role || 'collaborator',
-          permissions: permissions || []
-        }]);
-
-      if (memberError) throw memberError;
 
       // 4. Send invitation email via SES (calling the other function or reusing logic)
       try {

@@ -103,6 +103,7 @@ const App = () => (
                   <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
                    <Route path="/settings/instagram" element={<ProtectedRoute><SettingsInstagram /></ProtectedRoute>} />
                    <Route path="/settings/integrations/aws" element={<ProtectedRoute><SettingsAWS /></ProtectedRoute>} />
+                   <Route path="/settings/webhooks" element={<ProtectedRoute><SettingsWebhooks /></ProtectedRoute>} />
                   <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsOfUse />} />

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { 
   Activity, 
   MessageSquare, 
@@ -14,8 +15,19 @@ import {
   Eye, 
   MousePointerClick,
   TrendingUp,
-  User
+  User,
+  Search,
+  XCircle
 } from "lucide-react";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { formatSP, localeSP } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -31,12 +43,16 @@ const statusConfig: Record<string, { label: string; icon: any; color: string }> 
 
 export default function Activities() {
   const { currentTenant } = useAuth();
+  const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
 
   const { data: activities, isLoading } = useQuery({
-    queryKey: ["all-activities", currentTenant?.id],
+    queryKey: ["all-activities", currentTenant?.id, channelFilter, statusFilter, searchFilter],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const { data, error } = await supabase
+      
+      let query = supabase
         .from("campaign_activities")
         .select(`
           *,
@@ -46,12 +62,45 @@ export default function Activities() {
         .eq("tenant_id", currentTenant.id)
         .order("created_at", { ascending: false })
         .limit(100);
+
+      if (channelFilter !== "all") {
+        query = query.eq("channel", channelFilter);
+      }
+
+      if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+
+      // Note: Search filter on joined tables (customers) is tricky with PostgREST 
+      // simple filters, but we can filter the results if needed, or use a more complex query.
+      // For now, let's keep it simple and filter by status and channel.
+      
+      const { data, error } = await query;
       
       if (error) throw error;
-      return data || [];
+      
+      let filteredData = data || [];
+      
+      if (searchFilter) {
+        const lowerSearch = searchFilter.toLowerCase();
+        filteredData = filteredData.filter((a: any) => 
+          a.customers?.name?.toLowerCase().includes(lowerSearch) ||
+          a.customers?.email?.toLowerCase().includes(lowerSearch) ||
+          a.customers?.phone?.toLowerCase().includes(lowerSearch) ||
+          a.campaigns?.name?.toLowerCase().includes(lowerSearch)
+        );
+      }
+
+      return filteredData;
     },
     enabled: !!currentTenant,
   });
+
+  const clearFilters = () => {
+    setChannelFilter("all");
+    setStatusFilter("all");
+    setSearchFilter("");
+  };
 
   return (
     <AppLayout>
@@ -63,6 +112,66 @@ export default function Activities() {
               Log de execuções e interações em tempo real
             </p>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-4 items-end bg-card p-4 rounded-lg border shadow-sm">
+          <div className="space-y-1.5 flex-1 min-w-[200px]">
+            <label className="text-xs font-medium text-muted-foreground ml-1">Buscar cliente ou campanha</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Ex: João, Promoção..."
+                className="pl-9"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5 w-[180px]">
+            <label className="text-xs font-medium text-muted-foreground ml-1">Canal</label>
+            <Select value={channelFilter} onValueChange={setChannelFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos os canais" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os canais</SelectItem>
+                <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                <SelectItem value="email">E-mail</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5 w-[180px]">
+            <label className="text-xs font-medium text-muted-foreground ml-1">Status</label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos os status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
+                {Object.entries(statusConfig).map(([key, config]) => (
+                  <SelectItem key={key} value={key}>
+                    <div className="flex items-center gap-2">
+                      <config.icon className="h-4 w-4" />
+                      {config.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(channelFilter !== "all" || statusFilter !== "all" || searchFilter !== "") && (
+            <Button 
+              variant="ghost" 
+              onClick={clearFilters}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Limpar
+            </Button>
+          )}
         </div>
 
         <Card>

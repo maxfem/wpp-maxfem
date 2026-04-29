@@ -113,6 +113,8 @@ export default function SettingsCollaborators() {
       toast.success("Colaborador removido.");
       queryClient.invalidateQueries({ queryKey: ["collaborators"] });
     },
+  });
+
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const { data: res, error } = await supabase.functions.invoke("manage-collaborators", {

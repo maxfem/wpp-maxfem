@@ -27,7 +27,7 @@ const sections = [
   { title: "Atributos Customizados", desc: "Campos extras no perfil do cliente", icon: SlidersHorizontal, path: null },
   { title: "Mapeamento de Status", desc: "Mapear status de pedidos da plataforma", icon: Map, path: null },
   { title: "Chaves de Acesso", desc: "API Keys para integração externa", icon: Key, path: null },
-  { title: "Webhooks", desc: "Endpoints para notificações push", icon: Webhook, path: null },
+  { title: "Webhooks", desc: "Endpoints para notificações push e testes", icon: Webhook, path: "/settings/webhooks" },
 ];
 
 export default function SettingsPage() {

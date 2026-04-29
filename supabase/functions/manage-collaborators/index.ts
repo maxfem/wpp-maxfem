@@ -98,19 +98,42 @@ serve(async (req) => {
     }
 
     if (action === "list") {
-      const { data, error } = await supabaseAdmin
+      const { data: members, error } = await supabaseAdmin
         .from("tenant_members")
-        .select(`
-          user_id,
-          role,
-          permissions,
-          profiles:user_id (id, display_name, status)
-        `)
+        .select("user_id, role, permissions")
         .eq("tenant_id", tenantId);
 
       if (error) throw error;
 
-      return new Response(JSON.stringify({ success: true, collaborators: data }), {
+      const userIds = (members ?? []).map((m: any) => m.user_id);
+      let profilesMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: profiles, error: pErr } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id, display_name, status, avatar_url")
+          .in("user_id", userIds);
+        if (pErr) throw pErr;
+        profilesMap = Object.fromEntries((profiles ?? []).map((p: any) => [p.user_id, p]));
+      }
+
+      // Fetch emails from auth
+      const emailsMap: Record<string, string> = {};
+      await Promise.all(
+        userIds.map(async (uid: string) => {
+          const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
+          if (u?.user?.email) emailsMap[uid] = u.user.email;
+        })
+      );
+
+      const collaborators = (members ?? []).map((m: any) => ({
+        user_id: m.user_id,
+        role: m.role,
+        permissions: m.permissions,
+        email: emailsMap[m.user_id] ?? null,
+        profiles: profilesMap[m.user_id] ?? null,
+      }));
+
+      return new Response(JSON.stringify({ success: true, collaborators }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

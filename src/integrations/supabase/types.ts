@@ -1285,6 +1285,225 @@ export type Database = {
           },
         ]
       }
+      pixel_events: {
+        Row: {
+          cart_value: number | null
+          created_at: string
+          currency: string | null
+          customer_id: string | null
+          event_type: string
+          id: string
+          ip: string | null
+          metadata: Json
+          order_id: string | null
+          page_title: string | null
+          product_id: string | null
+          product_image: string | null
+          product_name: string | null
+          product_price: number | null
+          product_url: string | null
+          referrer: string | null
+          session_id: string | null
+          tenant_id: string
+          url: string | null
+          user_agent: string | null
+          variant_id: string | null
+          visitor_id: string
+        }
+        Insert: {
+          cart_value?: number | null
+          created_at?: string
+          currency?: string | null
+          customer_id?: string | null
+          event_type: string
+          id?: string
+          ip?: string | null
+          metadata?: Json
+          order_id?: string | null
+          page_title?: string | null
+          product_id?: string | null
+          product_image?: string | null
+          product_name?: string | null
+          product_price?: number | null
+          product_url?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          tenant_id: string
+          url?: string | null
+          user_agent?: string | null
+          variant_id?: string | null
+          visitor_id: string
+        }
+        Update: {
+          cart_value?: number | null
+          created_at?: string
+          currency?: string | null
+          customer_id?: string | null
+          event_type?: string
+          id?: string
+          ip?: string | null
+          metadata?: Json
+          order_id?: string | null
+          page_title?: string | null
+          product_id?: string | null
+          product_image?: string | null
+          product_name?: string | null
+          product_price?: number | null
+          product_url?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          tenant_id?: string
+          url?: string | null
+          user_agent?: string | null
+          variant_id?: string | null
+          visitor_id?: string
+        }
+        Relationships: []
+      }
+      pixel_sessions: {
+        Row: {
+          abandonment_processed: boolean
+          cart_items: Json | null
+          cart_value: number | null
+          checkout_started: boolean
+          checkout_url: string | null
+          created_at: string
+          customer_id: string | null
+          ended: boolean
+          id: string
+          last_activity_at: string
+          metadata: Json
+          pages_viewed: number
+          products_viewed: Json
+          purchased: boolean
+          session_key: string
+          started_at: string
+          tenant_id: string
+          updated_at: string
+          visitor_id: string
+        }
+        Insert: {
+          abandonment_processed?: boolean
+          cart_items?: Json | null
+          cart_value?: number | null
+          checkout_started?: boolean
+          checkout_url?: string | null
+          created_at?: string
+          customer_id?: string | null
+          ended?: boolean
+          id?: string
+          last_activity_at?: string
+          metadata?: Json
+          pages_viewed?: number
+          products_viewed?: Json
+          purchased?: boolean
+          session_key: string
+          started_at?: string
+          tenant_id: string
+          updated_at?: string
+          visitor_id: string
+        }
+        Update: {
+          abandonment_processed?: boolean
+          cart_items?: Json | null
+          cart_value?: number | null
+          checkout_started?: boolean
+          checkout_url?: string | null
+          created_at?: string
+          customer_id?: string | null
+          ended?: boolean
+          id?: string
+          last_activity_at?: string
+          metadata?: Json
+          pages_viewed?: number
+          products_viewed?: Json
+          purchased?: boolean
+          session_key?: string
+          started_at?: string
+          tenant_id?: string
+          updated_at?: string
+          visitor_id?: string
+        }
+        Relationships: []
+      }
+      pixel_visitors: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          customer_id: string | null
+          document: string | null
+          email: string | null
+          first_seen_at: string
+          id: string
+          ip: string | null
+          last_seen_at: string
+          metadata: Json
+          page_views: number
+          phone: string | null
+          product_views: number
+          tenant_id: string
+          updated_at: string
+          user_agent: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          visitor_id: string
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          customer_id?: string | null
+          document?: string | null
+          email?: string | null
+          first_seen_at?: string
+          id?: string
+          ip?: string | null
+          last_seen_at?: string
+          metadata?: Json
+          page_views?: number
+          phone?: string | null
+          product_views?: number
+          tenant_id: string
+          updated_at?: string
+          user_agent?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          visitor_id: string
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          customer_id?: string | null
+          document?: string | null
+          email?: string | null
+          first_seen_at?: string
+          id?: string
+          ip?: string | null
+          last_seen_at?: string
+          metadata?: Json
+          page_views?: number
+          phone?: string | null
+          product_views?: number
+          tenant_id?: string
+          updated_at?: string
+          user_agent?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+          visitor_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1349,6 +1568,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          pixel_public_key: string | null
           plan_name: string | null
           plan_price: number | null
           revenue_range: string | null
@@ -1359,6 +1579,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          pixel_public_key?: string | null
           plan_name?: string | null
           plan_price?: number | null
           revenue_range?: string | null
@@ -1369,6 +1590,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          pixel_public_key?: string | null
           plan_name?: string | null
           plan_price?: number | null
           revenue_range?: string | null

@@ -6,6 +6,28 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const jsonResponse = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const findUserByEmail = async (supabaseAdmin: ReturnType<typeof createClient>, email: string) => {
+  const targetEmail = email.trim().toLowerCase();
+  const perPage = 1000;
+
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const existingUser = data.users.find((user) => user.email?.toLowerCase() === targetEmail);
+    if (existingUser) return existingUser;
+    if (data.users.length < perPage) break;
+  }
+
+  return null;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -19,17 +41,42 @@ serve(async (req) => {
     const { action, tenantId, collaboratorData } = payload;
 
     if (action === "create") {
-      const { email, password, name, role, permissions } = collaboratorData;
+      const { password, name, role, permissions } = collaboratorData;
+      const email = String(collaboratorData.email ?? "").trim().toLowerCase();
+      const selectedRole = role === "admin" ? "admin" : "collaborator";
 
-      // 1. Create user in Auth
-      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      if (!tenantId || !email || !name || !password) {
+        return jsonResponse({ error: "Dados obrigatórios ausentes para criar colaborador." }, 400);
+      }
+
+      // 1. Create user in Auth, or reuse an already registered user with the same email.
+      let createdNewUser = true;
+      let authUser = null;
+      const { data: createdAuthUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: { display_name: name }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        const isDuplicateEmail = authError.message?.toLowerCase().includes("already been registered");
+        if (!isDuplicateEmail) throw authError;
+
+        const existingUser = await findUserByEmail(supabaseAdmin, email);
+        if (!existingUser) {
+          return jsonResponse({ error: "Este e-mail já existe, mas não foi possível localizar o usuário para vinculá-lo." }, 409);
+        }
+
+        createdNewUser = false;
+        authUser = { user: existingUser };
+      } else {
+        authUser = createdAuthUser;
+      }
+
+      if (!authUser?.user?.id) {
+        return jsonResponse({ error: "Não foi possível identificar o usuário do colaborador." }, 400);
+      }
 
       // 2. We use upsert for everything to handle the race condition with handle_new_user trigger
       const { error: profileError } = await supabaseAdmin
@@ -45,29 +92,30 @@ serve(async (req) => {
 
       if (profileError) throw profileError;
 
-      // 3. Ensure the user is a member of the CORRECT tenant with the CORRECT role/permissions
-      // If the trigger created a different tenant/membership, we delete it to keep it clean.
+      // 3. Ensure the user is a member of the CORRECT tenant with the CORRECT role/permissions.
+      // Only clean up trigger side-effects when this function really created the auth user.
       
       // First, get any auto-created tenant_id from the trigger so we can potentially cleanup the auto-created tenant too
-      const { data: autoMembers } = await supabaseAdmin
-        .from("tenant_members")
-        .select("tenant_id")
-        .eq("user_id", authUser.user.id);
-
-      const autoTenantIds = (autoMembers ?? []).map(m => m.tenant_id).filter(id => id !== tenantId);
-
-      // Clean up auto-created memberships
-      if (autoTenantIds.length > 0) {
-        await supabaseAdmin
+      if (createdNewUser) {
+        const { data: autoMembers } = await supabaseAdmin
           .from("tenant_members")
-          .delete()
-          .eq("user_id", authUser.user.id)
-          .in("tenant_id", autoTenantIds);
+          .select("tenant_id")
+          .eq("user_id", authUser.user.id);
+
+        const autoTenantIds = (autoMembers ?? []).map(m => m.tenant_id).filter(id => id !== tenantId);
+
+        if (autoTenantIds.length > 0) {
+          await supabaseAdmin
+            .from("tenant_members")
+            .delete()
+            .eq("user_id", authUser.user.id)
+            .in("tenant_id", autoTenantIds);
           
-        // Optional: delete the auto-created tenants themselves if they are empty
-        // for (const id of autoTenantIds) {
-        //   await supabaseAdmin.from("tenants").delete().eq("id", id);
-        // }
+          // Optional: delete the auto-created tenants themselves if they are empty
+          // for (const id of autoTenantIds) {
+          //   await supabaseAdmin.from("tenants").delete().eq("id", id);
+          // }
+        }
       }
 
       // 4. Create or Update the intended membership
@@ -76,7 +124,7 @@ serve(async (req) => {
         .upsert([{
           tenant_id: tenantId,
           user_id: authUser.user.id,
-          role: role || 'collaborator',
+          role: selectedRole,
           permissions: permissions || []
         }], { onConflict: 'tenant_id,user_id' });
 

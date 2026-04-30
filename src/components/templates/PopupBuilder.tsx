@@ -1,12 +1,30 @@
 import { useRef, useState, useEffect } from "react";
 import EmailEditor, { EditorRef } from "react-email-editor";
 import { Button } from "@/components/ui/button";
-import { Loader2, Save, Smartphone, Monitor } from "lucide-react";
+import { Loader2, Save, Smartphone, Monitor, Settings } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface PopupBuilderProps {
   initialDesign?: any | null;
   initialHtml?: string;
-  onSave: (payload: { html: string; design: any }) => void;
+  initialSettings?: any;
+  onSave: (payload: { html: string; design: any; settings: any }) => void;
   isLoading?: boolean;
 }
 

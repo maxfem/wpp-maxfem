@@ -453,6 +453,10 @@ async function processAutomationQueue(supabase: any) {
             resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
             resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
 
+            // Inject Unsubscribe Link
+            const unsubscribeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${campaign.tenant_id}&e=${encodeURIComponent(customer.email)}`;
+            resolvedBody = resolvedBody.replace(/\{\{unsubscribe_url\}\}/g, unsubscribeUrl);
+
             // Wrap links for tracking
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
               tenantId: campaign.tenant_id,

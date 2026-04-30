@@ -1,0 +1,1 @@
+UPDATE popups SET html = '' WHERE html LIKE '%missing-item%' OR html LIKE '%>Missing<%';

@@ -149,11 +149,18 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
-  const [emailForm, setEmailForm] = useState({
+  const [emailForm, setEmailForm] = useState<{
+    name: string;
+    subject: string;
+    body_html: string;
+    category: string;
+    design: any | null;
+  }>({
     name: "",
     subject: "",
     body_html: "",
-    category: "marketing"
+    category: "marketing",
+    design: null,
   });
 
   const tenantId = currentTenant?.id;
@@ -238,6 +245,7 @@ export default function MessageTemplates() {
         subject: values.subject,
         body_html: values.body_html,
         category: values.category,
+        design: values.design ?? null,
       };
 
       if (editingEmailId) {
@@ -258,7 +266,7 @@ export default function MessageTemplates() {
       toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
       setEmailDialogOpen(false);
       setEditingEmailId(null);
-      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" });
+      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null });
     },
     onError: (err: Error) => {
       toast.error("Erro ao salvar e-mail: " + err.message);
@@ -1179,7 +1187,7 @@ export default function MessageTemplates() {
               </div>
               <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" }); setEditingEmailId(null); }}>
+                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); }}>
                     <Plus className="h-4 w-4 mr-2" />
                     Novo Template
                   </Button>
@@ -1231,10 +1239,11 @@ export default function MessageTemplates() {
                       <Label className="mb-2 block">Design do E-mail</Label>
                       <EmailBuilder 
                         initialHtml={emailForm.body_html}
+                        initialDesign={emailForm.design}
                         isLoading={saveEmailMutation.isPending}
-                        onSave={(html) => {
-                          setEmailForm(prev => ({ ...prev, body_html: html }));
-                          saveEmailMutation.mutate({ ...emailForm, body_html: html });
+                        onSave={({ html, design }) => {
+                          setEmailForm(prev => ({ ...prev, body_html: html, design }));
+                          saveEmailMutation.mutate({ ...emailForm, body_html: html, design });
                         }}
                       />
                     </div>
@@ -1287,7 +1296,8 @@ export default function MessageTemplates() {
                               name: t.name,
                               subject: t.subject || "",
                               body_html: t.body_html || "",
-                              category: t.category || "marketing"
+                              category: t.category || "marketing",
+                              design: t.design || null,
                             });
                             setEditingEmailId(t.id);
                             setEmailDialogOpen(true);
@@ -1307,7 +1317,8 @@ export default function MessageTemplates() {
                               name: t.name,
                               subject: t.subject || "",
                               body_html: t.body_html || "",
-                              category: t.category || "marketing"
+                              category: t.category || "marketing",
+                              design: t.design || null,
                             });
                             setEditingEmailId(t.id);
                             setEmailDialogOpen(true);

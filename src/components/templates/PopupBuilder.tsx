@@ -28,11 +28,21 @@ interface PopupBuilderProps {
   isLoading?: boolean;
 }
 
-export const PopupBuilder = ({ initialDesign, onSave, isLoading }: PopupBuilderProps) => {
+export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
   const emailEditorRef = useRef<EditorRef>(null);
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [isReady, setIsReady] = useState(false);
   const designLoadedRef = useRef(false);
+  
+  const [settings, setSettings] = useState({
+    delay: 2000,
+    trigger: "timer", // timer, exit, scroll
+    scrollPercentage: 50,
+    position: "center", // center, bottom-right, bottom-left, top
+    showCloseButton: true,
+    overlayClose: true,
+    ...(initialSettings || {})
+  });
 
   const loadDesignSafely = () => {
     const unlayer = emailEditorRef.current?.editor;

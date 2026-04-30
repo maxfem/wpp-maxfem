@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PopupBuilder } from "@/components/templates/PopupBuilder";
-import { POPUP_TEMPLATES } from "@/components/templates/popup-templates";
+import { POPUP_TEMPLATES, DEFAULT_POPUP_HTML } from "@/components/templates/popup-templates";
 
 export default function Popups() {
   const { currentTenant } = useAuth();
@@ -102,14 +102,16 @@ export default function Popups() {
       }
 
       const design = selectedTemplate ? selectedTemplate.design : {};
+      const html = selectedTemplate ? selectedTemplate.html : DEFAULT_POPUP_HTML;
 
       const { data, error } = await supabase.from("popups").insert({
         tenant_id: currentTenant.id,
         name: newPopupName,
         contact_list_id: listId || null,
         is_active: true,
-        settings: { delay: 2000, trigger: "timer", position: "center" },
-        design: design
+        settings: { delay: 2000, trigger: "timer", position: "center", showCloseButton: true, overlayClose: true },
+        design: design,
+        html: html,
       }).select().single();
       
       if (error) throw error;

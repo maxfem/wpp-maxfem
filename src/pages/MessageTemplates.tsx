@@ -1184,12 +1184,15 @@ export default function MessageTemplates() {
                     Novo Template
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl">
-                  <DialogHeader>
-                    <DialogTitle>{editingEmailId ? "Editar Template" : "Criar Template de E-mail"}</DialogTitle>
-                    <DialogDescription>Crie modelos profissionais para suas campanhas de e-mail marketing.</DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); saveEmailMutation.mutate(emailForm); }} className="space-y-4">
+                <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col p-0">
+                  <div className="p-6 pb-2">
+                    <DialogHeader>
+                      <DialogTitle>{editingEmailId ? "Editar Template" : "Criar Template de E-mail"}</DialogTitle>
+                      <DialogDescription>Use o editor visual para criar seu modelo de e-mail profissional.</DialogDescription>
+                    </DialogHeader>
+                  </div>
+                  
+                  <div className="flex-1 overflow-hidden flex flex-col p-6 pt-2 gap-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Nome Interno</Label>
@@ -1223,24 +1226,19 @@ export default function MessageTemplates() {
                         required
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Conteúdo HTML</Label>
-                      <Textarea 
-                        placeholder="<html>...</html>" 
-                        value={emailForm.body_html} 
-                        onChange={(e) => setEmailForm({...emailForm, body_html: e.target.value})}
-                        className="font-mono text-xs min-h-[300px]"
-                        required
+                    
+                    <div className="flex-1 min-h-0">
+                      <Label className="mb-2 block">Design do E-mail</Label>
+                      <EmailBuilder 
+                        initialHtml={emailForm.body_html}
+                        isLoading={saveEmailMutation.isPending}
+                        onSave={(html) => {
+                          setEmailForm(prev => ({ ...prev, body_html: html }));
+                          saveEmailMutation.mutate({ ...emailForm, body_html: html });
+                        }}
                       />
-                      <p className="text-xs text-muted-foreground">Em breve: Editor Visual Drag & Drop</p>
                     </div>
-                    <div className="flex justify-end gap-2 pt-4">
-                      <Button type="button" variant="outline" onClick={() => setEmailDialogOpen(false)}>Cancelar</Button>
-                      <Button type="submit" disabled={saveEmailMutation.isPending}>
-                        {saveEmailMutation.isPending ? "Salvando..." : editingEmailId ? "Atualizar" : "Salvar Template"}
-                      </Button>
-                    </div>
-                  </form>
+                  </div>
                 </DialogContent>
               </Dialog>
             </div>

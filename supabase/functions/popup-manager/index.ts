@@ -19,24 +19,28 @@ Deno.serve(async (req) => {
 
   if (path === "script") {
     const key = url.searchParams.get("key");
-    if (!key) return new Response("No key", { status: 400 });
+    const popupId = url.searchParams.get("id");
+    
+    if (!key && !popupId) return new Response("No identification provided", { status: 400 });
 
-    const { data: tenant } = await supabase
-      .from("tenants")
-      .select("id")
-      .eq("pixel_public_key", key)
-      .maybeSingle();
+    let query = supabase.from("popups").select("*").eq("is_active", true);
 
-    if (!tenant) return new Response("Invalid key", { status: 401 });
+    if (popupId) {
+      // Direct popup identification
+      query = query.eq("id", popupId);
+    } else {
+      // Legacy/General key identification
+      const { data: tenant } = await supabase
+        .from("tenants")
+        .select("id")
+        .eq("pixel_public_key", key)
+        .maybeSingle();
 
-    const { data: popup } = await supabase
-      .from("popups")
-      .select("*")
-      .eq("tenant_id", tenant.id)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      if (!tenant) return new Response("Invalid key", { status: 401 });
+      query = query.eq("tenant_id", tenant.id).order("created_at", { ascending: false }).limit(1);
+    }
+
+    const { data: popup } = await query.maybeSingle();
 
     if (!popup) return new Response("// No active popup", { headers: { ...corsHeaders, "Content-Type": "application/javascript" } });
 

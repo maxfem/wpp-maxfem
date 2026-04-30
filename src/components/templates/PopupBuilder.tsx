@@ -69,7 +69,7 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
     if (!unlayer) return;
     unlayer.exportHtml((data) => {
       const { html, design } = data;
-      onSave({ html, design });
+      onSave({ html, design, settings });
     });
   };
 

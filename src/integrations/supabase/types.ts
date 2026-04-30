@@ -1574,6 +1574,60 @@ export type Database = {
         }
         Relationships: []
       }
+      popups: {
+        Row: {
+          contact_list_id: string | null
+          created_at: string
+          design: Json | null
+          html: string | null
+          id: string
+          is_active: boolean
+          name: string
+          settings: Json | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          contact_list_id?: string | null
+          created_at?: string
+          design?: Json | null
+          html?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          settings?: Json | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          contact_list_id?: string | null
+          created_at?: string
+          design?: Json | null
+          html?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          settings?: Json | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "popups_contact_list_id_fkey"
+            columns: ["contact_list_id"]
+            isOneToOne: false
+            referencedRelation: "contact_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "popups_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

@@ -1,40 +1,54 @@
 import { useRef, useState, useEffect } from "react";
 import EmailEditor, { EditorRef } from "react-email-editor";
 import { Button } from "@/components/ui/button";
-import { Loader2, Save, Eye, Smartphone, Monitor } from "lucide-react";
-import debounce from "lodash.debounce";
+import { Loader2, Save, Smartphone, Monitor } from "lucide-react";
 
 interface EmailBuilderProps {
+  initialDesign?: any | null;
   initialHtml?: string;
-  onSave: (html: string) => void;
+  onSave: (payload: { html: string; design: any }) => void;
   isLoading?: boolean;
 }
 
-export const EmailBuilder = ({ initialHtml, onSave, isLoading }: EmailBuilderProps) => {
+export const EmailBuilder = ({ initialDesign, initialHtml, onSave, isLoading }: EmailBuilderProps) => {
   const emailEditorRef = useRef<EditorRef>(null);
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
+  const [isReady, setIsReady] = useState(false);
+  const designLoadedRef = useRef(false);
+
+  const loadDesignSafely = () => {
+    const unlayer = emailEditorRef.current?.editor;
+    if (!unlayer || designLoadedRef.current) return;
+
+    if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
+      try {
+        unlayer.loadDesign(initialDesign as any);
+        designLoadedRef.current = true;
+      } catch (e) {
+        console.warn("Could not load saved design", e);
+      }
+    }
+  };
+
+  // Load design when editor is ready
+  useEffect(() => {
+    if (isReady) {
+      loadDesignSafely();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, initialDesign]);
 
   const exportHtml = () => {
     const unlayer = emailEditorRef.current?.editor;
-    unlayer?.exportHtml((data) => {
-      const { html } = data;
-      onSave(html);
+    if (!unlayer) return;
+    unlayer.exportHtml((data) => {
+      const { html, design } = data;
+      onSave({ html, design });
     });
   };
 
   const onReady = () => {
-    const unlayer = emailEditorRef.current?.editor;
-    if (initialHtml && initialHtml.trim() !== "") {
-      try {
-        // Attempt to load design if it's JSON, or just clear if it's raw HTML
-        // Note: react-email-editor works best with its own JSON design format.
-        // If we only have HTML, we might not be able to "edit" it easily.
-        // For now, we'll try to load it.
-        // unlayer?.loadDesign(JSON.parse(initialHtml));
-      } catch (e) {
-        console.warn("Could not load design", e);
-      }
-    }
+    setIsReady(true);
   };
 
   return (
@@ -42,21 +56,29 @@ export const EmailBuilder = ({ initialHtml, onSave, isLoading }: EmailBuilderPro
       <div className="flex items-center justify-between p-2 border-b bg-muted/30">
         <div className="flex items-center gap-2">
           <Button
+            type="button"
             variant={previewMode === "desktop" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPreviewMode("desktop")}
+            onClick={() => {
+              setPreviewMode("desktop");
+              emailEditorRef.current?.editor?.setDisplayMode?.("desktop" as any);
+            }}
           >
             <Monitor className="h-4 w-4 mr-1" /> Desktop
           </Button>
           <Button
+            type="button"
             variant={previewMode === "mobile" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPreviewMode("mobile")}
+            onClick={() => {
+              setPreviewMode("mobile");
+              emailEditorRef.current?.editor?.setDisplayMode?.("mobile" as any);
+            }}
           >
             <Smartphone className="h-4 w-4 mr-1" /> Mobile
           </Button>
         </div>
-        <Button onClick={exportHtml} disabled={isLoading}>
+        <Button type="button" onClick={exportHtml} disabled={isLoading || !isReady}>
           {isLoading ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (

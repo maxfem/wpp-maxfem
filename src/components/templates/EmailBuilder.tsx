@@ -73,7 +73,14 @@ export const EmailBuilder = ({ initialHtml, onSave, isLoading }: EmailBuilderPro
           appearance={{
             theme: "light",
           }}
-          locale="pt-BR"
+          options={{
+            mergeTags: {
+              customer_name: { name: "Nome do Cliente", value: "{{customer.name}}" },
+              customer_first_name: { name: "Primeiro Nome", value: "{{customer.first_name}}" },
+              unsubscribe_url: { name: "Link de Descadastro", value: "{{unsubscribe_url}}" },
+            },
+            locale: "pt-BR",
+          }}
         />
       </div>
     </div>

@@ -33,7 +33,13 @@ export default function Popups() {
   const [newPopupName, setNewPopupName] = useState("");
   const [selectedListId, setSelectedListId] = useState<string>("");
   const [createNewList, setCreateNewList] = useState(false);
-  const [newListName, setNewListName] = useState("");
+  const [showSnippet, setShowSnippet] = useState(false);
+
+  const copySnippet = (key: string) => {
+    const script = `<script src="${window.location.origin.replace('preview', 'poukhwsbskcvwroeqoct')}/functions/v1/popup-manager/script?key=${key}"></script>`;
+    navigator.clipboard.writeText(script);
+    toast.success("Script copiado para a área de transferência!");
+  };
 
   const { data: popups = [], isLoading } = useQuery({
     queryKey: ["popups", currentTenant?.id],

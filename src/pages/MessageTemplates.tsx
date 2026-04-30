@@ -1296,7 +1296,8 @@ export default function MessageTemplates() {
                               name: t.name,
                               subject: t.subject || "",
                               body_html: t.body_html || "",
-                              category: t.category || "marketing"
+                              category: t.category || "marketing",
+                              design: t.design || null,
                             });
                             setEditingEmailId(t.id);
                             setEmailDialogOpen(true);
@@ -1316,7 +1317,8 @@ export default function MessageTemplates() {
                               name: t.name,
                               subject: t.subject || "",
                               body_html: t.body_html || "",
-                              category: t.category || "marketing"
+                              category: t.category || "marketing",
+                              design: t.design || null,
                             });
                             setEditingEmailId(t.id);
                             setEmailDialogOpen(true);

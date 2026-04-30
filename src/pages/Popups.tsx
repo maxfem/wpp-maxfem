@@ -34,10 +34,11 @@ export default function Popups() {
   const [selectedListId, setSelectedListId] = useState<string>("");
   const [createNewList, setCreateNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
+  const [selectedPopupForSnippet, setSelectedPopupForSnippet] = useState<any>(null);
   const [showSnippet, setShowSnippet] = useState(false);
 
-  const copySnippet = (key: string) => {
-    const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?key=${key}"></script>`;
+  const copySnippet = (id: string) => {
+    const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${id}"></script>`;
     navigator.clipboard.writeText(script);
     toast.success("Script copiado para a área de transferência!");
   };
@@ -257,36 +258,30 @@ export default function Popups() {
           </div>
           <div className="flex gap-2">
             <Dialog open={showSnippet} onOpenChange={setShowSnippet}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Code className="h-4 w-4 mr-2" />
-                  Instalação
-                </Button>
-              </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Como instalar no seu site</DialogTitle>
+                  <DialogTitle>Instalação: {selectedPopupForSnippet?.name}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
                     <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
                     <div className="text-sm">
                       <p className="font-semibold mb-1">Passo Único:</p>
-                      <p>Cole o código abaixo antes do fechamento da tag <code>&lt;/body&gt;</code> de todas as páginas do seu site onde deseja exibir pop-ups.</p>
+                      <p>Cole o código abaixo antes do fechamento da tag <code>&lt;/body&gt;</code> das páginas onde deseja que <strong>este pop-up específico</strong> apareça.</p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Seu script de integração</Label>
+                    <Label>Script do Pop-up</Label>
                     <div className="relative">
                       <pre className="bg-slate-950 text-slate-50 p-4 rounded-md overflow-x-auto text-xs font-mono pr-12">
-                        {`<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?key=${currentTenant?.pixel_public_key}"></script>`}
+                        {`<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${selectedPopupForSnippet?.id}"></script>`}
                       </pre>
                       <Button 
                         size="icon" 
                         variant="ghost" 
                         className="absolute right-2 top-2 text-slate-400 hover:text-white"
-                        onClick={() => copySnippet(currentTenant?.pixel_public_key || "")}
+                        onClick={() => copySnippet(selectedPopupForSnippet?.id || "")}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -294,11 +289,11 @@ export default function Popups() {
                   </div>
 
                   <div className="space-y-2 border-t pt-4">
-                    <p className="text-sm font-semibold">Dicas para o formulário:</p>
+                    <p className="text-sm font-semibold">Dicas importantes:</p>
                     <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
-                      <li>Use campos com nomes <code>email</code>, <code>phone</code> e <code>name</code> para reconhecimento automático.</li>
-                      <li>Para o botão de fechar, adicione o atributo <code>data-mxf-close</code>.</li>
-                      <li>O sistema aplicará automaticamente máscaras de telefone para campos do tipo telefone.</li>
+                      <li>Este script é exclusivo para o pop-up "{selectedPopupForSnippet?.name}".</li>
+                      <li>Certifique-se de que o pop-up esteja marcado como "Ativo" na tabela.</li>
+                      <li>O sistema aplicará automaticamente máscaras de telefone e validações.</li>
                     </ul>
                   </div>
                 </div>
@@ -450,6 +445,17 @@ export default function Popups() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            title="Código de Instalação"
+                            onClick={() => {
+                              setSelectedPopupForSnippet(popup);
+                              setShowSnippet(true);
+                            }}
+                          >
+                            <Code className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" onClick={() => setEditingPopup(popup)}>
                             <Edit className="h-4 w-4" />
                           </Button>

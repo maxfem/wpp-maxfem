@@ -380,6 +380,7 @@ export default function Popups() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="flex items-center gap-4 mb-4">

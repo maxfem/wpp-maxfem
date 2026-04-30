@@ -71,7 +71,7 @@ export const EmailBuilder = ({ initialHtml, onSave, isLoading }: EmailBuilderPro
           onReady={onReady}
           minHeight="100%"
           appearance={{
-            theme: "modern",
+            theme: "light",
           }}
           locale="pt-BR"
         />

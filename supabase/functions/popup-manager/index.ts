@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
   const popupData = ${JSON.stringify({
     id: popup.id,
-    html: popup.html,
+    html: safeHtml,
     settings: popup.settings || {},
   })};
 

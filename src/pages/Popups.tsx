@@ -101,14 +101,17 @@ export default function Popups() {
         listId = list.id;
       }
 
+      const design = selectedTemplate ? selectedTemplate.design : {};
+
       const { data, error } = await supabase.from("popups").insert({
         tenant_id: currentTenant.id,
         name: newPopupName,
         contact_list_id: listId || null,
         is_active: true,
-        settings: {}
+        settings: { delay: 2000, trigger: "timer" },
+        design: design
       }).select().single();
-      
+
       if (error) throw error;
       return data;
     },

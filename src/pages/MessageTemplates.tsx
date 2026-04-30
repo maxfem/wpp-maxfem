@@ -266,7 +266,7 @@ export default function MessageTemplates() {
       toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
       setEmailDialogOpen(false);
       setEditingEmailId(null);
-      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" });
+      setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null });
     },
     onError: (err: Error) => {
       toast.error("Erro ao salvar e-mail: " + err.message);

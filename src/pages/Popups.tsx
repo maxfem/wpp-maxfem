@@ -19,10 +19,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, Search, Edit, Trash2, Layout, List, Save, ArrowLeft, Phone, Mail, 
-  CheckCircle2, XCircle, Code, Copy, Info
+  CheckCircle2, XCircle, Code, Copy, Info, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import { PopupBuilder } from "@/components/templates/PopupBuilder";
+import { POPUP_TEMPLATES } from "@/components/templates/popup-templates";
 
 export default function Popups() {
   const { currentTenant } = useAuth();

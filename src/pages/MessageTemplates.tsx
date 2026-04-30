@@ -1297,7 +1297,11 @@ export default function MessageTemplates() {
                             </Button>
                          </div>
                       </div>
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-between items-center mt-auto">
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(t.created_at).toLocaleDateString()}
+                        </span>
+                        <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => {
                           setEmailForm({
                             name: t.name,

@@ -1227,7 +1227,7 @@ export default function MessageTemplates() {
                       />
                     </div>
                     
-                    <div className="flex-1 min-h-0">
+                    <div className="min-h-[600px]">
                       <Label className="mb-2 block">Design do E-mail</Label>
                       <EmailBuilder 
                         initialHtml={emailForm.body_html}

@@ -239,26 +239,65 @@ Deno.serve(async (req) => {
 
       if (!email && !phone) throw new Error("Email or phone is required");
 
-      const { data: customer, error: cErr } = await supabase
-        .from("customers")
-        .upsert({
-          tenant_id: popup.tenant_id,
-          email: email || null,
-          phone: phone || null,
-          name: name,
-          is_lead: true,
-          custom_attributes: { 
-            source: "popup",
-            popup_id: popup_id,
-            captured_at: new Date().toISOString(),
-            page_url: pageUrl,
-            ...data 
-          }
-        }, { onConflict: "tenant_id,email" })
-        .select("id")
-        .single();
+      // Try to find existing customer by email or phone within tenant
+      let customerId: string | null = null;
+      if (email) {
+        const { data: existing } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("tenant_id", popup.tenant_id)
+          .eq("email", email)
+          .maybeSingle();
+        if (existing) customerId = existing.id;
+      }
+      if (!customerId && phone) {
+        const { data: existing } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("tenant_id", popup.tenant_id)
+          .eq("phone", phone)
+          .maybeSingle();
+        if (existing) customerId = existing.id;
+      }
 
-      if (cErr) throw cErr;
+      const customAttrs = {
+        source: "popup",
+        popup_id: popup_id,
+        captured_at: new Date().toISOString(),
+        page_url: pageUrl,
+        ...data,
+      };
+
+      if (customerId) {
+        const { error: uErr } = await supabase
+          .from("customers")
+          .update({
+            name: name || undefined,
+            email: email || undefined,
+            phone: phone || undefined,
+            is_lead: true,
+            custom_attributes: customAttrs,
+          })
+          .eq("id", customerId);
+        if (uErr) throw uErr;
+      } else {
+        const { data: created, error: iErr } = await supabase
+          .from("customers")
+          .insert({
+            tenant_id: popup.tenant_id,
+            email: email || null,
+            phone: phone || null,
+            name: name || (email ? email.split("@")[0] : "Lead"),
+            is_lead: true,
+            custom_attributes: customAttrs,
+          })
+          .select("id")
+          .single();
+        if (iErr) throw iErr;
+        customerId = created.id;
+      }
+
+      const customer = { id: customerId };
 
       if (popup.contact_list_id) {
         await supabase

@@ -34,25 +34,31 @@ export const GrapesEditor = ({ initialDesign, onSave, minHeight = "600px" }: Gra
       },
     });
 
-    if (initialDesign) {
+    if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
       try {
         e.loadProjectData(initialDesign);
       } catch (err) {
         console.error("Error loading design:", err);
       }
     } else {
-      // Default blank state for popup
-      e.setComponents(`
-        <div class="mxf-popup-wrapper" style="padding: 40px; text-align: center; font-family: 'Inter', sans-serif;">
-          <h2 style="margin-bottom: 10px;">Título do seu Pop-up</h2>
-          <p style="margin-bottom: 20px; color: #666;">Uma descrição atraente para captar o lead.</p>
-          <form style="display: flex; flex-direction: column; gap: 10px; max-width: 320px; margin: 0 auto;">
-            <input type="text" name="name" placeholder="Seu nome" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
-            <input type="email" name="email" placeholder="Seu e-mail" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
-            <button type="submit" style="padding: 12px; background-color: #ED2B75; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cadastrar</button>
-          </form>
-        </div>
-      `);
+      // If no design but we have initialHtml (passed via props or from templates)
+      const initialHtml = (window as any).mxf_initial_html;
+      if (initialHtml) {
+        e.setComponents(initialHtml);
+      } else {
+        // Default blank state for popup
+        e.setComponents(`
+          <div class="mxf-popup-wrapper" style="padding: 40px; text-align: center; font-family: 'Inter', sans-serif;">
+            <h2 style="margin-bottom: 10px;">Título do seu Pop-up</h2>
+            <p style="margin-bottom: 20px; color: #666;">Uma descrição atraente para captar o lead.</p>
+            <form style="display: flex; flex-direction: column; gap: 10px; max-width: 320px; margin: 0 auto;">
+              <input type="text" name="name" placeholder="Seu nome" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
+              <input type="email" name="email" placeholder="Seu e-mail" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
+              <button type="submit" style="padding: 12px; background-color: #ED2B75; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cadastrar</button>
+            </form>
+          </div>
+        `);
+      }
     }
 
     setEditor(e);

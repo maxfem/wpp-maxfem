@@ -26,10 +26,8 @@ Deno.serve(async (req) => {
     let query = supabase.from("popups").select("*").eq("is_active", true);
 
     if (popupId) {
-      // Direct popup identification
       query = query.eq("id", popupId);
     } else {
-      // Legacy/General key identification
       const { data: tenant } = await supabase
         .from("tenants")
         .select("id")
@@ -46,8 +44,8 @@ Deno.serve(async (req) => {
 
     const script = `
 (function() {
-  if (window.__mxf_popup_loaded) return;
-  window.__mxf_popup_loaded = true;
+  if (window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')}) return;
+  window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')} = true;
 
   const popupData = ${JSON.stringify({
     id: popup.id,
@@ -56,24 +54,59 @@ Deno.serve(async (req) => {
   })};
 
   function injectPopup() {
+    if (document.getElementById('mxf-popup-container-' + popupData.id)) return;
+
     const container = document.createElement('div');
-    container.id = 'mxf-popup-container';
-    container.innerHTML = popupData.html;
+    container.id = 'mxf-popup-container-' + popupData.id;
+    
+    const pos = popupData.settings.position || 'center';
+    let containerStyle = 'position: fixed; z-index: 999999; display: flex;';
+    
+    if (pos === 'center') {
+      containerStyle += ' inset: 0; align-items: center; justify-content: center; background: rgba(0,0,0,0.5);';
+    } else if (pos === 'bottom-right') {
+      containerStyle += ' bottom: 20px; right: 20px;';
+    } else if (pos === 'bottom-left') {
+      containerStyle += ' bottom: 20px; left: 20px;';
+    } else if (pos === 'top') {
+      containerStyle += ' top: 0; left: 0; right: 0; justify-content: center;';
+    }
+    
+    container.setAttribute('style', containerStyle);
+    
+    const popupContent = document.createElement('div');
+    popupContent.style.position = 'relative';
+    popupContent.style.background = 'white';
+    popupContent.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+    popupContent.style.borderRadius = '8px';
+    popupContent.style.maxWidth = '90vw';
+    popupContent.innerHTML = popupData.html;
+    
+    if (popupData.settings.showCloseButton !== false) {
+      const closeX = document.createElement('div');
+      closeX.innerHTML = '&times;';
+      closeX.setAttribute('style', 'position: absolute; top: 10px; right: 10px; cursor: pointer; font-size: 24px; line-height: 1; color: #333; z-index: 1;');
+      closeX.onclick = () => container.remove();
+      popupContent.appendChild(closeX);
+    }
+    
+    container.appendChild(popupContent);
     document.body.appendChild(container);
 
-    // Add close logic
-    const closeBtn = container.querySelector('[data-mxf-close]');
-    if (closeBtn) {
-      closeBtn.onclick = () => container.remove();
+    if (popupData.settings.overlayClose !== false && pos === 'center') {
+      container.onclick = (e) => {
+        if (e.target === container) container.remove();
+      };
     }
 
-    // Add form logic
     const form = container.querySelector('form');
     if (form) {
-      // Apply mask to phone field if exists
       const phoneInput = form.querySelector('input[name="phone"], input[type="tel"]');
-      if (phoneInput && window.jQuery && window.jQuery.fn.mask) {
-        window.jQuery(phoneInput).mask('(00) 00000-0000');
+      if (phoneInput) {
+        phoneInput.addEventListener('input', (e) => {
+          let x = e.target.value.replace(/\\D/g, '').match(/(\\d{0,2})(\\d{0,5})(\\d{0,4})/);
+          e.target.value = !x[2] ? x[1] : '(' + x[1] + ') ' + x[2] + (x[3] ? '-' + x[3] : '');
+        });
       }
 
       form.onsubmit = async (e) => {
@@ -82,8 +115,8 @@ Deno.serve(async (req) => {
         const data = Object.fromEntries(formData.entries());
         
         const btn = form.querySelector('button[type="submit"]');
+        const originalText = btn ? btn.innerText : '';
         if (btn) {
-          btn.dataset.originalText = btn.innerText;
           btn.innerText = 'Enviando...';
           btn.disabled = true;
         }
@@ -104,19 +137,19 @@ Deno.serve(async (req) => {
             if (successMsg) {
               form.style.display = 'none';
               successMsg.style.display = 'block';
+              setTimeout(() => container.remove(), 3000);
             } else {
               alert('Obrigado! Cadastro realizado com sucesso.');
               container.remove();
             }
           } else {
-            alert('Ocorreu um erro ao salvar seus dados. Verifique os campos e tente novamente.');
+            alert('Erro ao salvar. Verifique os campos.');
           }
         } catch (err) {
-          console.error('Popup error:', err);
-          alert('Erro de conexão. Tente novamente.');
+          alert('Erro de conexão.');
         } finally {
           if (btn) {
-            btn.innerText = btn.dataset.originalText;
+            btn.innerText = originalText;
             btn.disabled = false;
           }
         }
@@ -124,13 +157,29 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Simple trigger logic
-  if (document.readyState === 'complete') {
-    setTimeout(injectPopup, popupData.settings.delay || 2000);
-  } else {
-    window.addEventListener('load', () => {
-      setTimeout(injectPopup, popupData.settings.delay || 2000);
-    });
+  const trigger = popupData.settings.trigger || 'timer';
+  
+  if (trigger === 'timer') {
+    const delay = popupData.settings.delay || 2000;
+    if (document.readyState === 'complete') {
+      setTimeout(injectPopup, delay);
+    } else {
+      window.addEventListener('load', () => setTimeout(injectPopup, delay));
+    }
+  } else if (trigger === 'exit') {
+    document.addEventListener('mouseleave', (e) => {
+      if (e.clientY < 0) injectPopup();
+    }, { once: true });
+  } else if (trigger === 'scroll') {
+    const threshold = popupData.settings.scrollPercentage || 50;
+    const onScroll = () => {
+      const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+      if (scrollPercent >= threshold) {
+        injectPopup();
+        window.removeEventListener('scroll', onScroll);
+      }
+    };
+    window.addEventListener('scroll', onScroll);
   }
 })();
     `;
@@ -154,14 +203,12 @@ Deno.serve(async (req) => {
         
       if (!popup) throw new Error("Popup not found");
 
-      // Normalize fields
       const email = data.email?.trim().toLowerCase();
-      const phone = data.phone?.replace(/\D+/g, "");
+      const phone = data.phone?.replace(/\\D+/g, "");
       const name = data.name || data.nome || "";
 
       if (!email && !phone) throw new Error("Email or phone is required");
 
-      // Upsert customer (identifying as lead)
       const { data: customer, error: cErr } = await supabase
         .from("customers")
         .upsert({
@@ -183,7 +230,6 @@ Deno.serve(async (req) => {
 
       if (cErr) throw cErr;
 
-      // Add to list if specified
       if (popup.contact_list_id) {
         await supabase
           .from("contact_list_members")

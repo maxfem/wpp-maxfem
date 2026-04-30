@@ -35,6 +35,53 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       },
     });
 
+    // Add Lead Capture Blocks
+    e.BlockManager.add("lead-form", {
+      label: "Formulário de Lead",
+      category: "Maxfem",
+      content: `
+        <form style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 14px; font-weight: 600;">Nome</label>
+            <input type="text" name="name" placeholder="Seu nome" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;" required />
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 14px; font-weight: 600;">E-mail</label>
+            <input type="email" name="email" placeholder="Seu e-mail" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;" required />
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <label style="font-size: 14px; font-weight: 600;">Telefone</label>
+            <input type="tel" name="phone" placeholder="(00) 00000-0000" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;" />
+          </div>
+          <button type="submit" style="padding: 12px; background: #ED2B75; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Cadastrar Agora</button>
+        </form>
+      `,
+    });
+
+    e.BlockManager.add("lead-input-name", {
+      label: "Campo: Nome",
+      category: "Campos",
+      content: '<input type="text" name="name" placeholder="Nome" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px; width: 100%;" required />',
+    });
+
+    e.BlockManager.add("lead-input-email", {
+      label: "Campo: E-mail",
+      category: "Campos",
+      content: '<input type="email" name="email" placeholder="E-mail" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px; width: 100%;" required />',
+    });
+
+    e.BlockManager.add("lead-input-phone", {
+      label: "Campo: Telefone",
+      category: "Campos",
+      content: '<input type="tel" name="phone" placeholder="(00) 00000-0000" style="padding: 10px; border: 1px solid #ddd; border-radius: 4px; width: 100%;" />',
+    });
+
+    e.BlockManager.add("lead-button", {
+      label: "Botão de Envio",
+      category: "Maxfem",
+      content: '<button type="submit" style="padding: 12px 24px; background: #ED2B75; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">ENVIAR</button>',
+    });
+
     if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
       try {
         e.loadProjectData(initialDesign);

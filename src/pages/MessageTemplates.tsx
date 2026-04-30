@@ -56,6 +56,7 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
+import { EmailBuilder } from "@/components/templates/EmailBuilder";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";

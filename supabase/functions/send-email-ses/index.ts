@@ -264,7 +264,6 @@ serve(async (req) => {
       // Log to email_logs and campaign_activities
       if (resolvedTenant) {
         try {
-          const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
           
           // Log in email_logs
           await sbAdmin.from("email_logs").insert({

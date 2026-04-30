@@ -214,6 +214,27 @@ serve(async (req) => {
 
     console.log(`[SES] mode=${mode} To=${Array.isArray(to) ? to[0] : to} From=${senderEmail} Region=${env.region} CS=${configurationSet || "-"}`);
 
+    const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Check suppression list
+    if (resolvedTenant) {
+      const targetEmail = Array.isArray(to) ? to[0] : to;
+      const { data: suppression } = await sbAdmin
+        .from("email_suppressions")
+        .select("id")
+        .eq("tenant_id", resolvedTenant)
+        .eq("email", targetEmail.toLowerCase())
+        .maybeSingle();
+      
+      if (suppression) {
+        console.warn(`[SES] Skipping email to ${targetEmail} - Suppressed`);
+        return new Response(JSON.stringify({ success: false, error: "E-mail está na lista de descadastro." }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200, // Return 200 to avoid retry loops, but with success: false
+        });
+      }
+    }
+
     try {
       const sendParams: any = {
         Source: fromName ? `${fromName} <${senderEmail}>` : senderEmail,

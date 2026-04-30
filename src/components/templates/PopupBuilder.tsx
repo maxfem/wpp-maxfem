@@ -201,6 +201,7 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
       <div className="flex-1 overflow-hidden">
         <GrapesEditor 
           initialDesign={initialDesign} 
+          initialHtml={initialHtml}
           onSave={(data) => onSave({ ...data, settings })}
           minHeight="100%"
         />

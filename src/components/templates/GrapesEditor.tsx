@@ -118,5 +118,28 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
     }
   }, [editor]);
 
-  return <div ref={editorRef} className="grapes-container" />;
+  return (
+    <div className="h-full w-full">
+      <style>{`
+        .gjs-cv-canvas {
+          top: 0;
+          width: 100%;
+          height: 100%;
+        }
+        .gjs-one-bg {
+          background-color: #f8fafc;
+        }
+        .gjs-two-color {
+          color: #334155;
+        }
+        .gjs-three-color {
+          color: #64748b;
+        }
+        .gjs-four-color, .gjs-four-color-h:hover {
+          color: #ED2B75;
+        }
+      `}</style>
+      <div ref={editorRef} />
+    </div>
+  );
 };

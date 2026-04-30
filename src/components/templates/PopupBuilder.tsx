@@ -1,5 +1,4 @@
-import { useRef, useState, useEffect } from "react";
-import EmailEditor, { EditorRef } from "react-email-editor";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Save, Smartphone, Monitor, Settings } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -19,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GrapesEditor } from "./GrapesEditor";
 
 interface PopupBuilderProps {
   initialDesign?: any | null;
@@ -28,11 +28,8 @@ interface PopupBuilderProps {
   isLoading?: boolean;
 }
 
-export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
-  const emailEditorRef = useRef<EditorRef>(null);
+export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
-  const [isReady, setIsReady] = useState(false);
-  const designLoadedRef = useRef(false);
   
   const [settings, setSettings] = useState({
     delay: 2000,
@@ -44,44 +41,31 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
     ...(initialSettings || {})
   });
 
-  const loadDesignSafely = () => {
-    const unlayer = emailEditorRef.current?.editor;
-    if (!unlayer || designLoadedRef.current) return;
-
-    if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
-      try {
-        unlayer.loadDesign(initialDesign as any);
-        designLoadedRef.current = true;
-      } catch (e) {
-        console.warn("Could not load saved design", e);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (isReady) {
-      loadDesignSafely();
-    }
-  }, [isReady, initialDesign]);
-
   const exportHtml = () => {
-    const unlayer = emailEditorRef.current?.editor;
-    if (!unlayer) return;
-    unlayer.exportHtml((data) => {
-      const { html, design } = data;
-      // Detect Unlayer's "Missing" placeholder output (happens when the design
-      // is empty or failed to load). Avoid saving broken HTML over the existing one.
-      if (!html || /missing-item">Missing</i.test(html)) {
-        // eslint-disable-next-line no-alert
-        alert("O design está vazio. Adicione conteúdo (texto, formulário) antes de salvar.");
-        return;
-      }
-      onSave({ html, design, settings });
-    });
+    const editor = (window as any).grapesEditor;
+    if (!editor) return;
+
+    const html = editor.getHtml();
+    const css = editor.getCss();
+    const design = editor.getProjectData();
+    
+    // Combine HTML and CSS
+    const combinedHtml = `<style>${css}</style>${html}`;
+
+    if (!html || html.length < 50) {
+      alert("O design está vazio. Adicione conteúdo antes de salvar.");
+      return;
+    }
+    
+    onSave({ html: combinedHtml, design, settings });
   };
 
-  const onReady = () => {
-    setIsReady(true);
+  const setGjsPreviewMode = (mode: "desktop" | "mobile") => {
+    setPreviewMode(mode);
+    const editor = (window as any).grapesEditor;
+    if (editor) {
+      editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
+    }
   };
 
   return (
@@ -92,10 +76,7 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
             type="button"
             variant={previewMode === "desktop" ? "default" : "outline"}
             size="sm"
-            onClick={() => {
-              setPreviewMode("desktop");
-              emailEditorRef.current?.editor?.setDisplayMode?.("desktop" as any);
-            }}
+            onClick={() => setGjsPreviewMode("desktop")}
           >
             <Monitor className="h-4 w-4 mr-1" /> Desktop
           </Button>
@@ -103,10 +84,7 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
             type="button"
             variant={previewMode === "mobile" ? "default" : "outline"}
             size="sm"
-            onClick={() => {
-              setPreviewMode("mobile");
-              emailEditorRef.current?.editor?.setDisplayMode?.("mobile" as any);
-            }}
+            onClick={() => setGjsPreviewMode("mobile")}
           >
             <Smartphone className="h-4 w-4 mr-1" /> Mobile
           </Button>
@@ -210,7 +188,7 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
             </SheetContent>
           </Sheet>
 
-          <Button type="button" onClick={exportHtml} disabled={isLoading || !isReady}>
+          <Button type="button" onClick={exportHtml} disabled={isLoading}>
             {isLoading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
@@ -220,21 +198,12 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
           </Button>
         </div>
       </div>
-      <div className="flex-1">
-        <EmailEditor
-          ref={emailEditorRef}
-          onReady={onReady}
+      <div className="flex-1 overflow-hidden">
+        <GrapesEditor 
+          initialDesign={initialDesign} 
+          initialHtml={initialHtml}
+          onSave={(data) => onSave({ ...data, settings })}
           minHeight="100%"
-          appearance={{
-            theme: "light",
-          }}
-          options={{
-            displayMode: "email",
-            locale: "pt-BR",
-            customJS: [
-              "https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js"
-            ]
-          }}
         />
       </div>
     </div>

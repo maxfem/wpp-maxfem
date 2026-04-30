@@ -199,6 +199,7 @@ export default function Popups() {
             <CardContent className="p-0">
               <PopupBuilder
                 initialDesign={editingPopup.design}
+                initialHtml={editingPopup.html}
                 initialSettings={editingPopup.settings}
                 isLoading={updatePopupMutation.isPending}
                 onSave={({ design, html, settings }) => {

@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, Search, Edit, Trash2, Layout, List, Save, ArrowLeft, Phone, Mail, 
-  CheckCircle2, XCircle
+  CheckCircle2, XCircle, Code, Copy, Info
 } from "lucide-react";
 import { toast } from "sonner";
 import { PopupBuilder } from "@/components/templates/PopupBuilder";
@@ -34,6 +34,13 @@ export default function Popups() {
   const [selectedListId, setSelectedListId] = useState<string>("");
   const [createNewList, setCreateNewList] = useState(false);
   const [newListName, setNewListName] = useState("");
+  const [showSnippet, setShowSnippet] = useState(false);
+
+  const copySnippet = (key: string) => {
+    const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?key=${key}"></script>`;
+    navigator.clipboard.writeText(script);
+    toast.success("Script copiado para a área de transferência!");
+  };
 
   const { data: popups = [], isLoading } = useQuery({
     queryKey: ["popups", currentTenant?.id],
@@ -248,13 +255,63 @@ export default function Popups() {
               Crie pop-ups para capturar leads no seu site
             </p>
           </div>
-          <Dialog open={isCreating} onOpenChange={setIsCreating}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Pop-up
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Dialog open={showSnippet} onOpenChange={setShowSnippet}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Code className="h-4 w-4 mr-2" />
+                  Instalação
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Como instalar no seu site</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
+                    <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-semibold mb-1">Passo Único:</p>
+                      <p>Cole o código abaixo antes do fechamento da tag <code>&lt;/body&gt;</code> de todas as páginas do seu site onde deseja exibir pop-ups.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Seu script de integração</Label>
+                    <div className="relative">
+                      <pre className="bg-slate-950 text-slate-50 p-4 rounded-md overflow-x-auto text-xs font-mono pr-12">
+                        {`<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?key=${currentTenant?.pixel_public_key}"></script>`}
+                      </pre>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        className="absolute right-2 top-2 text-slate-400 hover:text-white"
+                        onClick={() => copySnippet(currentTenant?.pixel_public_key || "")}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 border-t pt-4">
+                    <p className="text-sm font-semibold">Dicas para o formulário:</p>
+                    <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
+                      <li>Use campos com nomes <code>email</code>, <code>phone</code> e <code>name</code> para reconhecimento automático.</li>
+                      <li>Para o botão de fechar, adicione o atributo <code>data-mxf-close</code>.</li>
+                      <li>O sistema aplicará automaticamente máscaras de telefone para campos do tipo telefone.</li>
+                    </ul>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isCreating} onOpenChange={setIsCreating}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Novo Pop-up
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Criar novo pop-up</DialogTitle>
@@ -323,6 +380,7 @@ export default function Popups() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="flex items-center gap-4 mb-4">

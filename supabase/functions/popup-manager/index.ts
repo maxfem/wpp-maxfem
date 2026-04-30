@@ -211,7 +211,11 @@ Deno.serve(async (req) => {
     `;
 
     return new Response(script, {
-      headers: { ...corsHeaders, "Content-Type": "application/javascript" }
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/javascript",
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
     });
   }
 

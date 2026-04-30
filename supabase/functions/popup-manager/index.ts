@@ -44,7 +44,12 @@ Deno.serve(async (req) => {
 
     // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback.
     let safeHtml = popup.html || "";
-    const isBroken = !safeHtml.trim() || /missing-item">Missing</i.test(safeHtml);
+    const isBroken =
+      !safeHtml.trim() ||
+      safeHtml.includes("missing-item") ||
+      safeHtml.includes("missing-container") ||
+      safeHtml.includes(">Missing<") ||
+      !/<(form|input|button|h1|h2|h3|p|img|a)\b/i.test(safeHtml);
     if (isBroken) {
       safeHtml = `
         <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}

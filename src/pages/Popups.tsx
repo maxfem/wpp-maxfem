@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, Search, Edit, Trash2, Layout, List, Save, ArrowLeft, Phone, Mail, 
-  CheckCircle2, XCircle
+  CheckCircle2, XCircle, Code, Copy, Info
 } from "lucide-react";
 import { toast } from "sonner";
 import { PopupBuilder } from "@/components/templates/PopupBuilder";

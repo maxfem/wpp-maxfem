@@ -14,6 +14,7 @@ import {
   Sparkles,
   Mail,
   Radar,
+  Layout,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";

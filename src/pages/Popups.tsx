@@ -118,6 +118,7 @@ export default function Popups() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       setEditingPopup(data);
+      setSelectedTemplate(null);
       setIsCreating(false);
       setNewPopupName("");
       setNewListName("");

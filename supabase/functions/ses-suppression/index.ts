@@ -22,11 +22,15 @@ serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Não autenticado.");
+    
+    // Check if it's service role or a valid user
+    const isServiceRole = authHeader.includes(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    if (!isServiceRole) {
+      const { data: { user } } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (!user) throw new Error("Não autenticado.");
+    }
 
     const ses = new SESv2Client({
       region: Deno.env.get("AWS_REGION") || "us-east-1",

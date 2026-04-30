@@ -453,6 +453,10 @@ async function processAutomationQueue(supabase: any) {
             resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
             resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
 
+            // Inject Unsubscribe Link
+            const unsubscribeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${campaign.tenant_id}&e=${encodeURIComponent(customer.email)}`;
+            resolvedBody = resolvedBody.replace(/\{\{unsubscribe_url\}\}/g, unsubscribeUrl);
+
             // Wrap links for tracking
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
               tenantId: campaign.tenant_id,
@@ -480,10 +484,16 @@ async function processAutomationQueue(supabase: any) {
               }),
             });
 
-            if (!sendRes.ok) {
-              const err = await sendRes.text();
+            const sendData = await sendRes.json().catch(() => ({}));
+            if (!sendRes.ok || sendData.success === false) {
+              const err = sendData.error || await sendRes.text();
               console.error(`[automation] Error sending email: ${err}`);
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              
+              if (sendData.error === "E-mail está na lista de descadastro.") {
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              } else {
+                await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              }
               break;
             }
 

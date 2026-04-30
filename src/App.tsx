@@ -38,6 +38,7 @@ const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
 const SettingsPixel = lazy(() => import("./pages/SettingsPixel"));
 const PixelDashboard = lazy(() => import("./pages/PixelDashboard"));
 const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
+const Popups = lazy(() => import("./pages/Popups"));
 const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
 
 const queryClient = new QueryClient();

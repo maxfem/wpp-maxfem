@@ -42,6 +42,27 @@ Deno.serve(async (req) => {
 
     if (!popup) return new Response("// No active popup", { headers: { ...corsHeaders, "Content-Type": "application/javascript" } });
 
+    // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback.
+    let safeHtml = popup.html || "";
+    const isBroken = !safeHtml.trim() || /missing-item">Missing</i.test(safeHtml);
+    if (isBroken) {
+      safeHtml = `
+        <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}
+        .mxf-fallback h2{margin:0 0 8px;font-size:20px;color:#111;}.mxf-fallback p{margin:0 0 16px;color:#555;font-size:14px;}
+        .mxf-fallback input{width:100%;padding:12px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;box-sizing:border-box;font-size:14px;}
+        .mxf-fallback button{width:100%;padding:12px;background:#ED2B75;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px;}
+        </style>
+        <div class="mxf-fallback">
+          <h2>Fique por dentro</h2>
+          <p>Cadastre seu e-mail para receber novidades e ofertas exclusivas.</p>
+          <form>
+            <input type="email" name="email" placeholder="Seu melhor e-mail" required />
+            <button type="submit">Quero receber</button>
+            <div data-mxf-success style="display:none;color:#16a34a;margin-top:10px;">Obrigado! Cadastro confirmado.</div>
+          </form>
+        </div>`;
+    }
+
     const script = `
 (function() {
   if (window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')}) return;
@@ -49,7 +70,7 @@ Deno.serve(async (req) => {
 
   const popupData = ${JSON.stringify({
     id: popup.id,
-    html: popup.html,
+    html: safeHtml,
     settings: popup.settings || {},
   })};
 

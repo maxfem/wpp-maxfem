@@ -69,6 +69,13 @@ export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading
     if (!unlayer) return;
     unlayer.exportHtml((data) => {
       const { html, design } = data;
+      // Detect Unlayer's "Missing" placeholder output (happens when the design
+      // is empty or failed to load). Avoid saving broken HTML over the existing one.
+      if (!html || /missing-item">Missing</i.test(html)) {
+        // eslint-disable-next-line no-alert
+        alert("O design está vazio. Adicione conteúdo (texto, formulário) antes de salvar.");
+        return;
+      }
       onSave({ html, design, settings });
     });
   };

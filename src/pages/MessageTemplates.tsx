@@ -56,6 +56,7 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { BulkSendDialog } from "@/components/templates/BulkSendDialog";
+import { EmailBuilder } from "@/components/templates/EmailBuilder";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Json } from "@/integrations/supabase/types";
 import { WhatsAppPhonePreview } from "@/components/WhatsAppPhonePreview";
@@ -1183,12 +1184,15 @@ export default function MessageTemplates() {
                     Novo Template
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl">
-                  <DialogHeader>
-                    <DialogTitle>{editingEmailId ? "Editar Template" : "Criar Template de E-mail"}</DialogTitle>
-                    <DialogDescription>Crie modelos profissionais para suas campanhas de e-mail marketing.</DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); saveEmailMutation.mutate(emailForm); }} className="space-y-4">
+                <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col p-0">
+                  <div className="p-6 pb-2">
+                    <DialogHeader>
+                      <DialogTitle>{editingEmailId ? "Editar Template" : "Criar Template de E-mail"}</DialogTitle>
+                      <DialogDescription>Use o editor visual para criar seu modelo de e-mail profissional.</DialogDescription>
+                    </DialogHeader>
+                  </div>
+                  
+                  <div className="flex-1 overflow-hidden flex flex-col p-6 pt-2 gap-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Nome Interno</Label>
@@ -1222,24 +1226,19 @@ export default function MessageTemplates() {
                         required
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Conteúdo HTML</Label>
-                      <Textarea 
-                        placeholder="<html>...</html>" 
-                        value={emailForm.body_html} 
-                        onChange={(e) => setEmailForm({...emailForm, body_html: e.target.value})}
-                        className="font-mono text-xs min-h-[300px]"
-                        required
+                    
+                    <div className="flex-1 min-h-0">
+                      <Label className="mb-2 block">Design do E-mail</Label>
+                      <EmailBuilder 
+                        initialHtml={emailForm.body_html}
+                        isLoading={saveEmailMutation.isPending}
+                        onSave={(html) => {
+                          setEmailForm(prev => ({ ...prev, body_html: html }));
+                          saveEmailMutation.mutate({ ...emailForm, body_html: html });
+                        }}
                       />
-                      <p className="text-xs text-muted-foreground">Em breve: Editor Visual Drag & Drop</p>
                     </div>
-                    <div className="flex justify-end gap-2 pt-4">
-                      <Button type="button" variant="outline" onClick={() => setEmailDialogOpen(false)}>Cancelar</Button>
-                      <Button type="submit" disabled={saveEmailMutation.isPending}>
-                        {saveEmailMutation.isPending ? "Salvando..." : editingEmailId ? "Atualizar" : "Salvar Template"}
-                      </Button>
-                    </div>
-                  </form>
+                  </div>
                 </DialogContent>
               </Dialog>
             </div>
@@ -1269,44 +1268,67 @@ export default function MessageTemplates() {
                         <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="p-4 pt-2">
-                      <div className="bg-muted rounded h-32 mb-4 overflow-hidden border relative">
+                    <CardContent className="p-4 pt-2 flex flex-col gap-4">
+                      <div className="bg-muted rounded h-40 overflow-hidden border relative flex items-center justify-center">
                          {/* Simple HTML Preview using iframe sandbox */}
                          <iframe 
-                           srcDoc={t.body_html} 
-                           className="w-full h-full border-none pointer-events-none scale-50 origin-top-left" 
-                           style={{ width: '200%', height: '200%' }}
+                           srcDoc={`
+                            <style>
+                              body { margin: 0; padding: 0; transform: scale(0.4); transform-origin: top center; width: 250%; }
+                              ::-webkit-scrollbar { display: none; }
+                            </style>
+                            ${t.body_html}
+                           `} 
+                           className="w-full h-full border-none pointer-events-none" 
                            title={t.name}
                          />
-                         <div className="absolute inset-0 bg-transparent" />
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => {
-                          setEmailForm({
-                            name: t.name,
-                            subject: t.subject || "",
-                            body_html: t.body_html || "",
-                            category: t.category || "marketing"
-                          });
-                          setEditingEmailId(t.id);
-                          setEmailDialogOpen(true);
-                        }}>
-                          <Pencil className="h-3 w-3 mr-2" /> Editar
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
+                         <div className="absolute inset-0 bg-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 cursor-pointer" onClick={() => {
+                            setEmailForm({
+                              name: t.name,
+                              subject: t.subject || "",
+                              body_html: t.body_html || "",
+                              category: t.category || "marketing"
+                            });
+                            setEditingEmailId(t.id);
+                            setEmailDialogOpen(true);
+                         }}>
+                            <Button variant="secondary" size="sm">
+                              <Eye className="h-4 w-4 mr-2" /> Visualizar
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem className="text-destructive" onClick={() => {
-                              if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
-                            }}>
-                              <Trash2 className="h-4 w-4 mr-2" /> Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                         </div>
+                      </div>
+                      <div className="flex justify-between items-center mt-auto">
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(t.created_at).toLocaleDateString()}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setEmailForm({
+                              name: t.name,
+                              subject: t.subject || "",
+                              body_html: t.body_html || "",
+                              category: t.category || "marketing"
+                            });
+                            setEditingEmailId(t.id);
+                            setEmailDialogOpen(true);
+                          }}>
+                            <Pencil className="h-3 w-3 mr-2" /> Editar
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem className="text-destructive" onClick={() => {
+                                if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                              }}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

@@ -37,6 +37,7 @@ export default function Popups() {
   const [newListName, setNewListName] = useState("");
   const [selectedPopupForSnippet, setSelectedPopupForSnippet] = useState<any>(null);
   const [showSnippet, setShowSnippet] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
   const copySnippet = (id: string) => {
     const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${id}"></script>`;

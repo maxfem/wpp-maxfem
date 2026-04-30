@@ -19,10 +19,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, Search, Edit, Trash2, Layout, List, Save, ArrowLeft, Phone, Mail, 
-  CheckCircle2, XCircle, Code, Copy, Info
+  CheckCircle2, XCircle, Code, Copy, Info, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import { PopupBuilder } from "@/components/templates/PopupBuilder";
+import { POPUP_TEMPLATES } from "@/components/templates/popup-templates";
 
 export default function Popups() {
   const { currentTenant } = useAuth();
@@ -36,6 +37,7 @@ export default function Popups() {
   const [newListName, setNewListName] = useState("");
   const [selectedPopupForSnippet, setSelectedPopupForSnippet] = useState<any>(null);
   const [showSnippet, setShowSnippet] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
   const copySnippet = (id: string) => {
     const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${id}"></script>`;
@@ -99,12 +101,15 @@ export default function Popups() {
         listId = list.id;
       }
 
+      const design = selectedTemplate ? selectedTemplate.design : {};
+
       const { data, error } = await supabase.from("popups").insert({
         tenant_id: currentTenant.id,
         name: newPopupName,
         contact_list_id: listId || null,
         is_active: true,
-        settings: {}
+        settings: { delay: 2000, trigger: "timer", position: "center" },
+        design: design
       }).select().single();
       
       if (error) throw error;
@@ -113,6 +118,7 @@ export default function Popups() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       setEditingPopup(data);
+      setSelectedTemplate(null);
       setIsCreating(false);
       setNewPopupName("");
       setNewListName("");
@@ -123,16 +129,16 @@ export default function Popups() {
   });
 
   const updatePopupMutation = useMutation({
-    mutationFn: async ({ id, design, html }: { id: string, design: any, html: string }) => {
+    mutationFn: async ({ id, design, html, settings }: { id: string, design: any, html: string, settings: any }) => {
       const { error } = await supabase
         .from("popups")
-        .update({ design, html })
+        .update({ design, html, settings })
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["popups"] });
-      toast.success("Design salvo com sucesso!");
+      toast.success("Design e configurações salvos!");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -177,7 +183,7 @@ export default function Popups() {
               </Button>
               <div>
                 <h1 className="text-2xl font-bold">{editingPopup.name}</h1>
-                <p className="text-sm text-muted-foreground">Editando design do pop-up</p>
+                <p className="text-sm text-muted-foreground">Editando design e gatilhos do pop-up</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -191,9 +197,10 @@ export default function Popups() {
             <CardContent className="p-0">
               <PopupBuilder
                 initialDesign={editingPopup.design}
+                initialSettings={editingPopup.settings}
                 isLoading={updatePopupMutation.isPending}
-                onSave={({ design, html }) => {
-                  updatePopupMutation.mutate({ id: editingPopup.id, design, html });
+                onSave={({ design, html, settings }) => {
+                  updatePopupMutation.mutate({ id: editingPopup.id, design, html, settings });
                 }}
               />
             </CardContent>
@@ -220,7 +227,7 @@ export default function Popups() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Layout className="h-5 w-5" /> Validação e Máscaras
+                  <Layout className="h-5 w-5" /> Automação de Campos
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -235,7 +242,7 @@ export default function Popups() {
                   <Phone className="h-5 w-5 text-primary" />
                   <div>
                     <p className="font-medium">Telefone</p>
-                    <p className="text-xs text-muted-foreground">Máscara (99) 99999-9999 aplicada no formulário</p>
+                    <p className="text-xs text-muted-foreground">Máscara inteligente aplicada automaticamente</p>
                   </div>
                 </div>
               </CardContent>
@@ -267,7 +274,7 @@ export default function Popups() {
                     <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
                     <div className="text-sm">
                       <p className="font-semibold mb-1">Passo Único:</p>
-                      <p>Cole o código abaixo antes do fechamento da tag <code>&lt;/body&gt;</code> das páginas onde deseja que <strong>este pop-up específico</strong> apareça.</p>
+                      <p>Cole o código abaixo antes do fechamento da tag <code>&lt;/body&gt;</code> das páginas onde deseja que este pop-up apareça.</p>
                     </div>
                   </div>
 
@@ -287,15 +294,6 @@ export default function Popups() {
                       </Button>
                     </div>
                   </div>
-
-                  <div className="space-y-2 border-t pt-4">
-                    <p className="text-sm font-semibold">Dicas importantes:</p>
-                    <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
-                      <li>Este script é exclusivo para o pop-up "{selectedPopupForSnippet?.name}".</li>
-                      <li>Certifique-se de que o pop-up esteja marcado como "Ativo" na tabela.</li>
-                      <li>O sistema aplicará automaticamente máscaras de telefone e validações.</li>
-                    </ul>
-                  </div>
                 </div>
               </DialogContent>
             </Dialog>
@@ -307,74 +305,75 @@ export default function Popups() {
                   Novo Pop-up
                 </Button>
               </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Criar novo pop-up</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Nome do Pop-up</Label>
-                  <Input 
-                    placeholder="Ex: Pop-up de Desconto 10%" 
-                    value={newPopupName}
-                    onChange={(e) => setNewPopupName(e.target.value)}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>Onde salvar os leads?</Label>
-                  {!createNewList ? (
-                    <div className="space-y-3">
-                      <Select value={selectedListId} onValueChange={setSelectedListId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione uma lista existente" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {lists.map((list: any) => (
-                            <SelectItem key={list.id} value={list.id}>
-                              {list.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="px-0" 
-                        onClick={() => setCreateNewList(true)}
-                      >
-                        Ou criar uma nova lista
-                      </Button>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Criar novo pop-up</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Nome do Pop-up</Label>
+                    <Input 
+                      placeholder="Ex: Pop-up de Desconto 10%" 
+                      value={newPopupName}
+                      onChange={(e) => setNewPopupName(e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Template Base (Opcional)</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {POPUP_TEMPLATES.map((tmpl) => (
+                        <Button
+                          key={tmpl.name}
+                          type="button"
+                          variant={selectedTemplate?.name === tmpl.name ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs h-auto py-2"
+                          onClick={() => setSelectedTemplate(tmpl)}
+                        >
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          {tmpl.name}
+                        </Button>
+                      ))}
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <Input 
-                        placeholder="Nome da nova lista" 
-                        value={newListName}
-                        onChange={(e) => setNewListName(e.target.value)}
-                      />
-                      <Button 
-                        variant="link" 
-                        size="sm" 
-                        className="px-0" 
-                        onClick={() => setCreateNewList(false)}
-                      >
-                        Voltar para listas existentes
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                  </div>
 
-                <Button 
-                  className="w-full" 
-                  onClick={() => createPopupMutation.mutate()}
-                  disabled={createPopupMutation.isPending || !newPopupName}
-                >
-                  {createPopupMutation.isPending ? "Criando..." : "Criar e Ir para Editor"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+                  <div className="space-y-2">
+                    <Label>Onde salvar os leads?</Label>
+                    {!createNewList ? (
+                      <div className="space-y-3">
+                        <Select value={selectedListId} onValueChange={setSelectedListId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma lista existente" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {lists.map((list: any) => (
+                              <SelectItem key={list.id} value={list.id}>
+                                {list.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="link" size="sm" className="px-0" onClick={() => setCreateNewList(true)}>
+                          Ou criar uma nova lista
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <Input placeholder="Nome da nova lista" value={newListName} onChange={(e) => setNewListName(e.target.value)} />
+                        <Button variant="link" size="sm" className="px-0" onClick={() => setCreateNewList(false)}>
+                          Voltar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button className="w-full" onClick={() => createPopupMutation.mutate()} disabled={createPopupMutation.isPending || !newPopupName}>
+                    {createPopupMutation.isPending ? "Criando..." : "Criar e Abrir Editor"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -404,71 +403,34 @@ export default function Popups() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
-                      Carregando...
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8">Carregando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      Nenhum pop-up encontrado
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nenhum pop-up encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((popup: any) => (
                     <TableRow key={popup.id}>
                       <TableCell className="font-medium">{popup.name}</TableCell>
+                      <TableCell>{popup.contact_lists?.name || "Nenhuma"}</TableCell>
                       <TableCell>
-                        {popup.contact_lists?.name || <span className="text-muted-foreground italic">Nenhuma</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-0 h-auto hover:bg-transparent"
+                        <Badge 
+                          className="cursor-pointer"
+                          variant={popup.is_active ? "default" : "secondary"}
                           onClick={() => toggleActiveMutation.mutate({ id: popup.id, is_active: !popup.is_active })}
                         >
-                          {popup.is_active ? (
-                            <Badge className="bg-green-500 hover:bg-green-600">
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> Ativo
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary">
-                              <XCircle className="h-3 w-3 mr-1" /> Inativo
-                            </Badge>
-                          )}
-                        </Button>
+                          {popup.is_active ? "Ativo" : "Inativo"}
+                        </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(popup.created_at).toLocaleDateString()}
-                      </TableCell>
+                      <TableCell className="text-muted-foreground">{new Date(popup.created_at).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            title="Código de Instalação"
-                            onClick={() => {
-                              setSelectedPopupForSnippet(popup);
-                              setShowSnippet(true);
-                            }}
-                          >
+                          <Button size="icon" variant="ghost" onClick={() => { setSelectedPopupForSnippet(popup); setShowSnippet(true); }}>
                             <Code className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setEditingPopup(popup)}>
+                          <Button size="icon" variant="ghost" onClick={() => setEditingPopup(popup)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => {
-                              if (confirm("Tem certeza que deseja excluir este pop-up?")) {
-                                deletePopupMutation.mutate(popup.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                          <Button size="icon" variant="ghost" className="text-destructive" onClick={() => deletePopupMutation.mutate(popup.id)}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>

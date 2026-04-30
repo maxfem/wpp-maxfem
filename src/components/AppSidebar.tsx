@@ -47,6 +47,7 @@ const monitorItems = [
 const planItems = [
   { title: "Campanhas", url: "/campaigns", icon: Megaphone },
   { title: "Automações", url: "/automations", icon: Zap },
+  { title: "Pop-ups", url: "/popups", icon: Layout },
   { title: "Templates", url: "/templates", icon: FileText },
   { title: "Arquiteto CRM", url: "/listas", icon: Sparkles },
 ];

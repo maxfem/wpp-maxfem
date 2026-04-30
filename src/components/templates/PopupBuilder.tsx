@@ -28,7 +28,7 @@ interface PopupBuilderProps {
   isLoading?: boolean;
 }
 
-export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
+export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
   
   const [settings, setSettings] = useState({

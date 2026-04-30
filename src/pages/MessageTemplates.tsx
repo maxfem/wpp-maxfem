@@ -1302,32 +1302,33 @@ export default function MessageTemplates() {
                           {new Date(t.created_at).toLocaleDateString()}
                         </span>
                         <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => {
-                          setEmailForm({
-                            name: t.name,
-                            subject: t.subject || "",
-                            body_html: t.body_html || "",
-                            category: t.category || "marketing"
-                          });
-                          setEditingEmailId(t.id);
-                          setEmailDialogOpen(true);
-                        }}>
-                          <Pencil className="h-3 w-3 mr-2" /> Editar
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem className="text-destructive" onClick={() => {
-                              if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
-                            }}>
-                              <Trash2 className="h-4 w-4 mr-2" /> Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setEmailForm({
+                              name: t.name,
+                              subject: t.subject || "",
+                              body_html: t.body_html || "",
+                              category: t.category || "marketing"
+                            });
+                            setEditingEmailId(t.id);
+                            setEmailDialogOpen(true);
+                          }}>
+                            <Pencil className="h-3 w-3 mr-2" /> Editar
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem className="text-destructive" onClick={() => {
+                                if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                              }}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

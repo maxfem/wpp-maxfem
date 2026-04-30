@@ -1187,7 +1187,7 @@ export default function MessageTemplates() {
               </div>
               <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing" }); setEditingEmailId(null); }}>
+                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); }}>
                     <Plus className="h-4 w-4 mr-2" />
                     Novo Template
                   </Button>

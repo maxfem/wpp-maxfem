@@ -1239,10 +1239,11 @@ export default function MessageTemplates() {
                       <Label className="mb-2 block">Design do E-mail</Label>
                       <EmailBuilder 
                         initialHtml={emailForm.body_html}
+                        initialDesign={emailForm.design}
                         isLoading={saveEmailMutation.isPending}
-                        onSave={(html) => {
-                          setEmailForm(prev => ({ ...prev, body_html: html }));
-                          saveEmailMutation.mutate({ ...emailForm, body_html: html });
+                        onSave={({ html, design }) => {
+                          setEmailForm(prev => ({ ...prev, body_html: html, design }));
+                          saveEmailMutation.mutate({ ...emailForm, body_html: html, design });
                         }}
                       />
                     </div>

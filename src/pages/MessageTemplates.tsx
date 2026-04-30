@@ -149,11 +149,18 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
-  const [emailForm, setEmailForm] = useState({
+  const [emailForm, setEmailForm] = useState<{
+    name: string;
+    subject: string;
+    body_html: string;
+    category: string;
+    design: any | null;
+  }>({
     name: "",
     subject: "",
     body_html: "",
-    category: "marketing"
+    category: "marketing",
+    design: null,
   });
 
   const tenantId = currentTenant?.id;
@@ -238,6 +245,7 @@ export default function MessageTemplates() {
         subject: values.subject,
         body_html: values.body_html,
         category: values.category,
+        design: values.design ?? null,
       };
 
       if (editingEmailId) {

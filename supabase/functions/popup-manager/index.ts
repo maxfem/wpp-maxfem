@@ -66,13 +66,23 @@ Deno.serve(async (req) => {
     // Add form logic
     const form = container.querySelector('form');
     if (form) {
+      // Apply mask to phone field if exists
+      const phoneInput = form.querySelector('input[name="phone"], input[type="tel"]');
+      if (phoneInput && window.jQuery && window.jQuery.fn.mask) {
+        window.jQuery(phoneInput).mask('(00) 00000-0000');
+      }
+
       form.onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
         
         const btn = form.querySelector('button[type="submit"]');
-        if (btn) btn.disabled = true;
+        if (btn) {
+          btn.dataset.originalText = btn.innerText;
+          btn.innerText = 'Enviando...';
+          btn.disabled = true;
+        }
 
         try {
           const res = await fetch('${url.origin}/functions/v1/popup-manager/submit', {
@@ -86,7 +96,6 @@ Deno.serve(async (req) => {
           });
           
           if (res.ok) {
-            // Success state - maybe replace form with success message if designer included it
             const successMsg = container.querySelector('[data-mxf-success]');
             if (successMsg) {
               form.style.display = 'none';
@@ -96,19 +105,29 @@ Deno.serve(async (req) => {
               container.remove();
             }
           } else {
-            alert('Ocorreu um erro. Tente novamente.');
+            alert('Ocorreu um erro ao salvar seus dados. Verifique os campos e tente novamente.');
           }
         } catch (err) {
           console.error('Popup error:', err);
+          alert('Erro de conexão. Tente novamente.');
         } finally {
-          if (btn) btn.disabled = false;
+          if (btn) {
+            btn.innerText = btn.dataset.originalText;
+            btn.disabled = false;
+          }
         }
       };
     }
   }
 
   // Simple trigger logic
-  setTimeout(injectPopup, popupData.settings.delay || 1000);
+  if (document.readyState === 'complete') {
+    setTimeout(injectPopup, popupData.settings.delay || 2000);
+  } else {
+    window.addEventListener('load', () => {
+      setTimeout(injectPopup, popupData.settings.delay || 2000);
+    });
+  }
 })();
     `;
 
@@ -136,16 +155,24 @@ Deno.serve(async (req) => {
       const phone = data.phone?.replace(/\D+/g, "");
       const name = data.name || data.nome || "";
 
-      // Insert contact
-      const { data: contact, error: cErr } = await supabase
-        .from("contacts")
+      if (!email && !phone) throw new Error("Email or phone is required");
+
+      // Upsert customer (identifying as lead)
+      const { data: customer, error: cErr } = await supabase
+        .from("customers")
         .upsert({
           tenant_id: popup.tenant_id,
           email: email || null,
           phone: phone || null,
           name: name,
-          source: "popup",
-          metadata: { ...data, page_url: pageUrl }
+          is_lead: true,
+          custom_attributes: { 
+            source: "popup",
+            popup_id: popup_id,
+            captured_at: new Date().toISOString(),
+            page_url: pageUrl,
+            ...data 
+          }
         }, { onConflict: "tenant_id,email" })
         .select("id")
         .single();
@@ -157,10 +184,9 @@ Deno.serve(async (req) => {
         await supabase
           .from("contact_list_members")
           .upsert({
-            contact_list_id: popup.contact_list_id,
-            contact_id: contact.id,
-            tenant_id: popup.tenant_id
-          }, { onConflict: "contact_list_id,contact_id" });
+            list_id: popup.contact_list_id,
+            customer_id: customer.id
+          }, { onConflict: "list_id,customer_id" });
       }
 
       return new Response(JSON.stringify({ ok: true }), {

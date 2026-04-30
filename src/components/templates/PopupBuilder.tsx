@@ -1,5 +1,4 @@
-import { useRef, useState, useEffect } from "react";
-import EmailEditor, { EditorRef } from "react-email-editor";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Save, Smartphone, Monitor, Settings } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -19,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GrapesEditor } from "./GrapesEditor";
 
 interface PopupBuilderProps {
   initialDesign?: any | null;
@@ -29,8 +29,8 @@ interface PopupBuilderProps {
 }
 
 export const PopupBuilder = ({ initialDesign, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
-  const emailEditorRef = useRef<EditorRef>(null);
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
+
   const [isReady, setIsReady] = useState(false);
   const designLoadedRef = useRef(false);
   

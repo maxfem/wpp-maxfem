@@ -1268,16 +1268,34 @@ export default function MessageTemplates() {
                         <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="p-4 pt-2">
-                      <div className="bg-muted rounded h-32 mb-4 overflow-hidden border relative">
+                    <CardContent className="p-4 pt-2 flex flex-col gap-4">
+                      <div className="bg-muted rounded h-40 overflow-hidden border relative flex items-center justify-center">
                          {/* Simple HTML Preview using iframe sandbox */}
                          <iframe 
-                           srcDoc={t.body_html} 
-                           className="w-full h-full border-none pointer-events-none scale-50 origin-top-left" 
-                           style={{ width: '200%', height: '200%' }}
+                           srcDoc={`
+                            <style>
+                              body { margin: 0; padding: 0; transform: scale(0.4); transform-origin: top center; width: 250%; }
+                              ::-webkit-scrollbar { display: none; }
+                            </style>
+                            ${t.body_html}
+                           `} 
+                           className="w-full h-full border-none pointer-events-none" 
                            title={t.name}
                          />
-                         <div className="absolute inset-0 bg-transparent" />
+                         <div className="absolute inset-0 bg-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 cursor-pointer" onClick={() => {
+                            setEmailForm({
+                              name: t.name,
+                              subject: t.subject || "",
+                              body_html: t.body_html || "",
+                              category: t.category || "marketing"
+                            });
+                            setEditingEmailId(t.id);
+                            setEmailDialogOpen(true);
+                         }}>
+                            <Button variant="secondary" size="sm">
+                              <Eye className="h-4 w-4 mr-2" /> Visualizar
+                            </Button>
+                         </div>
                       </div>
                       <div className="flex justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={() => {

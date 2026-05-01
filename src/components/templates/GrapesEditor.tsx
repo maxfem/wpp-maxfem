@@ -115,8 +115,13 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
   }, []);
 
   return (
-    <div className="h-full w-full">
-      <div ref={editorRef} />
+    <div className="gjs-wrapper" style={{ height: "100%", width: "100%", minHeight: 700, display: "flex", flexDirection: "column" }}>
+      <style>{`
+        .gjs-wrapper .gjs-editor { height: 100% !important; }
+        .gjs-wrapper .gjs-cv-canvas { background: #f1f5f9; }
+        .gjs-wrapper .gjs-block { width: calc(50% - 10px); min-height: 80px; }
+      `}</style>
+      <div ref={editorRef} style={{ flex: 1, minHeight: 700 }} />
     </div>
   );
 };

@@ -188,6 +188,21 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       `,
     });
 
+    e.BlockManager.add("container-box", {
+      label: "Cofre (Container)",
+      category: categories.structure,
+      content: '<div style="padding: 20px; border: 1px dashed #ddd; min-height: 50px; border-radius: 8px;"></div>',
+    });
+
+    e.BlockManager.get('form')?.set({ category: categories.leads });
+    e.BlockManager.get('input')?.set({ category: categories.leads });
+    e.BlockManager.get('textarea')?.set({ category: categories.leads });
+    e.BlockManager.get('select')?.set({ category: categories.leads });
+    e.BlockManager.get('button')?.set({ category: categories.leads });
+    e.BlockManager.get('label')?.set({ category: categories.leads });
+    e.BlockManager.get('checkbox')?.set({ category: categories.leads });
+    e.BlockManager.get('radio')?.set({ category: categories.leads });
+
     if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
       try {
         e.loadProjectData(initialDesign);

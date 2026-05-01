@@ -119,6 +119,32 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       content: '<button type="submit" style="padding: 15px 30px; background: linear-gradient(90deg, #ED2B75 0%, #FF6B6B 100%); color: white; border: none; border-radius: 30px; font-weight: 700; font-size: 15px; cursor: pointer; width: 100%; text-transform: uppercase; letter-spacing: 1px;">Enviar Agora</button>',
     });
 
+    e.BlockManager.add("modern-checkbox", {
+      label: "Checkbox Lead",
+      category: "Maxfem Lead",
+      content: `
+        <div style="display: flex; align-items: center; gap: 10px; margin: 10px 0;">
+          <input type="checkbox" name="terms" style="width: 18px; height: 18px; cursor: pointer;" required />
+          <label style="font-size: 13px; color: #64748b; cursor: pointer;">Eu aceito os termos e condições.</label>
+        </div>
+      `,
+    });
+
+    e.BlockManager.add("modern-select", {
+      label: "Select Lead",
+      category: "Maxfem Lead",
+      content: `
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 100%;">
+          <label style="font-size: 14px; font-weight: 600; color: #334155;">Interesse Principal</label>
+          <select name="interest" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: white; width: 100%;">
+            <option value="marketing">Marketing Digital</option>
+            <option value="vendas">Vendas</option>
+            <option value="tecnologia">Tecnologia</option>
+          </select>
+        </div>
+      `,
+    });
+
     e.BlockManager.add("split-content", {
       label: "Lado a Lado",
       category: "Estrutura",

@@ -69,6 +69,14 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       },
     });
 
+    // Category organization
+    const categories = {
+      structure: "Estrutura",
+      leads: "Maxfem Lead",
+      basic: "Básico",
+      forms: "Formulários"
+    };
+
     // Elementor-style Lead Capture Blocks
     e.BlockManager.add("section-hero", {
       label: "Seção Hero",

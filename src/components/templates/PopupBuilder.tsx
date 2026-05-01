@@ -74,17 +74,19 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            variant={previewMode === "desktop" ? "default" : "outline"}
+            variant={previewMode === "desktop" ? "default" : "secondary"}
             size="sm"
             onClick={() => setGjsPreviewMode("desktop")}
+            className={previewMode === "desktop" ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}
           >
             <Monitor className="h-4 w-4 mr-1" /> Desktop
           </Button>
           <Button
             type="button"
-            variant={previewMode === "mobile" ? "default" : "outline"}
+            variant={previewMode === "mobile" ? "default" : "secondary"}
             size="sm"
             onClick={() => setGjsPreviewMode("mobile")}
+            className={previewMode === "mobile" ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}
           >
             <Smartphone className="h-4 w-4 mr-1" /> Mobile
           </Button>

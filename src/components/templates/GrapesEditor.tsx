@@ -201,43 +201,76 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
           background-color: #f1f5f9;
         }
         .gjs-one-bg {
-          background-color: #1e293b;
+          background-color: #ffffff;
         }
         .gjs-two-color {
-          color: #e2e8f0;
+          color: #334155;
         }
         .gjs-three-color {
-          color: #94a3b8;
+          color: #64748b;
         }
         .gjs-four-color, .gjs-four-color-h:hover {
-          color: #ED2B75;
+          color: #2563eb;
         }
         .gjs-pn-panels {
           padding: 5px;
+          border-bottom: 1px solid #e2e8f0;
+          background-color: #f8fafc;
+        }
+        .gjs-pn-views-container {
+          background-color: #ffffff;
+          border-left: 1px solid #e2e8f0;
         }
         .gjs-block {
           width: calc(50% - 10px);
           margin: 5px;
-          border-radius: 6px;
-          border: 1px solid #334155;
-          background-color: #0f172a;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background-color: #f8fafc;
           transition: all 0.2s;
+          color: #475569;
         }
         .gjs-block:hover {
-          border-color: #ED2B75;
-          color: #ED2B75;
+          border-color: #2563eb;
+          color: #2563eb;
+          box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
         .gjs-field {
-          background-color: #0f172a;
-          border: 1px solid #334155;
-          border-radius: 4px;
+          background-color: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          color: #1e293b;
         }
         .gjs-sm-sector-title {
-          background-color: #334155;
-          border-bottom: 1px solid #1e293b;
-          text-transform: uppercase;
-          font-weight: 700;
-          font-size: 11px;
+          background-color: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+          text-transform: capitalize;
+          font-weight: 600;
+          font-size: 13px;
+          color: #1e293b;
+        }
+        .gjs-sm-properties {
+          background-color: #ffffff;
+        }
+        .gjs-sm-label {
+          color: #475569;
+        }
+        .gjs-sm-property {
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .gjs-clm-tags-field {
+          background-color: #f1f5f9;
+        }
+        .gjs-am-assets-header {
+          background-color: #f8fafc;
+        }
+        .gjs-pn-btn.gjs-pn-active {
+          background-color: #eff6ff;
+          color: #2563eb;
+          box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+        }
+        .gjs-pn-btn {
+          color: #64748b;
         }
       `}</style>
       <div ref={editorRef} />

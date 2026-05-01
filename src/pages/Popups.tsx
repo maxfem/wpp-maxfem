@@ -132,15 +132,25 @@ export default function Popups() {
 
   const updatePopupMutation = useMutation({
     mutationFn: async ({ id, design, html, settings }: { id: string, design: any, html: string, settings: any }) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("popups")
         .update({ design, html, settings })
-        .eq("id", id);
+        .eq("id", id)
+        .select(`
+          *,
+          contact_lists (
+            id,
+            name
+          )
+        `)
+        .single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setEditingPopup(data);
       queryClient.invalidateQueries({ queryKey: ["popups"] });
-      toast.success("Design e configurações salvos!");
+      toast.success("Pop-up publicado e salvo com sucesso!");
     },
     onError: (e: any) => toast.error(e.message),
   });

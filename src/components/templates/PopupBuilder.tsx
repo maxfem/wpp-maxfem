@@ -41,18 +41,29 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
     ...(initialSettings || {})
   });
 
+  const normalizeGrapesHtml = (rawHtml: string) => {
+    const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const html = bodyMatch ? bodyMatch[1] : rawHtml;
+    return html
+      .replace(/<html[^>]*>|<\/html>/gi, "")
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
+      .trim();
+  };
+
   const exportHtml = () => {
     const editor = (window as any).grapesEditor;
     if (!editor) return;
 
-    const html = editor.getHtml();
+    editor.runCommand?.("core:component-exit");
+
+    const html = normalizeGrapesHtml(editor.getHtml());
     const css = editor.getCss();
     const design = editor.getProjectData();
     
     // Combine HTML and CSS
     const combinedHtml = `<style>${css}</style>${html}`;
 
-    if (!html || html.length < 50) {
+    if (!html || !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(html)) {
       alert("O design está vazio. Adicione conteúdo antes de salvar.");
       return;
     }

@@ -29,7 +29,9 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
           modalImportTitle: "Importar Template",
           modalImportLabel: "Cole seu HTML/CSS aqui",
         },
-        [pluginForms as any]: {},
+        [pluginForms as any]: {
+          blocks: ['form', 'input', 'textarea', 'select', 'button', 'label', 'checkbox', 'radio'],
+        },
       },
       styleManager: {
         sectors: [

@@ -82,6 +82,141 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       `,
     });
 
+    // ===== CONTENT BLOCKS =====
+    const ico = (svg: string) => `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>`;
+
+    e.BlockManager.add("mxf-text", {
+      label: "Text",
+      category: "Content",
+      media: ico('<path d="M4 7V5h16v2"/><path d="M9 5v14"/><path d="M15 5v14"/><path d="M7 19h10"/>'),
+      content: '<div data-gjs-type="text" style="padding: 10px; font-family: Inter, sans-serif; font-size: 16px; color: #333;">Insira seu texto aqui. Clique duas vezes para editar.</div>',
+    });
+
+    e.BlockManager.add("mxf-button", {
+      label: "Button",
+      category: "Content",
+      media: ico('<rect x="3" y="8" width="18" height="8" rx="2"/>'),
+      content: '<a href="#" style="display: inline-block; padding: 12px 28px; background: #ED2B75; color: white; border-radius: 8px; font-family: Inter, sans-serif; font-weight: 600; text-decoration: none; cursor: pointer;">Clique aqui</a>',
+    });
+
+    e.BlockManager.add("mxf-image", {
+      label: "Image",
+      category: "Content",
+      media: ico('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'),
+      select: true,
+      content: { type: "image" },
+      activate: true,
+    });
+
+    e.BlockManager.add("mxf-divider", {
+      label: "Divider",
+      category: "Content",
+      media: ico('<line x1="3" y1="12" x2="21" y2="12"/>'),
+      content: '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />',
+    });
+
+    e.BlockManager.add("mxf-social", {
+      label: "Social",
+      category: "Content",
+      media: ico('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/>'),
+      content: `
+        <div style="display: flex; gap: 12px; justify-content: center; padding: 16px;">
+          <a href="#" style="width: 40px; height: 40px; border-radius: 50%; background: #1877F2; display: inline-flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-weight: 700;">f</a>
+          <a href="#" style="width: 40px; height: 40px; border-radius: 50%; background: #E4405F; display: inline-flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-weight: 700;">i</a>
+          <a href="#" style="width: 40px; height: 40px; border-radius: 50%; background: #25D366; display: inline-flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-weight: 700;">w</a>
+          <a href="#" style="width: 40px; height: 40px; border-radius: 50%; background: #000; display: inline-flex; align-items: center; justify-content: center; color: white; text-decoration: none; font-weight: 700;">x</a>
+        </div>
+      `,
+    });
+
+    e.BlockManager.add("mxf-social-element", {
+      label: "Social Element",
+      category: "Content",
+      media: ico('<circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 0 0 18M12 3a14 14 0 0 1 0 18M3 12h18"/>'),
+      content: '<a href="#" style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: #ED2B75; color: white; text-decoration: none; font-weight: 700; font-family: Inter, sans-serif;">in</a>',
+    });
+
+    e.BlockManager.add("mxf-spacer", {
+      label: "Spacer",
+      category: "Content",
+      media: ico('<line x1="12" y1="3" x2="12" y2="21"/><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/>'),
+      content: '<div style="height: 40px; width: 100%;"></div>',
+    });
+
+    e.BlockManager.add("mxf-navbar", {
+      label: "Navbar",
+      category: "Content",
+      media: ico('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>'),
+      content: `
+        <nav style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: white; border-bottom: 1px solid #e2e8f0; font-family: Inter, sans-serif;">
+          <div style="font-weight: 700; font-size: 18px; color: #ED2B75;">Logo</div>
+          <div style="display: flex; gap: 24px;">
+            <a href="#" style="color: #333; text-decoration: none; font-weight: 500;">Home</a>
+            <a href="#" style="color: #333; text-decoration: none; font-weight: 500;">Sobre</a>
+            <a href="#" style="color: #333; text-decoration: none; font-weight: 500;">Contato</a>
+          </div>
+        </nav>
+      `,
+    });
+
+    e.BlockManager.add("mxf-hero", {
+      label: "Hero",
+      category: "Content",
+      media: ico('<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>'),
+      content: `
+        <section style="padding: 60px 30px; text-align: center; background: linear-gradient(135deg, #FCE4EF 0%, #ffffff 100%); font-family: Inter, sans-serif;">
+          <h1 style="font-size: 36px; font-weight: 800; color: #1A1A2E; margin: 0 0 16px;">Título Impactante</h1>
+          <p style="font-size: 18px; color: #666; margin: 0 0 28px; max-width: 560px; margin-left: auto; margin-right: auto;">Subtítulo claro e direto que explica o valor da sua oferta em uma frase.</p>
+          <a href="#" style="display: inline-block; padding: 14px 32px; background: #ED2B75; color: white; border-radius: 8px; font-weight: 700; text-decoration: none;">Começar Agora</a>
+        </section>
+      `,
+    });
+
+    e.BlockManager.add("mxf-html-block", {
+      label: "HTML block",
+      category: "Content",
+      media: ico('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
+      content: '<div data-gjs-type="default"><!-- Cole seu HTML aqui --><div style="padding: 20px; border: 1px dashed #e2e8f0; text-align: center; color: #999; font-family: Inter, sans-serif;">Bloco HTML — edite via código</div></div>',
+    });
+
+    // ===== LAYOUT BLOCKS =====
+    const colCss = "padding: 10px; min-height: 80px; flex-grow: 1; flex-basis: 100%;";
+
+    e.BlockManager.add("mxf-col-1", {
+      label: "1 Column",
+      category: "Layout",
+      media: ico('<rect x="3" y="5" width="18" height="14" rx="1"/>'),
+      content: `<div style="display: flex; padding: 10px;"><div style="${colCss}"></div></div>`,
+    });
+
+    e.BlockManager.add("mxf-col-2-50", {
+      label: "2 Columns 50/50",
+      category: "Layout",
+      media: ico('<rect x="3" y="5" width="8" height="14" rx="1"/><rect x="13" y="5" width="8" height="14" rx="1"/>'),
+      content: `<div style="display: flex; padding: 10px; gap: 10px;"><div style="${colCss} flex-basis: 50%;"></div><div style="${colCss} flex-basis: 50%;"></div></div>`,
+    });
+
+    e.BlockManager.add("mxf-col-2-25-75", {
+      label: "2 Columns 25/75",
+      category: "Layout",
+      media: ico('<rect x="3" y="5" width="4" height="14" rx="1"/><rect x="9" y="5" width="12" height="14" rx="1"/>'),
+      content: `<div style="display: flex; padding: 10px; gap: 10px;"><div style="${colCss} flex-basis: 25%;"></div><div style="${colCss} flex-basis: 75%;"></div></div>`,
+    });
+
+    e.BlockManager.add("mxf-col-2-33-67", {
+      label: "2 Columns 33/67",
+      category: "Layout",
+      media: ico('<rect x="3" y="5" width="6" height="14" rx="1"/><rect x="11" y="5" width="10" height="14" rx="1"/>'),
+      content: `<div style="display: flex; padding: 10px; gap: 10px;"><div style="${colCss} flex-basis: 33%;"></div><div style="${colCss} flex-basis: 67%;"></div></div>`,
+    });
+
+    e.BlockManager.add("mxf-col-3", {
+      label: "3 Columns",
+      category: "Layout",
+      media: ico('<rect x="3" y="5" width="5" height="14" rx="1"/><rect x="9.5" y="5" width="5" height="14" rx="1"/><rect x="16" y="5" width="5" height="14" rx="1"/>'),
+      content: `<div style="display: flex; padding: 10px; gap: 10px;"><div style="${colCss} flex-basis: 33.33%;"></div><div style="${colCss} flex-basis: 33.33%;"></div><div style="${colCss} flex-basis: 33.33%;"></div></div>`,
+    });
+
     if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
       try {
         e.loadProjectData(initialDesign);

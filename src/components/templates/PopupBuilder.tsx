@@ -95,7 +95,7 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
         <div className="flex items-center gap-2">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="secondary" size="sm" className="bg-slate-100 text-slate-700 hover:bg-slate-200">
                 <Settings className="h-4 w-4 mr-1" /> Configurações
               </Button>
             </SheetTrigger>

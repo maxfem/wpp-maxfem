@@ -69,8 +69,8 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
   };
 
   return (
-    <div className="flex flex-col h-[800px] border rounded-md overflow-hidden bg-[#1e293b]">
-      <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 text-white shadow-md">
+    <div className="flex flex-col h-[800px] border rounded-md overflow-hidden bg-white shadow-xl">
+      <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-white text-slate-900">
         <div className="flex items-center gap-2">
           <Button
             type="button"

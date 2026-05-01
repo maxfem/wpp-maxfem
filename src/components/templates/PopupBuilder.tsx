@@ -69,8 +69,8 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
   };
 
   return (
-    <div className="flex flex-col h-[700px] border rounded-md overflow-hidden bg-white">
-      <div className="flex items-center justify-between p-2 border-b bg-muted/30">
+    <div className="flex flex-col h-[800px] border rounded-md overflow-hidden bg-[#1e293b]">
+      <div className="flex items-center justify-between p-3 border-b border-slate-700 bg-slate-900 text-white shadow-md">
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -188,13 +188,18 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
             </SheetContent>
           </Sheet>
 
-          <Button type="button" onClick={exportHtml} disabled={isLoading}>
+          <Button 
+            type="button" 
+            onClick={exportHtml} 
+            disabled={isLoading}
+            className="bg-[#ED2B75] hover:bg-[#C2185B] text-white border-none shadow-lg shadow-pink-500/20 px-6"
+          >
             {isLoading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-2" />
             )}
-            Salvar Pop-up
+            Publicar Pop-up
           </Button>
         </div>
       </div>

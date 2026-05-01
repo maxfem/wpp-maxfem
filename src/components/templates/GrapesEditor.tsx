@@ -123,18 +123,33 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       label: "Lado a Lado",
       category: "Estrutura",
       content: `
-        <div style="display: flex; flex-wrap: wrap; align-items: center; background: white; border-radius: 12px; overflow: hidden;">
-          <div style="flex: 1; min-width: 250px; padding: 40px;">
-            <h2 style="font-size: 24px; margin-bottom: 15px;">Ganhe um Ebook Grátis</h2>
-            <p style="color: #666; margin-bottom: 20px;">Tudo o que você precisa saber sobre marketing digital em um só lugar.</p>
-            <form style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="email" name="email" placeholder="Seu e-mail" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
-              <button type="submit" style="padding: 12px; background: #111; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Baixar Agora</button>
+        <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: white; border-radius: 12px; overflow: hidden; min-height: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+          <div style="flex: 1; min-width: 300px; background-image: url('https://images.unsplash.com/photo-1493723843671-1d655e7d987d?auto=format&fit=crop&q=80&w=800'); background-size: cover; background-position: center;"></div>
+          <div style="flex: 1.2; min-width: 300px; padding: 40px; display: flex; flex-direction: column; justify-content: center;">
+            <h2 style="font-size: 28px; font-weight: 700; margin-bottom: 15px; color: #1e293b; line-height: 1.2;">Oferta de Lançamento!</h2>
+            <p style="color: #64748b; margin-bottom: 25px; font-size: 16px;">Assine agora e ganhe 50% de desconto no primeiro mês. Não perca!</p>
+            <form style="display: flex; flex-direction: column; gap: 12px;">
+              <input type="email" name="email" placeholder="Seu e-mail" style="padding: 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px;" required />
+              <button type="submit" style="padding: 14px; background: #ED2B75; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.3s; transform: scale(1);" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">APROVEITAR AGORA</button>
             </form>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 15px; text-align: center;">Válido por tempo limitado.</p>
           </div>
-          <div style="flex: 1; min-width: 250px; background: #f0f2f5; height: 350px; display: flex; align-items: center; justify-content: center;">
-             <span style="color: #999; font-style: italic;">Imagem do Produto Aqui</span>
-          </div>
+        </div>
+      `,
+    });
+
+    e.BlockManager.add("slide-in-form", {
+      label: "Slide-in (Canto)",
+      category: "Estrutura",
+      content: `
+        <div style="width: 350px; padding: 25px; background: white; border-radius: 15px; box-shadow: 0 15px 50px rgba(0,0,0,0.15); border-left: 5px solid #ED2B75; font-family: 'Inter', sans-serif;">
+          <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 10px; color: #1e293b;">Precisa de ajuda?</h3>
+          <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Deixe seu contato e um de nossos especialistas falará com você.</p>
+          <form style="display: flex; flex-direction: column; gap: 12px;">
+            <input type="text" name="name" placeholder="Nome" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px;" />
+            <input type="tel" name="phone" placeholder="WhatsApp" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px;" />
+            <button type="submit" style="padding: 12px; background: #1e293b; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">SOLICITAR CONTATO</button>
+          </form>
         </div>
       `,
     });

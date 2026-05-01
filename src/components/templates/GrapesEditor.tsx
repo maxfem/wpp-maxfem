@@ -29,7 +29,9 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
           modalImportTitle: "Importar Template",
           modalImportLabel: "Cole seu HTML/CSS aqui",
         },
-        [pluginForms as any]: {},
+        [pluginForms as any]: {
+          blocks: ['form', 'input', 'textarea', 'select', 'button', 'label', 'checkbox', 'radio'],
+        },
       },
       styleManager: {
         sectors: [
@@ -66,6 +68,14 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
         ],
       },
     });
+
+    // Category organization
+    const categories = {
+      structure: "Estrutura",
+      leads: "Maxfem Lead",
+      basic: "Básico",
+      forms: "Formulários"
+    };
 
     // Elementor-style Lead Capture Blocks
     e.BlockManager.add("section-hero", {
@@ -117,25 +127,81 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
       content: '<button type="submit" style="padding: 15px 30px; background: linear-gradient(90deg, #ED2B75 0%, #FF6B6B 100%); color: white; border: none; border-radius: 30px; font-weight: 700; font-size: 15px; cursor: pointer; width: 100%; text-transform: uppercase; letter-spacing: 1px;">Enviar Agora</button>',
     });
 
+    e.BlockManager.add("modern-checkbox", {
+      label: "Checkbox Lead",
+      category: "Maxfem Lead",
+      content: `
+        <div style="display: flex; align-items: center; gap: 10px; margin: 10px 0;">
+          <input type="checkbox" name="terms" style="width: 18px; height: 18px; cursor: pointer;" required />
+          <label style="font-size: 13px; color: #64748b; cursor: pointer;">Eu aceito os termos e condições.</label>
+        </div>
+      `,
+    });
+
+    e.BlockManager.add("modern-select", {
+      label: "Select Lead",
+      category: "Maxfem Lead",
+      content: `
+        <div style="display: flex; flex-direction: column; gap: 5px; width: 100%;">
+          <label style="font-size: 14px; font-weight: 600; color: #334155;">Interesse Principal</label>
+          <select name="interest" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: white; width: 100%;">
+            <option value="marketing">Marketing Digital</option>
+            <option value="vendas">Vendas</option>
+            <option value="tecnologia">Tecnologia</option>
+          </select>
+        </div>
+      `,
+    });
+
     e.BlockManager.add("split-content", {
       label: "Lado a Lado",
       category: "Estrutura",
       content: `
-        <div style="display: flex; flex-wrap: wrap; align-items: center; background: white; border-radius: 12px; overflow: hidden;">
-          <div style="flex: 1; min-width: 250px; padding: 40px;">
-            <h2 style="font-size: 24px; margin-bottom: 15px;">Ganhe um Ebook Grátis</h2>
-            <p style="color: #666; margin-bottom: 20px;">Tudo o que você precisa saber sobre marketing digital em um só lugar.</p>
-            <form style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="email" name="email" placeholder="Seu e-mail" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px;" required />
-              <button type="submit" style="padding: 12px; background: #111; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Baixar Agora</button>
+        <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: white; border-radius: 12px; overflow: hidden; min-height: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+          <div style="flex: 1; min-width: 300px; background-image: url('https://images.unsplash.com/photo-1493723843671-1d655e7d987d?auto=format&fit=crop&q=80&w=800'); background-size: cover; background-position: center;"></div>
+          <div style="flex: 1.2; min-width: 300px; padding: 40px; display: flex; flex-direction: column; justify-content: center;">
+            <h2 style="font-size: 28px; font-weight: 700; margin-bottom: 15px; color: #1e293b; line-height: 1.2;">Oferta de Lançamento!</h2>
+            <p style="color: #64748b; margin-bottom: 25px; font-size: 16px;">Assine agora e ganhe 50% de desconto no primeiro mês. Não perca!</p>
+            <form style="display: flex; flex-direction: column; gap: 12px;">
+              <input type="email" name="email" placeholder="Seu e-mail" style="padding: 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px;" required />
+              <button type="submit" style="padding: 14px; background: #ED2B75; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.3s; transform: scale(1);" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">APROVEITAR AGORA</button>
             </form>
-          </div>
-          <div style="flex: 1; min-width: 250px; background: #f0f2f5; height: 350px; display: flex; align-items: center; justify-content: center;">
-             <span style="color: #999; font-style: italic;">Imagem do Produto Aqui</span>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 15px; text-align: center;">Válido por tempo limitado.</p>
           </div>
         </div>
       `,
     });
+
+    e.BlockManager.add("slide-in-form", {
+      label: "Slide-in (Canto)",
+      category: "Estrutura",
+      content: `
+        <div style="width: 350px; padding: 25px; background: white; border-radius: 15px; box-shadow: 0 15px 50px rgba(0,0,0,0.15); border-left: 5px solid #ED2B75; font-family: 'Inter', sans-serif;">
+          <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 10px; color: #1e293b;">Precisa de ajuda?</h3>
+          <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Deixe seu contato e um de nossos especialistas falará com você.</p>
+          <form style="display: flex; flex-direction: column; gap: 12px;">
+            <input type="text" name="name" placeholder="Nome" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px;" />
+            <input type="tel" name="phone" placeholder="WhatsApp" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px;" />
+            <button type="submit" style="padding: 12px; background: #1e293b; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">SOLICITAR CONTATO</button>
+          </form>
+        </div>
+      `,
+    });
+
+    e.BlockManager.add("container-box", {
+      label: "Cofre (Container)",
+      category: categories.structure,
+      content: '<div style="padding: 20px; border: 1px dashed #ddd; min-height: 50px; border-radius: 8px;"></div>',
+    });
+
+    e.BlockManager.get('form')?.set({ category: categories.leads });
+    e.BlockManager.get('input')?.set({ category: categories.leads });
+    e.BlockManager.get('textarea')?.set({ category: categories.leads });
+    e.BlockManager.get('select')?.set({ category: categories.leads });
+    e.BlockManager.get('button')?.set({ category: categories.leads });
+    e.BlockManager.get('label')?.set({ category: categories.leads });
+    e.BlockManager.get('checkbox')?.set({ category: categories.leads });
+    e.BlockManager.get('radio')?.set({ category: categories.leads });
 
     if (initialDesign && typeof initialDesign === "object" && Object.keys(initialDesign).length > 0) {
       try {
@@ -184,43 +250,76 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
           background-color: #f1f5f9;
         }
         .gjs-one-bg {
-          background-color: #1e293b;
+          background-color: #ffffff;
         }
         .gjs-two-color {
-          color: #e2e8f0;
+          color: #334155;
         }
         .gjs-three-color {
-          color: #94a3b8;
+          color: #64748b;
         }
         .gjs-four-color, .gjs-four-color-h:hover {
-          color: #ED2B75;
+          color: #2563eb;
         }
         .gjs-pn-panels {
           padding: 5px;
+          border-bottom: 1px solid #e2e8f0;
+          background-color: #f8fafc;
+        }
+        .gjs-pn-views-container {
+          background-color: #ffffff;
+          border-left: 1px solid #e2e8f0;
         }
         .gjs-block {
           width: calc(50% - 10px);
           margin: 5px;
-          border-radius: 6px;
-          border: 1px solid #334155;
-          background-color: #0f172a;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background-color: #f8fafc;
           transition: all 0.2s;
+          color: #475569;
         }
         .gjs-block:hover {
-          border-color: #ED2B75;
-          color: #ED2B75;
+          border-color: #2563eb;
+          color: #2563eb;
+          box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
         .gjs-field {
-          background-color: #0f172a;
-          border: 1px solid #334155;
-          border-radius: 4px;
+          background-color: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          color: #1e293b;
         }
         .gjs-sm-sector-title {
-          background-color: #334155;
-          border-bottom: 1px solid #1e293b;
-          text-transform: uppercase;
-          font-weight: 700;
-          font-size: 11px;
+          background-color: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+          text-transform: capitalize;
+          font-weight: 600;
+          font-size: 13px;
+          color: #1e293b;
+        }
+        .gjs-sm-properties {
+          background-color: #ffffff;
+        }
+        .gjs-sm-label {
+          color: #475569;
+        }
+        .gjs-sm-property {
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .gjs-clm-tags-field {
+          background-color: #f1f5f9;
+        }
+        .gjs-am-assets-header {
+          background-color: #f8fafc;
+        }
+        .gjs-pn-btn.gjs-pn-active {
+          background-color: #eff6ff;
+          color: #2563eb;
+          box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+        }
+        .gjs-pn-btn {
+          color: #64748b;
         }
       `}</style>
       <div ref={editorRef} />

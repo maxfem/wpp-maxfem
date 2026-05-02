@@ -231,7 +231,12 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
         e.loadProjectData(initialDesign);
       } catch (err) {
         console.error("Error loading design:", err);
-        if (initialHtml) e.setComponents(initialHtml);
+        if (initialHtml) {
+          const cssMatch = initialHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+          const pureHtml = initialHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+          e.setComponents(pureHtml);
+          if (cssMatch) e.setStyle(cssMatch[1]);
+        }
       }
     } else if (initialHtml) {
       e.setComponents(initialHtml);

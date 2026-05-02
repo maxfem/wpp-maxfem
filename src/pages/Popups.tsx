@@ -223,9 +223,13 @@ export default function Popups() {
                 initialDesign={editingPopup.design}
                 initialHtml={editingPopup.html}
                 initialSettings={editingPopup.settings}
+                isActive={editingPopup.is_active}
                 isLoading={updatePopupMutation.isPending}
-                onSave={({ design, html, settings }) => {
-                  updatePopupMutation.mutate({ id: editingPopup.id, design, html, settings });
+                onSave={({ design, html, settings, is_active }) => {
+                  updatePopupMutation.mutate({ id: editingPopup.id, design, html, settings, is_active });
+                }}
+                onToggleActive={(is_active) => {
+                  updatePopupMutation.mutate({ id: editingPopup.id, is_active });
                 }}
               />
             </CardContent>

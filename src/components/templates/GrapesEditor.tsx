@@ -7,11 +7,13 @@ import pluginForms from "grapesjs-plugin-forms";
 interface GrapesEditorProps {
   initialDesign?: any;
   initialHtml?: string;
-  onSave: (data: { html: string; design: any }) => void;
+  onSave?: (data: { html: string; design: any }) => void;
+  onReady?: (editor: Editor) => void;
+  onChange?: () => void;
   minHeight?: string;
 }
 
-export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "600px" }: GrapesEditorProps) => {
+export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onChange, minHeight = "600px" }: GrapesEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
 
@@ -242,6 +244,15 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, minHeight = "
 
     setEditor(e);
     (window as any).grapesEditor = e;
+    onReady?.(e);
+
+    if (onChange) {
+      const handler = () => onChange();
+      e.on("component:update", handler);
+      e.on("component:add", handler);
+      e.on("component:remove", handler);
+      e.on("style:update", handler);
+    }
 
     return () => {
       try { e.destroy(); } catch {}

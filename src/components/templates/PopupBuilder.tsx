@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { Editor } from "grapesjs";
 import { Button } from "@/components/ui/button";
-import { Loader2, Save, Smartphone, Monitor, Settings } from "lucide-react";
+import { Loader2, Save, Smartphone, Monitor, Settings, Power, PowerOff, Rocket } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import {
   Sheet,
   SheetContent,
@@ -24,22 +26,39 @@ interface PopupBuilderProps {
   initialDesign?: any | null;
   initialHtml?: string;
   initialSettings?: any;
-  onSave: (payload: { html: string; design: any; settings: any }) => void;
+  isActive?: boolean;
+  onSave: (payload: { html: string; design: any; settings: any; is_active?: boolean }) => void;
+  onToggleActive?: (isActive: boolean) => void;
   isLoading?: boolean;
 }
 
-export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSave, isLoading }: PopupBuilderProps) => {
+export const PopupBuilder = ({
+  initialDesign,
+  initialHtml,
+  initialSettings,
+  isActive = true,
+  onSave,
+  onToggleActive,
+  isLoading,
+}: PopupBuilderProps) => {
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
-  
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const editorRef = useRef<Editor | null>(null);
+
   const [settings, setSettings] = useState({
     delay: 2000,
-    trigger: "timer", // timer, exit, scroll
+    trigger: "timer",
     scrollPercentage: 50,
-    position: "center", // center, bottom-right, bottom-left, top
+    position: "center",
     showCloseButton: true,
     overlayClose: true,
-    ...(initialSettings || {})
+    ...(initialSettings || {}),
   });
+
+  const updateSettings = (next: any) => {
+    setSettings(next);
+    setHasUnsavedChanges(true);
+  };
 
   const normalizeGrapesHtml = (rawHtml: string) => {
     const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -50,38 +69,55 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
       .trim();
   };
 
-  const exportHtml = () => {
-    const editor = (window as any).grapesEditor;
-    if (!editor) return;
+  const collectPayload = () => {
+    const editor = editorRef.current;
+    if (!editor) return null;
 
-    editor.runCommand?.("core:component-exit");
+    try { editor.runCommand?.("core:component-exit"); } catch {}
 
     const html = normalizeGrapesHtml(editor.getHtml());
     const css = editor.getCss();
     const design = editor.getProjectData();
-    
-    // Combine HTML and CSS
     const combinedHtml = `<style>${css}</style>${html}`;
 
     if (!html || !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(html)) {
-      alert("O design está vazio. Adicione conteúdo antes de salvar.");
-      return;
+      toast.error("O design está vazio. Adicione conteúdo antes de salvar.");
+      return null;
     }
-    
-    onSave({ html: combinedHtml, design, settings });
+    return { html: combinedHtml, design };
+  };
+
+  const handleSave = () => {
+    const payload = collectPayload();
+    if (!payload) return;
+    onSave({ ...payload, settings });
+    setHasUnsavedChanges(false);
+  };
+
+  const handlePublish = () => {
+    const payload = collectPayload();
+    if (!payload) return;
+    onSave({ ...payload, settings, is_active: true });
+    setHasUnsavedChanges(false);
+  };
+
+  const handleToggleActive = () => {
+    onToggleActive?.(!isActive);
   };
 
   const setGjsPreviewMode = (mode: "desktop" | "mobile") => {
     setPreviewMode(mode);
-    const editor = (window as any).grapesEditor;
-    if (editor) {
-      editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
-    }
+    const editor = editorRef.current;
+    if (editor) editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
   };
+
+  // If popup was never published yet (treat as draft), keep "Publicar".
+  // After it's active, only show "Salvar".
+  const showPublishButton = !isActive;
 
   return (
     <div className="flex flex-col h-[800px] border rounded-md overflow-hidden bg-white shadow-xl">
-      <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-white text-slate-900">
+      <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-white text-slate-900 gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -101,9 +137,15 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
           >
             <Smartphone className="h-4 w-4 mr-1" /> Mobile
           </Button>
+
+          {hasUnsavedChanges && (
+            <span className="text-xs text-amber-600 font-medium ml-2">
+              ● Alterações não salvas
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="secondary" size="sm" className="bg-slate-100 text-slate-700 hover:bg-slate-200">
@@ -117,16 +159,11 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
               <div className="space-y-6 py-6">
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold border-b pb-2">Gatilho de Exibição</h3>
-                  
+
                   <div className="space-y-2">
                     <Label>Quando mostrar?</Label>
-                    <Select 
-                      value={settings.trigger} 
-                      onValueChange={(val) => setSettings({...settings, trigger: val})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Select value={settings.trigger} onValueChange={(val) => updateSettings({ ...settings, trigger: val })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="timer">Tempo na página</SelectItem>
                         <SelectItem value="exit">Intenção de saída (Exit Intent)</SelectItem>
@@ -138,38 +175,25 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
                   {settings.trigger === "timer" && (
                     <div className="space-y-2">
                       <Label>Aguardar quantos segundos?</Label>
-                      <Input 
-                        type="number" 
-                        value={settings.delay / 1000} 
-                        onChange={(e) => setSettings({...settings, delay: Number(e.target.value) * 1000})}
-                      />
+                      <Input type="number" value={settings.delay / 1000} onChange={(e) => updateSettings({ ...settings, delay: Number(e.target.value) * 1000 })} />
                     </div>
                   )}
 
                   {settings.trigger === "scroll" && (
                     <div className="space-y-2">
                       <Label>Porcentagem de rolagem (%)</Label>
-                      <Input 
-                        type="number" 
-                        value={settings.scrollPercentage} 
-                        onChange={(e) => setSettings({...settings, scrollPercentage: Number(e.target.value)})}
-                      />
+                      <Input type="number" value={settings.scrollPercentage} onChange={(e) => updateSettings({ ...settings, scrollPercentage: Number(e.target.value) })} />
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold border-b pb-2">Layout e Comportamento</h3>
-                  
+
                   <div className="space-y-2">
                     <Label>Posição</Label>
-                    <Select 
-                      value={settings.position} 
-                      onValueChange={(val) => setSettings({...settings, position: val})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Select value={settings.position} onValueChange={(val) => updateSettings({ ...settings, position: val })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="center">Centro da tela</SelectItem>
                         <SelectItem value="bottom-right">Canto inferior direito</SelectItem>
@@ -181,46 +205,65 @@ export const PopupBuilder = ({ initialDesign, initialHtml, initialSettings, onSa
 
                   <div className="flex items-center justify-between">
                     <Label htmlFor="close-btn">Botão de fechar (X)</Label>
-                    <Switch 
-                      id="close-btn"
-                      checked={settings.showCloseButton}
-                      onCheckedChange={(val) => setSettings({...settings, showCloseButton: val})}
-                    />
+                    <Switch id="close-btn" checked={settings.showCloseButton} onCheckedChange={(val) => updateSettings({ ...settings, showCloseButton: val })} />
                   </div>
 
                   <div className="flex items-center justify-between">
                     <Label htmlFor="overlay-close">Fechar ao clicar fora</Label>
-                    <Switch 
-                      id="overlay-close"
-                      checked={settings.overlayClose}
-                      onCheckedChange={(val) => setSettings({...settings, overlayClose: val})}
-                    />
+                    <Switch id="overlay-close" checked={settings.overlayClose} onCheckedChange={(val) => updateSettings({ ...settings, overlayClose: val })} />
                   </div>
                 </div>
               </div>
             </SheetContent>
           </Sheet>
 
-          <Button 
-            type="button" 
-            onClick={exportHtml} 
+          {onToggleActive && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleToggleActive}
+              disabled={isLoading}
+              className={isActive
+                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"}
+            >
+              {isActive ? <Power className="h-4 w-4 mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
+              {isActive ? "Ativo" : "Inativo"}
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleSave}
             disabled={isLoading}
-            className="bg-[#ED2B75] hover:bg-[#C2185B] text-white border-none shadow-lg shadow-pink-500/20 px-6"
+            className="bg-slate-900 text-white hover:bg-slate-800"
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-2" />
-            )}
-            Publicar Pop-up
+            {isLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+            Salvar
           </Button>
+
+          {showPublishButton && (
+            <Button
+              type="button"
+              onClick={handlePublish}
+              disabled={isLoading}
+              className="bg-[#ED2B75] hover:bg-[#C2185B] text-white border-none shadow-lg shadow-pink-500/20 px-6"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Rocket className="h-4 w-4 mr-2" />}
+              Publicar
+            </Button>
+          )}
         </div>
       </div>
       <div className="flex-1 overflow-hidden">
-        <GrapesEditor 
-          initialDesign={initialDesign} 
+        <GrapesEditor
+          initialDesign={initialDesign}
           initialHtml={initialHtml}
-          onSave={(data) => onSave({ ...data, settings })}
+          onReady={(ed) => { editorRef.current = ed; }}
+          onChange={() => setHasUnsavedChanges(true)}
           minHeight="100%"
         />
       </div>

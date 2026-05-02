@@ -88,11 +88,11 @@ Deno.serve(async (req) => {
     container.setAttribute('style', containerStyle);
     
     const popupContent = document.createElement('div');
+    // Transparent wrapper — let the saved HTML control its own visual styling (background, radius, shadow)
     popupContent.style.position = 'relative';
-    popupContent.style.background = 'white';
-    popupContent.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-    popupContent.style.borderRadius = '8px';
-    popupContent.style.maxWidth = '90vw';
+    popupContent.style.maxWidth = '95vw';
+    popupContent.style.maxHeight = '95vh';
+    popupContent.style.overflow = 'auto';
     const isMobile = window.innerWidth <= 768;
     const content = (isMobile && popupData.html_mobile) ? popupData.html_mobile : popupData.html;
     
@@ -124,13 +124,19 @@ Deno.serve(async (req) => {
 
     popupContent.innerHTML = finalHtml;
     
-    if (popupData.settings.showCloseButton !== false) {
+    // Only inject a close button if the saved HTML doesn't already have one
+    const hasOwnClose = /data-mxf-close|class="[^"]*(?:ecg-[a-z]?__close|mxf-close|popup-close)/i.test(finalHtml);
+    if (popupData.settings.showCloseButton !== false && !hasOwnClose) {
       const closeX = document.createElement('div');
       closeX.innerHTML = '&times;';
-      closeX.setAttribute('style', 'position: absolute; top: 10px; right: 10px; cursor: pointer; font-size: 24px; line-height: 1; color: #333; z-index: 1;');
+      closeX.setAttribute('style', 'position: absolute; top: 12px; right: 12px; cursor: pointer; font-size: 22px; line-height: 1; color: #333; z-index: 10; background: rgba(255,255,255,0.9); width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;');
       closeX.onclick = () => container.remove();
       popupContent.appendChild(closeX);
     }
+    // Wire any close elements inside the saved HTML
+    popupContent.querySelectorAll('[data-mxf-close], .ecg-d__close, .ecg-m__close, .mxf-close, .popup-close').forEach((el) => {
+      el.addEventListener('click', (e) => { e.preventDefault(); container.remove(); });
+    });
     
     container.appendChild(popupContent);
     document.body.appendChild(container);

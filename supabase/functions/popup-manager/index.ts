@@ -42,18 +42,29 @@ Deno.serve(async (req) => {
 
     if (!popup) return new Response("// No active popup", { headers: { ...corsHeaders, "Content-Type": "application/javascript" } });
 
+    // If mobile is missing or too small, fallback to desktop content (defense in depth)
+    const desktopHtml = popup.html || "";
+    let mobileHtml = popup.html_mobile || "";
+    if (!mobileHtml.trim() || mobileHtml.length < 200) {
+      mobileHtml = desktopHtml;
+    }
+
     // The script will handle content selection (mobile vs desktop)
     const script = `
+// Maxfem popup ${popup.id} — updated_at: ${popup.updated_at || ''}
 (function() {
   if (window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')}) return;
   window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')} = true;
 
   const popupData = ${JSON.stringify({
     id: popup.id,
-    html: popup.html || "",
-    html_mobile: popup.html_mobile || "",
+    html: desktopHtml,
+    html_mobile: mobileHtml,
     settings: popup.settings || {},
+    updated_at: popup.updated_at || null,
   })};
+
+  try { console.info('[Maxfem popup]', popupData.id, 'updated_at:', popupData.updated_at); } catch(e){}
 
   function injectPopup() {
     if (document.getElementById('mxf-popup-container-' + popupData.id)) return;

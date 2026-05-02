@@ -319,22 +319,22 @@ export const PopupBuilder = ({
             variant="secondary"
             size="sm"
             onClick={handleSave}
-            disabled={isLoading}
+            disabled={isLoading || isUploading}
             className="bg-slate-900 text-white hover:bg-slate-800"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-            Salvar
+            {(isLoading || isUploading) ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+            {isUploading ? "Enviando imagens..." : "Salvar"}
           </Button>
 
           {showPublishButton && (
             <Button
               type="button"
               onClick={handlePublish}
-              disabled={isLoading}
+              disabled={isLoading || isUploading}
               className="bg-[#ED2B75] hover:bg-[#C2185B] text-white border-none shadow-lg shadow-pink-500/20 px-6"
             >
-              {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Rocket className="h-4 w-4 mr-2" />}
-              Publicar
+              {(isLoading || isUploading) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Rocket className="h-4 w-4 mr-2" />}
+              {isUploading ? "Enviando..." : "Publicar"}
             </Button>
           )}
         </div>

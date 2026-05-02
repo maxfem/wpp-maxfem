@@ -1579,7 +1579,9 @@ export type Database = {
           contact_list_id: string | null
           created_at: string
           design: Json | null
+          design_mobile: Json | null
           html: string | null
+          html_mobile: string | null
           id: string
           is_active: boolean
           name: string
@@ -1591,7 +1593,9 @@ export type Database = {
           contact_list_id?: string | null
           created_at?: string
           design?: Json | null
+          design_mobile?: Json | null
           html?: string | null
+          html_mobile?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -1603,7 +1607,9 @@ export type Database = {
           contact_list_id?: string | null
           created_at?: string
           design?: Json | null
+          design_mobile?: Json | null
           html?: string | null
+          html_mobile?: string | null
           id?: string
           is_active?: boolean
           name?: string

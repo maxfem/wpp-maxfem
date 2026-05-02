@@ -26,6 +26,11 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       width: "auto",
       fromElement: false,
       storageManager: false,
+      assetManager: {
+        upload: 0,
+        embedAsBase64: true,
+        assets: [],
+      },
       plugins: [pluginWebpage, pluginForms],
       pluginsOpts: {
         [pluginWebpage as any]: {

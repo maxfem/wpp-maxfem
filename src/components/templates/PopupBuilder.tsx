@@ -27,9 +27,18 @@ import { GrapesEditor } from "./GrapesEditor";
 interface PopupBuilderProps {
   initialDesign?: any | null;
   initialHtml?: string;
+  initialDesignMobile?: any | null;
+  initialHtmlMobile?: string;
   initialSettings?: any;
   isActive?: boolean;
-  onSave: (payload: { html: string; design: any; settings: any; is_active?: boolean }) => void;
+  onSave: (payload: { 
+    html?: string; 
+    design?: any; 
+    html_mobile?: string; 
+    design_mobile?: any; 
+    settings: any; 
+    is_active?: boolean 
+  }) => void;
   onToggleActive?: (isActive: boolean) => void;
   isLoading?: boolean;
 }
@@ -37,6 +46,8 @@ interface PopupBuilderProps {
 export const PopupBuilder = ({
   initialDesign,
   initialHtml,
+  initialDesignMobile,
+  initialHtmlMobile,
   initialSettings,
   isActive = true,
   onSave,
@@ -48,6 +59,10 @@ export const PopupBuilder = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const editorRef = useRef<Editor | null>(null);
+  const [editorData, setEditorData] = useState({
+    desktop: { design: initialDesign, html: initialHtml },
+    mobile: { design: initialDesignMobile, html: initialHtmlMobile }
+  });
 
   const [settings, setSettings] = useState({
     delay: 2000,
@@ -169,16 +184,46 @@ export const PopupBuilder = ({
   };
 
   const handleSave = async () => {
-    const payload = await collectPayload();
-    if (!payload) return;
-    onSave({ ...payload, settings });
+    const currentPayload = await collectPayload();
+    if (!currentPayload) return;
+
+    // Update the local state for the current mode before saving
+    const updatedData = {
+      ...editorData,
+      [previewMode]: currentPayload
+    };
+    
+    setEditorData(updatedData);
+
+    onSave({ 
+      html: updatedData.desktop.html || undefined,
+      design: updatedData.desktop.design || undefined,
+      html_mobile: updatedData.mobile.html || undefined,
+      design_mobile: updatedData.mobile.design || undefined,
+      settings 
+    });
     setHasUnsavedChanges(false);
   };
 
   const handlePublish = async () => {
-    const payload = await collectPayload();
-    if (!payload) return;
-    onSave({ ...payload, settings, is_active: true });
+    const currentPayload = await collectPayload();
+    if (!currentPayload) return;
+
+    const updatedData = {
+      ...editorData,
+      [previewMode]: currentPayload
+    };
+    
+    setEditorData(updatedData);
+
+    onSave({ 
+      html: updatedData.desktop.html || undefined,
+      design: updatedData.desktop.design || undefined,
+      html_mobile: updatedData.mobile.html || undefined,
+      design_mobile: updatedData.mobile.design || undefined,
+      settings, 
+      is_active: true 
+    });
     setHasUnsavedChanges(false);
   };
 
@@ -186,10 +231,34 @@ export const PopupBuilder = ({
     onToggleActive?.(!isActive);
   };
 
-  const setGjsPreviewMode = (mode: "desktop" | "mobile") => {
-    setPreviewMode(mode);
+  const setGjsPreviewMode = async (mode: "desktop" | "mobile") => {
     const editor = editorRef.current;
-    if (editor) editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
+    if (!editor) return;
+
+    // 1. Capture current changes
+    const currentPayload = await collectPayload();
+    if (currentPayload) {
+      setEditorData(prev => ({
+        ...prev,
+        [previewMode]: currentPayload
+      }));
+    }
+
+    // 2. Update mode
+    setPreviewMode(mode);
+    editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
+
+    // 3. Load the data for the new mode
+    const nextData = mode === "desktop" ? editorData.desktop : editorData.mobile;
+    if (nextData.design) {
+      editor.loadProjectData(nextData.design);
+    } else if (nextData.html) {
+      editor.setComponents(nextData.html);
+    } else {
+      // If no data for this mode yet, maybe clear or load a default?
+      // Let's keep it as is or clear if needed.
+      editor.setComponents(""); 
+    }
   };
 
   // If popup was never published yet (treat as draft), keep "Publicar".
@@ -341,8 +410,9 @@ export const PopupBuilder = ({
       </div>
       <div className="flex-1 overflow-hidden">
         <GrapesEditor
-          initialDesign={initialDesign}
-          initialHtml={initialHtml}
+          key={previewMode} // Force re-render when switching modes to load correct initial state
+          initialDesign={previewMode === "desktop" ? editorData.desktop.design : editorData.mobile.design}
+          initialHtml={previewMode === "desktop" ? editorData.desktop.html : editorData.mobile.html}
           onReady={(ed) => { editorRef.current = ed; }}
           onChange={() => setHasUnsavedChanges(true)}
           minHeight="100%"

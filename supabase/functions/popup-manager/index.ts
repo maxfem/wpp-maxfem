@@ -42,32 +42,7 @@ Deno.serve(async (req) => {
 
     if (!popup) return new Response("// No active popup", { headers: { ...corsHeaders, "Content-Type": "application/javascript" } });
 
-    // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback.
-    let safeHtml = popup.html || "";
-    const isBroken =
-      !safeHtml.trim() ||
-      safeHtml.includes("missing-item") ||
-      safeHtml.includes("missing-container") ||
-      safeHtml.includes(">Missing<") ||
-      !/<(form|input|button|h1|h2|h3|p|img|a)\b/i.test(safeHtml);
-    if (isBroken) {
-      safeHtml = `
-        <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}
-        .mxf-fallback h2{margin:0 0 8px;font-size:20px;color:#111;}.mxf-fallback p{margin:0 0 16px;color:#555;font-size:14px;}
-        .mxf-fallback input{width:100%;padding:12px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;box-sizing:border-box;font-size:14px;}
-        .mxf-fallback button{width:100%;padding:12px;background:#ED2B75;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px;}
-        </style>
-        <div class="mxf-fallback">
-          <h2>Fique por dentro</h2>
-          <p>Cadastre seu e-mail para receber novidades e ofertas exclusivas.</p>
-          <form>
-            <input type="email" name="email" placeholder="Seu melhor e-mail" required />
-            <button type="submit">Quero receber</button>
-            <div data-mxf-success style="display:none;color:#16a34a;margin-top:10px;">Obrigado! Cadastro confirmado.</div>
-          </form>
-        </div>`;
-    }
-
+    // The script will handle content selection (mobile vs desktop)
     const script = `
 (function() {
   if (window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')}) return;
@@ -75,7 +50,8 @@ Deno.serve(async (req) => {
 
   const popupData = ${JSON.stringify({
     id: popup.id,
-    html: safeHtml,
+    html: popup.html || "",
+    html_mobile: popup.html_mobile || "",
     settings: popup.settings || {},
   })};
 
@@ -106,7 +82,36 @@ Deno.serve(async (req) => {
     popupContent.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
     popupContent.style.borderRadius = '8px';
     popupContent.style.maxWidth = '90vw';
-    popupContent.innerHTML = popupData.html;
+    const isMobile = window.innerWidth <= 768;
+    const content = (isMobile && popupData.html_mobile) ? popupData.html_mobile : popupData.html;
+    
+    // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback if both are empty.
+    let finalHtml = content;
+    const isBroken = !finalHtml.trim() || 
+                    finalHtml.includes("missing-item") || 
+                    finalHtml.includes("missing-container") || 
+                    finalHtml.includes(">Missing<") ||
+                    !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(finalHtml);
+                    
+    if (isBroken) {
+      finalHtml = \`
+        <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}
+        .mxf-fallback h2{margin:0 0 8px;font-size:20px;color:#111;}.mxf-fallback p{margin:0 0 16px;color:#555;font-size:14px;}
+        .mxf-fallback input{width:100%;padding:12px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;box-sizing:border-box;font-size:14px;}
+        .mxf-fallback button{width:100%;padding:12px;background:#ED2B75;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px;}
+        </style>
+        <div class="mxf-fallback">
+          <h2>Fique por dentro</h2>
+          <p>Cadastre seu e-mail para receber novidades e ofertas exclusivas.</p>
+          <form>
+            <input type="email" name="email" placeholder="Seu melhor e-mail" required />
+            <button type="submit">Quero receber</button>
+            <div data-mxf-success style="display:none;color:#16a34a;margin-top:10px;">Obrigado! Cadastro confirmado.</div>
+          </form>
+        </div>\`;
+    }
+
+    popupContent.innerHTML = finalHtml;
     
     if (popupData.settings.showCloseButton !== false) {
       const closeX = document.createElement('div');

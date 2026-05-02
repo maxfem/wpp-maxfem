@@ -2064,6 +2064,10 @@ export type Database = {
         Args: { _tenant_id: string; _user_id: string }
         Returns: boolean
       }
+      recompute_contact_list_count: {
+        Args: { _list_id: string }
+        Returns: undefined
+      }
       sync_rfm_lists: { Args: { _tenant_id: string }; Returns: undefined }
     }
     Enums: {

@@ -42,18 +42,29 @@ Deno.serve(async (req) => {
 
     if (!popup) return new Response("// No active popup", { headers: { ...corsHeaders, "Content-Type": "application/javascript" } });
 
+    // If mobile is missing or too small, fallback to desktop content (defense in depth)
+    const desktopHtml = popup.html || "";
+    let mobileHtml = popup.html_mobile || "";
+    if (!mobileHtml.trim() || mobileHtml.length < 200) {
+      mobileHtml = desktopHtml;
+    }
+
     // The script will handle content selection (mobile vs desktop)
     const script = `
+// Maxfem popup ${popup.id} — updated_at: ${popup.updated_at || ''}
 (function() {
   if (window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')}) return;
   window.__mxf_popup_loaded_${popup.id.replace(/-/g, '_')} = true;
 
   const popupData = ${JSON.stringify({
     id: popup.id,
-    html: popup.html || "",
-    html_mobile: popup.html_mobile || "",
+    html: desktopHtml,
+    html_mobile: mobileHtml,
     settings: popup.settings || {},
+    updated_at: popup.updated_at || null,
   })};
+
+  try { console.info('[Maxfem popup]', popupData.id, 'updated_at:', popupData.updated_at); } catch(e){}
 
   function injectPopup() {
     if (document.getElementById('mxf-popup-container-' + popupData.id)) return;
@@ -85,15 +96,15 @@ Deno.serve(async (req) => {
     const isMobile = window.innerWidth <= 768;
     const content = (isMobile && popupData.html_mobile) ? popupData.html_mobile : popupData.html;
     
-    // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback if both are empty.
+    // Detect only truly empty/missing content. Do NOT replace user-saved HTML even if it lacks common tags.
     let finalHtml = content;
-    const isBroken = !finalHtml.trim() || 
-                    finalHtml.includes("missing-item") || 
-                    finalHtml.includes("missing-container") || 
-                    finalHtml.includes(">Missing<") ||
-                    !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(finalHtml);
-                    
+    const isBroken = !finalHtml || !finalHtml.trim() ||
+                    finalHtml.includes("missing-item") ||
+                    finalHtml.includes("missing-container") ||
+                    finalHtml.includes(">Missing<");
+
     if (isBroken) {
+      try { console.warn('[Maxfem popup] Falling back to default — saved HTML was empty or broken for popup', popupData.id); } catch(e){}
       finalHtml = \`
         <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}
         .mxf-fallback h2{margin:0 0 8px;font-size:20px;color:#111;}.mxf-fallback p{margin:0 0 16px;color:#555;font-size:14px;}

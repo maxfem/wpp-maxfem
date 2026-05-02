@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import type { Editor } from "grapesjs";
 import { Button } from "@/components/ui/button";
-import { Loader2, Save, Smartphone, Monitor, Settings, Power, PowerOff, Rocket } from "lucide-react";
+import { Loader2, Save, Smartphone, Monitor, Settings, Power, PowerOff, Rocket, Code2, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +16,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -58,10 +66,17 @@ export const PopupBuilder = ({
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showHtmlEditor, setShowHtmlEditor] = useState(false);
+  const [htmlDraft, setHtmlDraft] = useState("");
   const editorRef = useRef<Editor | null>(null);
+
+  // If mobile content is missing, mirror desktop as starting point so both render the same
+  const initialMobileDesign = initialDesignMobile ?? initialDesign;
+  const initialMobileHtml = (initialHtmlMobile && initialHtmlMobile.length > 100) ? initialHtmlMobile : initialHtml;
+
   const [editorData, setEditorData] = useState({
     desktop: { design: initialDesign, html: initialHtml },
-    mobile: { design: initialDesignMobile, html: initialHtmlMobile }
+    mobile: { design: initialMobileDesign, html: initialMobileHtml }
   });
 
   const [settings, setSettings] = useState({
@@ -100,7 +115,6 @@ export const PopupBuilder = ({
     return { blob: new Blob([bytes], { type: mime }), ext };
   };
 
-  // Upload one base64 image to storage and return the public URL
   const uploadBase64 = async (dataUrl: string): Promise<string | null> => {
     const parsed = dataUrlToBlob(dataUrl);
     if (!parsed || !currentTenant) return null;
@@ -116,7 +130,6 @@ export const PopupBuilder = ({
     return data.publicUrl;
   };
 
-  // Walk the html + design and replace every base64 image with an uploaded URL
   const replaceBase64Images = async (html: string, design: any) => {
     const seen = new Map<string, string>();
     const matches = Array.from(new Set(html.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g) || []));
@@ -128,12 +141,10 @@ export const PopupBuilder = ({
 
     let newHtml = html;
     for (const [dataUrl, url] of seen) {
-      // Escape regex special chars
       const escaped = dataUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       newHtml = newHtml.replace(new RegExp(escaped, "g"), url);
     }
 
-    // Walk the design JSON deeply replacing base64 src values
     const replaceInValue = (val: any): any => {
       if (typeof val === "string") {
         if (val.startsWith("data:image/") && seen.has(val)) return seen.get(val);
@@ -160,14 +171,18 @@ export const PopupBuilder = ({
 
     let rawHtml = normalizeGrapesHtml(editor.getHtml());
     const css = editor.getCss();
-    let design = editor.getProjectData();
+    let design: any;
+    try {
+      design = editor.getProjectData();
+    } catch {
+      design = null;
+    }
 
-    if (!rawHtml || !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(rawHtml)) {
+    if (!rawHtml || !rawHtml.trim()) {
       toast.error("O design está vazio. Adicione conteúdo antes de salvar.");
       return null;
     }
 
-    // Replace embedded base64 images with uploaded URLs (avoids huge DB writes / timeouts)
     let combinedForUpload = `<style>${css}</style>${rawHtml}`;
     if (combinedForUpload.includes("data:image/")) {
       setIsUploading(true);
@@ -183,47 +198,48 @@ export const PopupBuilder = ({
     return { html: combinedForUpload, design };
   };
 
+  const buildSavePayload = (current: { html: string; design: any } | null) => {
+    const merged = current
+      ? { ...editorData, [previewMode]: current }
+      : editorData;
+
+    // Defense in depth: ensure mobile is never empty — fall back to desktop
+    const desktopHtml = merged.desktop.html || undefined;
+    const desktopDesign = merged.desktop.design || undefined;
+    let mobileHtml = merged.mobile.html || undefined;
+    let mobileDesign = merged.mobile.design || undefined;
+
+    if (!mobileHtml || mobileHtml.length < 100) {
+      mobileHtml = desktopHtml;
+      mobileDesign = desktopDesign;
+    }
+
+    return {
+      merged,
+      payload: {
+        html: desktopHtml,
+        design: desktopDesign,
+        html_mobile: mobileHtml,
+        design_mobile: mobileDesign,
+      }
+    };
+  };
+
   const handleSave = async () => {
     const currentPayload = await collectPayload();
     if (!currentPayload) return;
-
-    // Update the local state for the current mode before saving
-    const updatedData = {
-      ...editorData,
-      [previewMode]: currentPayload
-    };
-    
-    setEditorData(updatedData);
-
-    onSave({ 
-      html: updatedData.desktop.html || undefined,
-      design: updatedData.desktop.design || undefined,
-      html_mobile: updatedData.mobile.html || undefined,
-      design_mobile: updatedData.mobile.design || undefined,
-      settings 
-    });
+    const { merged, payload } = buildSavePayload(currentPayload);
+    setEditorData(merged);
+    onSave({ ...payload, settings });
     setHasUnsavedChanges(false);
   };
 
   const handlePublish = async () => {
     const currentPayload = await collectPayload();
     if (!currentPayload) return;
-
-    const updatedData = {
-      ...editorData,
-      [previewMode]: currentPayload
-    };
-    
-    setEditorData(updatedData);
-
-    onSave({ 
-      html: updatedData.desktop.html || undefined,
-      design: updatedData.desktop.design || undefined,
-      html_mobile: updatedData.mobile.html || undefined,
-      design_mobile: updatedData.mobile.design || undefined,
-      settings, 
-      is_active: true 
-    });
+    const { merged, payload } = buildSavePayload(currentPayload);
+    setEditorData(merged);
+    onSave({ ...payload, settings, is_active: true });
     setHasUnsavedChanges(false);
   };
 
@@ -232,37 +248,115 @@ export const PopupBuilder = ({
   };
 
   const setGjsPreviewMode = async (mode: "desktop" | "mobile") => {
+    if (mode === previewMode) return;
     const editor = editorRef.current;
-    if (!editor) return;
-
-    // 1. Capture current changes
-    const currentPayload = await collectPayload();
-    if (currentPayload) {
-      setEditorData(prev => ({
-        ...prev,
-        [previewMode]: currentPayload
-      }));
+    if (!editor) {
+      setPreviewMode(mode);
+      return;
     }
 
-    // 2. Update mode
-    setPreviewMode(mode);
-    editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
+    // Capture current changes before swapping
+    let newEditorData = editorData;
+    try {
+      const currentPayload = await collectPayload();
+      if (currentPayload) {
+        newEditorData = { ...editorData, [previewMode]: currentPayload };
+        setEditorData(newEditorData);
+      }
+    } catch (err) {
+      console.warn("Could not capture current mode payload before switching:", err);
+    }
 
-    // 3. Load the data for the new mode
-    const nextData = mode === "desktop" ? editorData.desktop : editorData.mobile;
-    if (nextData.design) {
-      editor.loadProjectData(nextData.design);
-    } else if (nextData.html) {
-      editor.setComponents(nextData.html);
-    } else {
-      // If no data for this mode yet, maybe clear or load a default?
-      // Let's keep it as is or clear if needed.
-      editor.setComponents(""); 
+    setPreviewMode(mode);
+
+    // Defer the GrapesJS device + content swap to next tick so React state settles
+    setTimeout(() => {
+      try {
+        editor.setDevice(mode === "desktop" ? "desktop" : "mobile");
+      } catch (err) {
+        console.warn("setDevice failed:", err);
+      }
+
+      try {
+        let nextData = mode === "desktop" ? newEditorData.desktop : newEditorData.mobile;
+
+        // First time entering mobile without saved content → mirror desktop
+        if (mode === "mobile" && (!nextData?.html || nextData.html.length < 100)) {
+          nextData = newEditorData.desktop;
+          setEditorData(prev => ({ ...prev, mobile: { ...prev.desktop } }));
+          toast.info("Mobile espelhado da versão desktop. Ajuste como quiser.");
+        }
+
+        if (nextData?.design && (editor as any).Components) {
+          editor.loadProjectData(nextData.design);
+        } else if (nextData?.html) {
+          editor.setComponents(nextData.html);
+        }
+      } catch (err) {
+        console.warn("Failed to load mode content:", err);
+      }
+    }, 50);
+  };
+
+  const handleCopyDesktopToMobile = () => {
+    const desktop = editorData.desktop;
+    if (!desktop?.html) {
+      toast.error("Salve o desktop primeiro.");
+      return;
+    }
+    setEditorData(prev => ({ ...prev, mobile: { ...desktop } }));
+    if (previewMode === "mobile") {
+      const editor = editorRef.current;
+      if (editor) {
+        try {
+          if (desktop.design && (editor as any).Components) {
+            editor.loadProjectData(desktop.design);
+          } else {
+            editor.setComponents(desktop.html);
+          }
+        } catch (err) {
+          console.warn("copy desktop->mobile load error:", err);
+        }
+      }
+    }
+    setHasUnsavedChanges(true);
+    toast.success("Conteúdo do Desktop copiado para Mobile.");
+  };
+
+  const openHtmlEditor = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    try { editor.runCommand?.("core:component-exit"); } catch {}
+    const css = editor.getCss();
+    const body = normalizeGrapesHtml(editor.getHtml());
+    const combined = css ? `<style>${css}</style>\n${body}` : body;
+    setHtmlDraft(combined);
+    setShowHtmlEditor(true);
+  };
+
+  const applyHtmlEditor = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const trimmed = htmlDraft.trim();
+    if (!trimmed) {
+      toast.error("O HTML não pode ficar vazio.");
+      return;
+    }
+    try {
+      editor.setComponents(trimmed);
+      // Save as the current mode's content
+      setEditorData(prev => ({
+        ...prev,
+        [previewMode]: { html: trimmed, design: null }
+      }));
+      setHasUnsavedChanges(true);
+      setShowHtmlEditor(false);
+      toast.success(`HTML atualizado (${previewMode}).`);
+    } catch (err: any) {
+      toast.error("HTML inválido: " + (err?.message || "erro desconhecido"));
     }
   };
 
-  // If popup was never published yet (treat as draft), keep "Publicar".
-  // After it's active, only show "Salvar".
   const showPublishButton = !isActive;
 
   return (
@@ -288,6 +382,19 @@ export const PopupBuilder = ({
             <Smartphone className="h-4 w-4 mr-1" /> Mobile
           </Button>
 
+          {previewMode === "mobile" && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleCopyDesktopToMobile}
+              className="bg-slate-100 text-slate-700 hover:bg-slate-200"
+              title="Copiar o conteúdo atual do Desktop para Mobile"
+            >
+              <Copy className="h-4 w-4 mr-1" /> Copiar do Desktop
+            </Button>
+          )}
+
           {hasUnsavedChanges && (
             <span className="text-xs text-amber-600 font-medium ml-2">
               ● Alterações não salvas
@@ -296,6 +403,16 @@ export const PopupBuilder = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={openHtmlEditor}
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200"
+          >
+            <Code2 className="h-4 w-4 mr-1" /> Editar HTML
+          </Button>
+
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="secondary" size="sm" className="bg-slate-100 text-slate-700 hover:bg-slate-200">
@@ -410,14 +527,38 @@ export const PopupBuilder = ({
       </div>
       <div className="flex-1 overflow-hidden">
         <GrapesEditor
-          key={previewMode} // Force re-render when switching modes to load correct initial state
-          initialDesign={previewMode === "desktop" ? editorData.desktop.design : editorData.mobile.design}
-          initialHtml={previewMode === "desktop" ? editorData.desktop.html : editorData.mobile.html}
+          initialDesign={editorData.desktop.design}
+          initialHtml={editorData.desktop.html}
           onReady={(ed) => { editorRef.current = ed; }}
           onChange={() => setHasUnsavedChanges(true)}
           minHeight="100%"
         />
       </div>
+
+      <Dialog open={showHtmlEditor} onOpenChange={setShowHtmlEditor}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              Editar HTML — {previewMode === "desktop" ? "Desktop" : "Mobile"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-muted-foreground">
+              Cole ou edite o HTML do pop-up. Inclua tags <code>&lt;style&gt;</code> dentro do próprio HTML se precisar de CSS específico.
+            </p>
+            <Textarea
+              value={htmlDraft}
+              onChange={(e) => setHtmlDraft(e.target.value)}
+              className="font-mono text-xs min-h-[400px]"
+              spellCheck={false}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowHtmlEditor(false)}>Cancelar</Button>
+            <Button onClick={applyHtmlEditor}>Aplicar HTML</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

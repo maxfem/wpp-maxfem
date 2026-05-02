@@ -27,7 +27,7 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       fromElement: false,
       storageManager: false,
       assetManager: {
-        upload: 0,
+        upload: false,
         embedAsBase64: true,
         assets: [],
       },

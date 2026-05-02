@@ -53,6 +53,7 @@ export default function Popups() {
         .from("popups")
         .select(`
           id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at,
+          html, design, html_mobile, design_mobile,
           contact_lists (
             id,
             name
@@ -131,10 +132,20 @@ export default function Popups() {
   });
 
   const updatePopupMutation = useMutation({
-    mutationFn: async ({ id, design, html, settings, is_active }: { id: string, design?: any, html?: string, settings?: any, is_active?: boolean }) => {
+    mutationFn: async ({ id, design, html, design_mobile, html_mobile, settings, is_active }: { 
+      id: string, 
+      design?: any, 
+      html?: string, 
+      design_mobile?: any,
+      html_mobile?: string,
+      settings?: any, 
+      is_active?: boolean 
+    }) => {
       const update: any = {};
       if (design !== undefined) update.design = design;
       if (html !== undefined) update.html = html;
+      if (design_mobile !== undefined) update.design_mobile = design_mobile;
+      if (html_mobile !== undefined) update.html_mobile = html_mobile;
       if (settings !== undefined) update.settings = settings;
       if (is_active !== undefined) update.is_active = is_active;
 
@@ -142,11 +153,17 @@ export default function Popups() {
         .from("popups")
         .update(update)
         .eq("id", id)
-        .select(`id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at, contact_lists ( id, name )`)
+        .select(`id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at, html, design, html_mobile, design_mobile, contact_lists ( id, name )`)
         .single();
       if (error) throw error;
       // Merge with the heavy fields we just sent so editor state stays consistent
-      return { ...data, design: design ?? null, html: html ?? null };
+      return { 
+        ...data, 
+        design: design ?? data.design, 
+        html: html ?? data.html,
+        design_mobile: design_mobile ?? data.design_mobile,
+        html_mobile: html_mobile ?? data.html_mobile
+      };
     },
     onSuccess: (data, variables) => {
       setEditingPopup((prev: any) => ({
@@ -155,6 +172,8 @@ export default function Popups() {
         // keep the design/html that was just persisted
         design: variables.design !== undefined ? variables.design : prev?.design,
         html: variables.html !== undefined ? variables.html : prev?.html,
+        design_mobile: variables.design_mobile !== undefined ? variables.design_mobile : prev?.design_mobile,
+        html_mobile: variables.html_mobile !== undefined ? variables.html_mobile : prev?.html_mobile,
       }));
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       if (variables.is_active === true && variables.html !== undefined) {
@@ -224,11 +243,13 @@ export default function Popups() {
                 key={editingPopup.id}
                 initialDesign={editingPopup.design}
                 initialHtml={editingPopup.html}
+                initialDesignMobile={editingPopup.design_mobile}
+                initialHtmlMobile={editingPopup.html_mobile}
                 initialSettings={editingPopup.settings}
                 isActive={editingPopup.is_active}
                 isLoading={updatePopupMutation.isPending}
-                onSave={({ design, html, settings, is_active }) => {
-                  updatePopupMutation.mutate({ id: editingPopup.id, design, html, settings, is_active });
+                onSave={({ design, html, design_mobile, html_mobile, settings, is_active }) => {
+                  updatePopupMutation.mutate({ id: editingPopup.id, design, html, design_mobile, html_mobile, settings, is_active });
                 }}
                 onToggleActive={(is_active) => {
                   updatePopupMutation.mutate({ id: editingPopup.id, is_active });

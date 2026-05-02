@@ -456,7 +456,15 @@ export default function Popups() {
                           <Button size="icon" variant="ghost" onClick={() => { setSelectedPopupForSnippet(popup); setShowSnippet(true); }}>
                             <Code className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => setEditingPopup(popup)}>
+                          <Button size="icon" variant="ghost" onClick={async () => {
+                            const { data, error } = await supabase
+                              .from("popups")
+                              .select(`*, contact_lists ( id, name )`)
+                              .eq("id", popup.id)
+                              .single();
+                            if (error) { toast.error(error.message); return; }
+                            setEditingPopup(data);
+                          }}>
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button size="icon" variant="ghost" className="text-destructive" onClick={() => deletePopupMutation.mutate(popup.id)}>

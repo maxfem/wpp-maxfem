@@ -96,15 +96,15 @@ Deno.serve(async (req) => {
     const isMobile = window.innerWidth <= 768;
     const content = (isMobile && popupData.html_mobile) ? popupData.html_mobile : popupData.html;
     
-    // Detect broken/empty html (Unlayer "Missing" placeholder or null) and use a friendly fallback if both are empty.
+    // Detect only truly empty/missing content. Do NOT replace user-saved HTML even if it lacks common tags.
     let finalHtml = content;
-    const isBroken = !finalHtml.trim() || 
-                    finalHtml.includes("missing-item") || 
-                    finalHtml.includes("missing-container") || 
-                    finalHtml.includes(">Missing<") ||
-                    !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(finalHtml);
-                    
+    const isBroken = !finalHtml || !finalHtml.trim() ||
+                    finalHtml.includes("missing-item") ||
+                    finalHtml.includes("missing-container") ||
+                    finalHtml.includes(">Missing<");
+
     if (isBroken) {
+      try { console.warn('[Maxfem popup] Falling back to default — saved HTML was empty or broken for popup', popupData.id); } catch(e){}
       finalHtml = \`
         <style>.mxf-fallback{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:380px;text-align:center;}
         .mxf-fallback h2{margin:0 0 8px;font-size:20px;color:#111;}.mxf-fallback p{margin:0 0 16px;color:#555;font-size:14px;}

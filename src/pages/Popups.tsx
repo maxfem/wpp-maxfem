@@ -142,19 +142,20 @@ export default function Popups() {
         .from("popups")
         .update(update)
         .eq("id", id)
-        .select(`
-          *,
-          contact_lists (
-            id,
-            name
-          )
-        `)
+        .select(`id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at, contact_lists ( id, name )`)
         .single();
       if (error) throw error;
-      return data;
+      // Merge with the heavy fields we just sent so editor state stays consistent
+      return { ...data, design: design ?? null, html: html ?? null };
     },
     onSuccess: (data, variables) => {
-      setEditingPopup(data);
+      setEditingPopup((prev: any) => ({
+        ...(prev || {}),
+        ...data,
+        // keep the design/html that was just persisted
+        design: variables.design !== undefined ? variables.design : prev?.design,
+        html: variables.html !== undefined ? variables.html : prev?.html,
+      }));
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       if (variables.is_active === true && variables.html !== undefined) {
         toast.success("Pop-up publicado e ativo!");

@@ -131,10 +131,16 @@ export default function Popups() {
   });
 
   const updatePopupMutation = useMutation({
-    mutationFn: async ({ id, design, html, settings }: { id: string, design: any, html: string, settings: any }) => {
+    mutationFn: async ({ id, design, html, settings, is_active }: { id: string, design?: any, html?: string, settings?: any, is_active?: boolean }) => {
+      const update: any = {};
+      if (design !== undefined) update.design = design;
+      if (html !== undefined) update.html = html;
+      if (settings !== undefined) update.settings = settings;
+      if (is_active !== undefined) update.is_active = is_active;
+
       const { data, error } = await supabase
         .from("popups")
-        .update({ design, html, settings })
+        .update(update)
         .eq("id", id)
         .select(`
           *,
@@ -147,10 +153,16 @@ export default function Popups() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       setEditingPopup(data);
       queryClient.invalidateQueries({ queryKey: ["popups"] });
-      toast.success("Pop-up publicado e salvo com sucesso!");
+      if (variables.is_active === true && variables.html !== undefined) {
+        toast.success("Pop-up publicado e ativo!");
+      } else if (variables.is_active !== undefined && variables.html === undefined) {
+        toast.success(variables.is_active ? "Pop-up ativado!" : "Pop-up desativado!");
+      } else {
+        toast.success("Alterações salvas!");
+      }
     },
     onError: (e: any) => toast.error(e.message),
   });

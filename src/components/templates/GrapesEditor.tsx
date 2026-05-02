@@ -259,6 +259,9 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       e.on("component:add", handler);
       e.on("component:remove", handler);
       e.on("style:update", handler);
+      e.on("asset:add", handler);
+      e.on("asset:remove", handler);
+      e.on("asset:upload:response", handler);
     }
 
     return () => {

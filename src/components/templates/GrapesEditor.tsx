@@ -244,6 +244,15 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
 
     setEditor(e);
     (window as any).grapesEditor = e;
+    onReady?.(e);
+
+    if (onChange) {
+      const handler = () => onChange();
+      e.on("component:update", handler);
+      e.on("component:add", handler);
+      e.on("component:remove", handler);
+      e.on("style:update", handler);
+    }
 
     return () => {
       try { e.destroy(); } catch {}

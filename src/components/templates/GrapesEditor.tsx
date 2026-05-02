@@ -28,6 +28,10 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       storageManager: false,
       assetManager: {
         upload: false,
+        // We handle image persistence ourselves: PopupBuilder converts any
+        // base64 to a uploaded URL before saving. Keeping embedAsBase64 here
+        // makes drag-and-drop still work (image becomes a data URL in the canvas)
+        // and our save step will move it to storage so the DB never gets a 5MB blob.
         embedAsBase64: true,
         assets: [],
       },

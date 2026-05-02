@@ -52,7 +52,7 @@ export default function Popups() {
       const { data, error } = await supabase
         .from("popups")
         .select(`
-          *,
+          id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at,
           contact_lists (
             id,
             name
@@ -142,19 +142,20 @@ export default function Popups() {
         .from("popups")
         .update(update)
         .eq("id", id)
-        .select(`
-          *,
-          contact_lists (
-            id,
-            name
-          )
-        `)
+        .select(`id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at, contact_lists ( id, name )`)
         .single();
       if (error) throw error;
-      return data;
+      // Merge with the heavy fields we just sent so editor state stays consistent
+      return { ...data, design: design ?? null, html: html ?? null };
     },
     onSuccess: (data, variables) => {
-      setEditingPopup(data);
+      setEditingPopup((prev: any) => ({
+        ...(prev || {}),
+        ...data,
+        // keep the design/html that was just persisted
+        design: variables.design !== undefined ? variables.design : prev?.design,
+        html: variables.html !== undefined ? variables.html : prev?.html,
+      }));
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       if (variables.is_active === true && variables.html !== undefined) {
         toast.success("Pop-up publicado e ativo!");
@@ -456,7 +457,15 @@ export default function Popups() {
                           <Button size="icon" variant="ghost" onClick={() => { setSelectedPopupForSnippet(popup); setShowSnippet(true); }}>
                             <Code className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => setEditingPopup(popup)}>
+                          <Button size="icon" variant="ghost" onClick={async () => {
+                            const { data, error } = await supabase
+                              .from("popups")
+                              .select(`*, contact_lists ( id, name )`)
+                              .eq("id", popup.id)
+                              .single();
+                            if (error) { toast.error(error.message); return; }
+                            setEditingPopup(data);
+                          }}>
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button size="icon" variant="ghost" className="text-destructive" onClick={() => deletePopupMutation.mutate(popup.id)}>

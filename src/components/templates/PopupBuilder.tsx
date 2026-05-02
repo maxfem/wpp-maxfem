@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sheet,
   SheetContent,
@@ -41,8 +43,10 @@ export const PopupBuilder = ({
   onToggleActive,
   isLoading,
 }: PopupBuilderProps) => {
+  const { currentTenant } = useAuth();
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const editorRef = useRef<Editor | null>(null);
 
   const [settings, setSettings] = useState({
@@ -69,33 +73,110 @@ export const PopupBuilder = ({
       .trim();
   };
 
-  const collectPayload = () => {
+  // Convert base64 data URL to a Blob
+  const dataUrlToBlob = (dataUrl: string): { blob: Blob; ext: string } | null => {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    const mime = match[1];
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const ext = (mime.split("/")[1] || "png").split("+")[0];
+    return { blob: new Blob([bytes], { type: mime }), ext };
+  };
+
+  // Upload one base64 image to storage and return the public URL
+  const uploadBase64 = async (dataUrl: string): Promise<string | null> => {
+    const parsed = dataUrlToBlob(dataUrl);
+    if (!parsed || !currentTenant) return null;
+    const path = `${currentTenant.id}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${parsed.ext}`;
+    const { error } = await supabase.storage
+      .from("popup-assets")
+      .upload(path, parsed.blob, { contentType: parsed.blob.type, upsert: false });
+    if (error) {
+      console.error("popup image upload error", error);
+      return null;
+    }
+    const { data } = supabase.storage.from("popup-assets").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  // Walk the html + design and replace every base64 image with an uploaded URL
+  const replaceBase64Images = async (html: string, design: any) => {
+    const seen = new Map<string, string>();
+    const matches = Array.from(new Set(html.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g) || []));
+
+    for (const dataUrl of matches) {
+      const url = await uploadBase64(dataUrl);
+      if (url) seen.set(dataUrl, url);
+    }
+
+    let newHtml = html;
+    for (const [dataUrl, url] of seen) {
+      // Escape regex special chars
+      const escaped = dataUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      newHtml = newHtml.replace(new RegExp(escaped, "g"), url);
+    }
+
+    // Walk the design JSON deeply replacing base64 src values
+    const replaceInValue = (val: any): any => {
+      if (typeof val === "string") {
+        if (val.startsWith("data:image/") && seen.has(val)) return seen.get(val);
+        return val;
+      }
+      if (Array.isArray(val)) return val.map(replaceInValue);
+      if (val && typeof val === "object") {
+        const out: any = Array.isArray(val) ? [] : {};
+        for (const k of Object.keys(val)) out[k] = replaceInValue(val[k]);
+        return out;
+      }
+      return val;
+    };
+    const newDesign = replaceInValue(design);
+
+    return { html: newHtml, design: newDesign };
+  };
+
+  const collectPayload = async () => {
     const editor = editorRef.current;
     if (!editor) return null;
 
     try { editor.runCommand?.("core:component-exit"); } catch {}
 
-    const html = normalizeGrapesHtml(editor.getHtml());
+    let rawHtml = normalizeGrapesHtml(editor.getHtml());
     const css = editor.getCss();
-    const design = editor.getProjectData();
-    const combinedHtml = `<style>${css}</style>${html}`;
+    let design = editor.getProjectData();
 
-    if (!html || !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(html)) {
+    if (!rawHtml || !/<(form|input|button|h1|h2|h3|p|img|a|div|section)\b/i.test(rawHtml)) {
       toast.error("O design está vazio. Adicione conteúdo antes de salvar.");
       return null;
     }
-    return { html: combinedHtml, design };
+
+    // Replace embedded base64 images with uploaded URLs (avoids huge DB writes / timeouts)
+    let combinedForUpload = `<style>${css}</style>${rawHtml}`;
+    if (combinedForUpload.includes("data:image/")) {
+      setIsUploading(true);
+      try {
+        const replaced = await replaceBase64Images(combinedForUpload, design);
+        combinedForUpload = replaced.html;
+        design = replaced.design;
+      } finally {
+        setIsUploading(false);
+      }
+    }
+
+    return { html: combinedForUpload, design };
   };
 
-  const handleSave = () => {
-    const payload = collectPayload();
+  const handleSave = async () => {
+    const payload = await collectPayload();
     if (!payload) return;
     onSave({ ...payload, settings });
     setHasUnsavedChanges(false);
   };
 
-  const handlePublish = () => {
-    const payload = collectPayload();
+  const handlePublish = async () => {
+    const payload = await collectPayload();
     if (!payload) return;
     onSave({ ...payload, settings, is_active: true });
     setHasUnsavedChanges(false);
@@ -238,22 +319,22 @@ export const PopupBuilder = ({
             variant="secondary"
             size="sm"
             onClick={handleSave}
-            disabled={isLoading}
+            disabled={isLoading || isUploading}
             className="bg-slate-900 text-white hover:bg-slate-800"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-            Salvar
+            {(isLoading || isUploading) ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+            {isUploading ? "Enviando imagens..." : "Salvar"}
           </Button>
 
           {showPublishButton && (
             <Button
               type="button"
               onClick={handlePublish}
-              disabled={isLoading}
+              disabled={isLoading || isUploading}
               className="bg-[#ED2B75] hover:bg-[#C2185B] text-white border-none shadow-lg shadow-pink-500/20 px-6"
             >
-              {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Rocket className="h-4 w-4 mr-2" />}
-              Publicar
+              {(isLoading || isUploading) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Rocket className="h-4 w-4 mr-2" />}
+              {isUploading ? "Enviando..." : "Publicar"}
             </Button>
           )}
         </div>

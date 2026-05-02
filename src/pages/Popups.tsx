@@ -108,7 +108,7 @@ export default function Popups() {
         tenant_id: currentTenant.id,
         name: newPopupName,
         contact_list_id: listId || null,
-        is_active: true,
+        is_active: false,
         settings: { delay: 2000, trigger: "timer", position: "center", showCloseButton: true, overlayClose: true },
         design: design,
         html: html,

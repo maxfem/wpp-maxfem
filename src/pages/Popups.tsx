@@ -52,7 +52,7 @@ export default function Popups() {
       const { data, error } = await supabase
         .from("popups")
         .select(`
-          *,
+          id, tenant_id, name, contact_list_id, is_active, settings, created_at, updated_at,
           contact_lists (
             id,
             name

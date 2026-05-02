@@ -113,6 +113,9 @@ export default function Popups() {
         settings: { delay: 2000, trigger: "timer", position: "center", showCloseButton: true, overlayClose: true },
         design: design,
         html: html,
+        // Mirror desktop into mobile by default — user can customize mobile separately later
+        design_mobile: design,
+        html_mobile: html,
       }).select().single();
       
       if (error) throw error;

@@ -88,11 +88,11 @@ Deno.serve(async (req) => {
     container.setAttribute('style', containerStyle);
     
     const popupContent = document.createElement('div');
+    // Transparent wrapper — let the saved HTML control its own visual styling (background, radius, shadow)
     popupContent.style.position = 'relative';
-    popupContent.style.background = 'white';
-    popupContent.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-    popupContent.style.borderRadius = '8px';
-    popupContent.style.maxWidth = '90vw';
+    popupContent.style.maxWidth = '95vw';
+    popupContent.style.maxHeight = '95vh';
+    popupContent.style.overflow = 'auto';
     const isMobile = window.innerWidth <= 768;
     const content = (isMobile && popupData.html_mobile) ? popupData.html_mobile : popupData.html;
     

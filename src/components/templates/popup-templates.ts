@@ -101,7 +101,8 @@ const ECOM_GPT_MOBILE = `
   .ecg-m__field{position:relative;}
   .ecg-m__field svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:#ED2B75;width:18px;height:18px;}
   .ecg-m__field input{width:100%;padding:14px 14px 14px 46px;border:none;border-radius:12px;font-size:14px;outline:none;background:#fff;color:#333;box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,.05);}
-  .ecg-m__btn{margin-top:6px;padding:16px;background:#ED2B75;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 8px 18px rgba(237,43,117,.4);}
+  .ecg-m__btn{margin-top:6px;padding:16px;background:linear-gradient(135deg,#ED2B75 0%,#FF6BA1 100%);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 8px 18px rgba(237,43,117,.4);transition:transform .15s,box-shadow .15s;}
+  .ecg-m__btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(237,43,117,.5);}
   .ecg-m__safe{display:flex;align-items:flex-start;gap:8px;margin:12px 8px 14px;font-size:11px;color:#888;line-height:1.4;text-align:center;justify-content:center;}
   .ecg-m__safe svg{flex-shrink:0;width:13px;height:13px;margin-top:2px;color:#888;}
   .ecg-m__produtos{width:calc(100% + 48px);margin:0 -24px;display:block;}

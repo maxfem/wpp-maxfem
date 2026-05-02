@@ -107,12 +107,14 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
     });
 
     e.BlockManager.add("mxf-image", {
-      label: "Image",
+      label: "Imagem",
       category: "Content",
       media: ico('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'),
-      select: true,
-      content: { type: "image" },
-      activate: true,
+      content: {
+        type: 'image',
+        activeOnRender: 1,
+        style: { color: 'black', width: '100%', height: 'auto', 'max-width': '100%' },
+      },
     });
 
     e.BlockManager.add("mxf-divider", {

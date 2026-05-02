@@ -220,6 +220,7 @@ export default function Popups() {
           <Card>
             <CardContent className="p-0">
               <PopupBuilder
+                key={editingPopup.id}
                 initialDesign={editingPopup.design}
                 initialHtml={editingPopup.html}
                 initialSettings={editingPopup.settings}

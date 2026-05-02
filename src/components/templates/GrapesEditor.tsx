@@ -26,6 +26,11 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       width: "auto",
       fromElement: false,
       storageManager: false,
+      assetManager: {
+        upload: false,
+        embedAsBase64: true,
+        assets: [],
+      },
       plugins: [pluginWebpage, pluginForms],
       pluginsOpts: {
         [pluginWebpage as any]: {
@@ -102,12 +107,14 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
     });
 
     e.BlockManager.add("mxf-image", {
-      label: "Image",
+      label: "Imagem",
       category: "Content",
       media: ico('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'),
-      select: true,
-      content: { type: "image" },
-      activate: true,
+      content: {
+        type: 'image',
+        activeOnRender: 1,
+        style: { color: 'black', width: '100%', height: 'auto', 'max-width': '100%' },
+      },
     });
 
     e.BlockManager.add("mxf-divider", {
@@ -224,7 +231,12 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
         e.loadProjectData(initialDesign);
       } catch (err) {
         console.error("Error loading design:", err);
-        if (initialHtml) e.setComponents(initialHtml);
+        if (initialHtml) {
+          const cssMatch = initialHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+          const pureHtml = initialHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+          e.setComponents(pureHtml);
+          if (cssMatch) e.setStyle(cssMatch[1]);
+        }
       }
     } else if (initialHtml) {
       e.setComponents(initialHtml);
@@ -252,6 +264,9 @@ export const GrapesEditor = ({ initialDesign, initialHtml, onSave, onReady, onCh
       e.on("component:add", handler);
       e.on("component:remove", handler);
       e.on("style:update", handler);
+      e.on("asset:add", handler);
+      e.on("asset:remove", handler);
+      e.on("asset:upload:response", handler);
     }
 
     return () => {

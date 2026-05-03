@@ -89,7 +89,7 @@ const getNodeConfigs = (
   condition: {
     title: "Condição",
     fields: [
-      { key: "field", label: "Campo", type: "select", options: ["Tag","E-mail aberto","Clicou no link","Respondeu","Comprou","Atributo personalizado"].map(o => ({ value: o, label: o })) },
+      { key: "field", label: "Campo", type: "select", options: ["Tag","E-mail aberto","Clicou no link","Respondeu","Comprou","Atributo personalizado", "Estado", "Produto"].map(o => ({ value: o, label: o })) },
       { key: "operator", label: "Operador", type: "select", options: ["é igual a","não é igual a","contém","não contém","existe","não existe"].map(o => ({ value: o, label: o })) },
       { key: "value", label: "Valor", type: "text", placeholder: "Valor da condição" },
     ],
@@ -171,6 +171,14 @@ const getNodeConfigs = (
     title: "Nota",
     fields: [
       { key: "content", label: "Conteúdo da nota", type: "textarea", placeholder: "Anotação sobre esta etapa do fluxo..." },
+    ],
+  },
+  startNode: {
+    title: "Gatilho",
+    fields: [
+      { key: "filterProducts", label: "Filtrar por Produtos (ID ou Nome)", type: "text", placeholder: "Ex: SKU1, SKU2" },
+      { key: "filterStates", label: "Filtrar por Estados", type: "text", placeholder: "Ex: SP, RJ, MG" },
+      { key: "filterDays", label: "Dias da Semana Permitidos", type: "text", placeholder: "Ex: Seg, Ter, Qua" },
     ],
   },
 });

@@ -103,7 +103,7 @@ serve(async (req) => {
       log.push(`Tópico SNS criado: ${topicArn}`);
     }
 
-    // Garante política permitindo SES publicar
+    // Garante política permitindo SES publicar (ignora se sem permissão)
     try {
       const attrs = await sns.send(new GetTopicAttributesCommand({ TopicArn: topicArn }));
       const currentPolicy = attrs.Attributes?.Policy ? JSON.parse(attrs.Attributes.Policy) : { Version: "2012-10-17", Statement: [] };
@@ -113,11 +113,9 @@ serve(async (req) => {
       if (!hasSesAllow) {
         currentPolicy.Statement = currentPolicy.Statement || [];
         currentPolicy.Statement.push({
-          Sid: "AllowSESPublish",
-          Effect: "Allow",
+          Sid: "AllowSESPublish", Effect: "Allow",
           Principal: { Service: "ses.amazonaws.com" },
-          Action: "sns:Publish",
-          Resource: topicArn,
+          Action: "sns:Publish", Resource: topicArn,
         });
         await sns.send(new SetTopicAttributesCommand({
           TopicArn: topicArn, AttributeName: "Policy", AttributeValue: JSON.stringify(currentPolicy),
@@ -127,19 +125,29 @@ serve(async (req) => {
         log.push("Política SNS já permite SES publicar.");
       }
     } catch (e: any) {
-      log.push(`Aviso política SNS: ${e.message}`);
+      log.push(`Aviso política SNS (sem permissão IAM ou erro): ${e.message}`);
     }
 
-    // Garante assinatura HTTPS para webhook
-    const subs = await sns.send(new ListSubscriptionsByTopicCommand({ TopicArn: topicArn }));
-    const existing = (subs.Subscriptions || []).find((s) => s.Endpoint === webhookUrl);
-    if (existing && existing.SubscriptionArn && existing.SubscriptionArn !== "PendingConfirmation") {
-      log.push(`Assinatura webhook já confirmada.`);
-    } else {
-      await sns.send(new SubscribeCommand({
-        TopicArn: topicArn, Protocol: "https", Endpoint: webhookUrl, ReturnSubscriptionArn: true,
-      }));
-      log.push(`Assinatura webhook criada — confirmação automática em andamento.`);
+    // Verifica assinatura HTTPS para webhook (ignora se sem permissão)
+    try {
+      const subs = await sns.send(new ListSubscriptionsByTopicCommand({ TopicArn: topicArn }));
+      const existing = (subs.Subscriptions || []).find((s) => s.Endpoint === webhookUrl);
+      if (existing && existing.SubscriptionArn && existing.SubscriptionArn !== "PendingConfirmation") {
+        log.push(`Assinatura webhook já confirmada (${existing.SubscriptionArn}).`);
+      } else if (existing) {
+        log.push(`Assinatura webhook pendente de confirmação.`);
+      } else {
+        try {
+          await sns.send(new SubscribeCommand({
+            TopicArn: topicArn, Protocol: "https", Endpoint: webhookUrl, ReturnSubscriptionArn: true,
+          }));
+          log.push(`Assinatura webhook criada — confirmação automática em andamento.`);
+        } catch (e: any) {
+          log.push(`Aviso ao criar assinatura: ${e.message}`);
+        }
+      }
+    } catch (e: any) {
+      log.push(`Aviso ao listar assinaturas (sem permissão IAM): ${e.message}. Assumindo que já existe — verifique no console SNS.`);
     }
 
     // ----- 2. Descobrir/escolher SES Configuration Set -----

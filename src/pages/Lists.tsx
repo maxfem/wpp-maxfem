@@ -505,6 +505,21 @@ export default function Lists() {
                   className="space-y-4"
                 >
                   <div className="space-y-2">
+                    <Label>Tipo</Label>
+                    <Select
+                      value={newList.type}
+                      onValueChange={(val) => setNewList({ ...newList, type: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual">Manual</SelectItem>
+                        <SelectItem value="webhook">Webhook (População Automática)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label>Nome *</Label>
                     <Input
                       value={newList.name}

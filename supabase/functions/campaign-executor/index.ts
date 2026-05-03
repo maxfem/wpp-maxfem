@@ -7,8 +7,8 @@ const corsHeaders = {
 
 // ===== VARIABLE RESOLUTION =====
 
-function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any }): string {
-  const { customer, order, campaign } = ctx;
+function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
+  const { customer, order, campaign, tenantId } = ctx;
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
   
@@ -42,6 +42,11 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "campaign.product_name": return campaign?.product_name || "-";
     case "campaign.product_desc": return campaign?.product_desc || "-";
     case "campaign.return_days": return campaign?.return_days || "5";
+    case "unsubscribe_url":
+    case "link_descadastro": {
+      if (!tenantId || !customer?.email) return "#";
+      return `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${tenantId}&e=${encodeURIComponent(customer.email)}`;
+    }
     default: return "-";
   }
 }

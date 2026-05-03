@@ -636,7 +636,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
 
             let buttonUrlCode: string | undefined;
             if (hasDynamicUrlButton) {

@@ -259,6 +259,44 @@ async function resolveWhatsAppCredentials(supabase: any, tenantId: string): Prom
   };
 }
 
+// ===== FILTER MATCHER =====
+
+function matchesFilters(node: FlowNode, triggerData: any, customer: any): boolean {
+  const data = node.data || {};
+  
+  // 1. Filter by Product
+  if (data.filterProducts) {
+    const products = String(data.filterProducts).split(",").map(p => p.trim().toLowerCase());
+    const orderItems = (triggerData?.items || []).map((i: any) => String(i.name || i.sku || "").toLowerCase());
+    
+    // If no items in trigger data, we can't match products, so we assume it doesn't match if filter is set
+    if (orderItems.length === 0) return false;
+    
+    const hasMatch = orderItems.some((item: any) => 
+      products.some(p => item.includes(p))
+    );
+    if (!hasMatch) return false;
+  }
+  
+  // 2. Filter by State
+  if (data.filterStates) {
+    const states = String(data.filterStates).split(",").map(s => s.trim().toUpperCase());
+    const customerState = String(customer?.custom_attributes?.state || triggerData?.state || "").toUpperCase();
+    if (!states.includes(customerState)) return false;
+  }
+  
+  // 3. Filter by Day of Week
+  if (data.filterDays) {
+    const days = String(data.filterDays).toLowerCase();
+    const now = new Date();
+    const dayNames = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
+    const currentDay = dayNames[now.getDay()];
+    if (!days.includes(currentDay)) return false;
+  }
+
+  return true;
+}
+
 // ===== AUTOMATION QUEUE PROCESSOR (GRAPH WALKER) =====
 
 async function processAutomationQueue(supabase: any) {

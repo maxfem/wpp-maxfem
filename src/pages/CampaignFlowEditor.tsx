@@ -266,6 +266,8 @@ function FlowEditorInner() {
           isAutomation={isAutomation}
           selectedTrigger={selectedTrigger}
           onTriggerChange={handleTriggerChange}
+          selectedWhatsAppAccountId={selectedWhatsAppAccountId}
+          onWhatsAppAccountChange={setSelectedWhatsAppAccountId}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

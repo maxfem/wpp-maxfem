@@ -38,7 +38,7 @@ const ACCEPTED_IMAGE = "image/jpeg,image/png,image/webp";
 const ACCEPTED_VIDEO = "video/mp4,video/3gpp";
 const ACCEPTED_DOC = "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv";
 
-export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenantId, channel = "whatsapp" }: ChatInputProps) {
+export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenantId, channel = "whatsapp", pendingPixCodes = [] }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);

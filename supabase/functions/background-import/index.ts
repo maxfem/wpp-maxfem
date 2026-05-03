@@ -44,7 +44,9 @@ async function processJob(job_id: string) {
 
   const nameIdx = headers.indexOf("name");
   const emailIdx = headers.indexOf("email");
-  const phoneIdx = headers.indexOf("phone");
+  // Check both "phone" and "telefones" to be safe
+  let phoneIdx = headers.indexOf("phone");
+  if (phoneIdx === -1) phoneIdx = headers.indexOf("telefones");
   const documentIdx = headers.indexOf("document");
 
   let processed = job.progress || 0;

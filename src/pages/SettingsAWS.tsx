@@ -410,6 +410,43 @@ export default function SettingsAWS() {
           </CardContent>
         </Card>
 
+        {/* Tracking de eventos */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Rastreamento de eventos</CardTitle>
+            <CardDescription>
+              Configura no AWS o Configuration Set, o tópico SNS e a assinatura HTTPS para receber em tempo real entregas, aberturas, cliques, bounces e reclamações. Sem isso, os relatórios das campanhas só mostram "enviado".
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {trackingSetup?.configuration_set ? (
+              <div className="p-3 bg-secondary/30 rounded-md text-sm space-y-1">
+                <p><strong>Configuration Set:</strong> <code className="text-xs">{trackingSetup.configuration_set}</code></p>
+                {trackingSetup.topic_arn && <p className="break-all"><strong>SNS Topic:</strong> <code className="text-xs">{trackingSetup.topic_arn}</code></p>}
+                {trackingSetup.tracking_setup_at && <p className="text-xs text-muted-foreground">Última configuração: {new Date(trackingSetup.tracking_setup_at).toLocaleString("pt-BR")}</p>}
+              </div>
+            ) : (
+              <div className="flex gap-2 p-3 bg-muted border border-border rounded-md text-sm">
+                <AlertTriangle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">Rastreamento ainda não configurado</p>
+                  <p className="text-xs mt-1">Clique em "Configurar rastreamento" para criar o Configuration Set, o tópico SNS e a assinatura webhook automaticamente.</p>
+                </div>
+              </div>
+            )}
+
+            <Button onClick={setupTracking} disabled={isSettingUpTracking || !allSecretsReady}>
+              {isSettingUpTracking ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Configurando...</> : <><ShieldCheck className="h-4 w-4 mr-2" /> {trackingSetup?.configuration_set ? "Reverificar/Reparar" : "Configurar rastreamento"}</>}
+            </Button>
+
+            {trackingLog.length > 0 && (
+              <div className="mt-2 p-3 bg-muted/50 rounded-md text-xs font-mono space-y-1 max-h-48 overflow-auto">
+                {trackingLog.map((line, i) => <div key={i}>• {line}</div>)}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Test & activate */}
         <Card>
           <CardHeader>

@@ -101,6 +101,13 @@ export default function Lists() {
     enabled: !!currentTenant,
   });
 
+  useEffect(() => {
+    // Refresh lists when a job completes (activeJobs becomes empty or changes)
+    if (activeJobs.length === 0) {
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+    }
+  }, [activeJobs.length, queryClient]);
+
   // Count-only query for total contacts (no data transfer)
   const { data: totalContacts = 0 } = useQuery({
     queryKey: ["customers_count", currentTenant?.id],

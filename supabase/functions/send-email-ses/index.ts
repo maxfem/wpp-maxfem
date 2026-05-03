@@ -53,23 +53,16 @@ function getAwsEnv(): AwsEnv {
   return { accessKeyId, secretAccessKey, region };
 }
 
-async function getSenderEmailFromDb(): Promise<string> {
+async function getAwsConfigFromDb(tenantId?: string | null): Promise<{ senderEmail: string; configurationSet: string | null }> {
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data } = await supabase
-    .from("integrations")
-    .select("config")
-    .eq("provider", "aws")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  if (!data?.config) {
-    throw new Error("Integração AWS SES não configurada ou inativa.");
-  }
-  const senderEmail = ((data.config as any).sender_email || "").trim();
-  if (!senderEmail) {
-    throw new Error("E-mail remetente não configurado na integração AWS SES.");
-  }
-  return senderEmail;
+  let q = supabase.from("integrations").select("config, tenant_id").eq("provider", "aws").eq("is_active", true);
+  if (tenantId) q = q.eq("tenant_id", tenantId);
+  const { data } = await q.limit(1).maybeSingle();
+  if (!data?.config) throw new Error("Integração AWS SES não configurada ou inativa.");
+  const cfg = data.config as any;
+  const senderEmail = (cfg.sender_email || "").trim();
+  if (!senderEmail) throw new Error("E-mail remetente não configurado na integração AWS SES.");
+  return { senderEmail, configurationSet: (cfg.configuration_set || "").trim() || null };
 }
 
 serve(async (req) => {

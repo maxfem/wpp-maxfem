@@ -56,7 +56,10 @@ serve(async (req) => {
     const tags = payload.tags || null
     const custom_attributes = payload.custom_attributes || null
 
+    console.log(`Processing contact: name=${name}, email=${email}, phone=${phone}, document=${document}`)
+
     if (!email && !phone && !document) {
+      console.log('Validation failed: No email, phone or document')
       return new Response(JSON.stringify({ error: 'Email, phone or document is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

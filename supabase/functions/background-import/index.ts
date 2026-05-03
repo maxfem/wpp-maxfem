@@ -108,46 +108,59 @@ async function processJob(job_id: string) {
         data?.forEach((c: any) => c.document && byDoc.set(c.document, c.id));
       }
 
-      // Resolve / collect inserts
-      const toInsert: any[] = [];
-      const resolved: (string | null)[] = recs.map((r) => {
-        const id =
+      // Resolve each record's customer_id (insert one-by-one for unresolved to handle conflicts safely)
+      const customerIds: string[] = [];
+      const seenInBatch = new Set<string>();
+      for (const r of recs) {
+        let id =
           (r.phone && byPhone.get(r.phone)) ||
           (r.email && byEmail.get(r.email)) ||
           (r.document && byDoc.get(r.document)) ||
           null;
+
         if (!id) {
-          toInsert.push({
-            tenant_id,
-            name: r.name || "Novo Contato",
-            email: r.email,
-            phone: r.phone,
-            document: r.document,
-          });
-        }
-        return id;
-      });
+          // Skip if duplicate within same batch (avoids unique constraint collisions)
+          const dedupeKey = r.email || r.phone || r.document!;
+          if (seenInBatch.has(dedupeKey)) continue;
+          seenInBatch.add(dedupeKey);
 
-      // Bulk insert new customers
-      let insertedIds: string[] = [];
-      if (toInsert.length) {
-        const { data: ins, error: insErr } = await supabase
-          .from("customers")
-          .insert(toInsert)
-          .select("id");
-        if (insErr) {
-          console.error(`[bg-import] insert error:`, insErr.message);
-        } else {
-          insertedIds = (ins || []).map((c: any) => c.id);
-        }
-      }
+          const { data: ins, error: insErr } = await supabase
+            .from("customers")
+            .insert({
+              tenant_id,
+              name: r.name || "Novo Contato",
+              email: r.email,
+              phone: r.phone,
+              document: r.document,
+            })
+            .select("id")
+            .single();
 
-      // Map inserted ids back into resolved list (in order)
-      let insIdx = 0;
-      const customerIds: string[] = [];
-      for (let i = 0; i < recs.length; i++) {
-        if (resolved[i]) customerIds.push(resolved[i] as string);
-        else if (insIdx < insertedIds.length) customerIds.push(insertedIds[insIdx++]);
+          if (insErr) {
+            // Conflict — try to find existing by any identifier
+            const { data: found } = await supabase
+              .from("customers")
+              .select("id")
+              .eq("tenant_id", tenant_id)
+              .or(
+                [
+                  r.email ? `email.eq.${r.email}` : null,
+                  r.phone ? `phone.eq.${r.phone}` : null,
+                  r.document ? `document.eq.${r.document}` : null,
+                ].filter(Boolean).join(",")
+              )
+              .limit(1)
+              .maybeSingle();
+            if (found) id = found.id;
+          } else if (ins) {
+            id = ins.id;
+            if (r.email) byEmail.set(r.email, id);
+            if (r.phone) byPhone.set(r.phone, id);
+            if (r.document) byDoc.set(r.document, id);
+          }
+        }
+
+        if (id) customerIds.push(id);
       }
 
       // Bulk upsert list members

@@ -54,6 +54,7 @@ export default function Lists() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [renamingList, setRenamingList] = useState<ContactList | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const { data: lists = [], isLoading } = useQuery({
     queryKey: ["contact_lists", currentTenant?.id],

@@ -89,7 +89,7 @@ const getNodeConfigs = (
   condition: {
     title: "Condição",
     fields: [
-      { key: "field", label: "Campo", type: "select", options: ["Tag","E-mail aberto","Clicou no link","Respondeu","Comprou","Atributo personalizado"].map(o => ({ value: o, label: o })) },
+      { key: "field", label: "Campo", type: "select", options: ["Tag","E-mail aberto","Clicou no link","Respondeu","Comprou","Atributo personalizado", "Estado", "Produto"].map(o => ({ value: o, label: o })) },
       { key: "operator", label: "Operador", type: "select", options: ["é igual a","não é igual a","contém","não contém","existe","não existe"].map(o => ({ value: o, label: o })) },
       { key: "value", label: "Valor", type: "text", placeholder: "Valor da condição" },
     ],

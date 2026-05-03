@@ -334,19 +334,20 @@ export default function CampaignDetails() {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, suffix, highlight }: {
+function KpiCard({ icon: Icon, label, value, suffix, highlight, destructive }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   suffix?: string;
   highlight?: boolean;
+  destructive?: boolean;
 }) {
   return (
-    <Card className={highlight ? "border-primary/30 bg-primary/5" : ""}>
+    <Card className={highlight ? "border-primary/30 bg-primary/5" : destructive ? "border-destructive/30 bg-destructive/5" : ""}>
       <CardContent className="p-3 flex flex-col items-center text-center gap-1">
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <Icon className={destructive ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-lg font-bold text-foreground">{value}</span>
+        <span className={destructive ? "text-lg font-bold text-destructive" : "text-lg font-bold text-foreground"}>{value}</span>
         {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
       </CardContent>
     </Card>

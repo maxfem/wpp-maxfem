@@ -179,6 +179,20 @@ export function ChatInput({ onSend, onSendMedia, disabled, onSendTemplate, tenan
       {/* Quick replies */}
       {showQuickReplies && (
         <div className="px-4 pt-3 pb-1 flex flex-wrap gap-1.5 animate-fade-in">
+          {pendingPixCodes.map((pix, i) => (
+            <button
+              key={`pix-${i}`}
+              onClick={() => {
+                insertQuickReply(pix.code);
+                toast.success("Código Pix inserido na mensagem");
+              }}
+              title={`Pedido #${pix.orderNumber || ""} — clique para inserir o Pix copia e cola`}
+              className="text-xs px-3 py-1.5 rounded-full bg-orange-500/10 text-orange-700 hover:bg-orange-500/20 transition-colors border border-orange-200 inline-flex items-center gap-1.5"
+            >
+              <Zap className="h-3 w-3" />
+              Pix copia e cola{pix.orderNumber ? ` #${pix.orderNumber}` : ""}
+            </button>
+          ))}
           {quickReplies.map((reply, i) => (
             <button key={i} onClick={() => insertQuickReply(reply)}
               className="text-xs px-3 py-1.5 rounded-full bg-accent text-accent-foreground hover:bg-accent/80 transition-colors border border-border">

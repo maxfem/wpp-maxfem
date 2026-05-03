@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -23,9 +24,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles, Webhook, Copy, Check
+  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles, Webhook, Copy, Check, Loader2, AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+
+type BackgroundJob = {
+  id: string;
+  type: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  total: number;
+  error_message: string | null;
+};
 
 type ContactList = {
   id: string;
@@ -55,6 +65,26 @@ export default function Lists() {
   const [renamingList, setRenamingList] = useState<ContactList | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const { data: activeJobs = [], refetch: refetchJobs } = useQuery({
+    queryKey: ["active_background_jobs", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("background_jobs")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .in("status", ["pending", "processing"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as BackgroundJob[];
+    },
+    enabled: !!currentTenant,
+    refetchInterval: (query) => {
+      return query.state.data?.length ? 2000 : false;
+    },
+  });
 
   const { data: lists = [], isLoading } = useQuery({
     queryKey: ["contact_lists", currentTenant?.id],
@@ -70,6 +100,13 @@ export default function Lists() {
     },
     enabled: !!currentTenant,
   });
+
+  useEffect(() => {
+    // Refresh lists when a job completes (activeJobs becomes empty or changes)
+    if (activeJobs.length === 0) {
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+    }
+  }, [activeJobs.length, queryClient]);
 
   // Count-only query for total contacts (no data transfer)
   const { data: totalContacts = 0 } = useQuery({
@@ -239,64 +276,74 @@ export default function Lists() {
 
   const handleFileUpload = async (file: File) => {
     if (!currentTenant) return;
-    const rows = await parseFileToRows(file);
-    if (rows.length < 2) {
-      toast.error("Arquivo vazio ou sem dados");
-      return;
-    }
-    const headers = rows[0].map((h) => h.toLowerCase());
-    const nameIdx = headers.findIndex((h) => h === "nome" || h === "name");
-    const emailIdx = headers.findIndex((h) => h === "email" || h === "e-mail");
-    const phoneIdx = headers.findIndex((h) => h === "telefone" || h === "phone" || h === "celular" || h === "whatsapp");
+    setImporting(true);
+    try {
+      const rows = await parseFileToRows(file);
+      if (rows.length < 2) {
+        toast.error("Arquivo vazio ou sem dados");
+        return;
+      }
+      const headers = rows[0].map((h) => h.toLowerCase());
+      
+      // Map common headers to internal names
+      const headerMap: Record<string, string> = {
+        nome: "name", name: "name",
+        email: "email", "e-mail": "email",
+        telefone: "phone", phone: "phone", celular: "phone", whatsapp: "phone",
+        cpf: "document", cnpj: "document", documento: "document", document: "document"
+      };
 
-    if (nameIdx === -1) {
-      toast.error("Coluna 'nome' não encontrada no arquivo");
-      return;
-    }
+      const mappedHeaders = headers.map(h => headerMap[h] || h);
+      const nameIdx = mappedHeaders.indexOf("name");
 
-    const listName = csvListName.trim() || file.name.replace(/\.(csv|xlsx|xls)$/i, "");
-    const { data: newListData, error: listError } = await supabase
-      .from("contact_lists")
-      .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
-      .select("id")
-      .single();
-    if (listError) { toast.error(listError.message); return; }
+      if (nameIdx === -1) {
+        toast.error("Coluna 'nome' não encontrada no arquivo");
+        return;
+      }
 
-    let count = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const cols = rows[i];
-      const name = cols[nameIdx];
-      if (!name) continue;
+      const listName = csvListName.trim() || file.name.replace(/\.(csv|xlsx|xls)$/i, "");
+      const { data: newListData, error: listError } = await supabase
+        .from("contact_lists")
+        .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
+        .select("id")
+        .single();
+      
+      if (listError) { toast.error(listError.message); return; }
 
-      const { data: cust, error: custErr } = await supabase
-        .from("customers")
+      // Create background job
+      const { data: job, error: jobErr } = await supabase
+        .from("background_jobs")
         .insert({
           tenant_id: currentTenant.id,
-          name,
-          email: emailIdx >= 0 ? cols[emailIdx] || null : null,
-          phone: phoneIdx >= 0 ? cols[phoneIdx] || null : null,
+          type: "contact_import",
+          status: "pending",
+          total: rows.length - 1,
+          progress: 0,
+          payload: {
+            list_id: newListData.id,
+            headers: mappedHeaders,
+            rows: rows.slice(1)
+          }
         })
         .select("id")
         .single();
-      if (custErr) continue;
 
-      await supabase.from("contact_list_members").insert({
-        list_id: newListData.id,
-        customer_id: cust.id,
+      if (jobErr) { toast.error(jobErr.message); return; }
+
+      // Trigger background processing (fire and forget)
+      supabase.functions.invoke("background-import", {
+        body: { job_id: job.id }
       });
-      count++;
+
+      setCsvOpen(false);
+      setCsvListName("");
+      toast.success("Importação iniciada em segundo plano!");
+      refetchJobs();
+    } catch (error: any) {
+      toast.error("Erro ao processar arquivo: " + error.message);
+    } finally {
+      setImporting(false);
     }
-
-    await supabase
-      .from("contact_lists")
-      .update({ customer_count: count })
-      .eq("id", newListData.id);
-
-    queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
-    queryClient.invalidateQueries({ queryKey: ["customers"] });
-    setCsvOpen(false);
-    setCsvListName("");
-    toast.success(`${count} contatos importados!`);
   };
 
   const filtered = lists.filter((l) =>
@@ -595,6 +642,30 @@ export default function Lists() {
           </Card>
         </div>
 
+        {/* Progress for background jobs */}
+        {activeJobs.length > 0 && (
+          <div className="space-y-4">
+            {activeJobs.map((job) => (
+              <Card key={job.id} className="border-primary/20 bg-primary/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm font-medium">
+                        Importando contatos...
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {job.progress} de {job.total} ({Math.round((job.progress / job.total) * 100)}%)
+                    </span>
+                  </div>
+                  <Progress value={(job.progress / job.total) * 100} className="h-2" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {/* Lists grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* "All contacts" virtual card */}
@@ -701,14 +772,27 @@ export default function Lists() {
                 <Download className="h-4 w-4 mr-2" />
                 Baixar modelo Excel
               </Button>
-              <Input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file);
-                }}
-              />
+              <div className="space-y-2">
+                <Label>Selecionar arquivo</Label>
+                <div className="relative">
+                  <Input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    disabled={importing}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload(file);
+                    }}
+                    className={importing ? "opacity-50" : ""}
+                  />
+                  {importing && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <span className="text-xs">Processando...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

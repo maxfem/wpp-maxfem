@@ -78,6 +78,53 @@ export type Database = {
           },
         ]
       }
+      background_jobs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          payload: Json | null
+          progress: number | null
+          status: Database["public"]["Enums"]["job_status"]
+          tenant_id: string
+          total: number | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          payload?: Json | null
+          progress?: number | null
+          status?: Database["public"]["Enums"]["job_status"]
+          tenant_id: string
+          total?: number | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          payload?: Json | null
+          progress?: number | null
+          status?: Database["public"]["Enums"]["job_status"]
+          tenant_id?: string
+          total?: number | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "background_jobs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_activities: {
         Row: {
           attribution_order_id: string | null
@@ -2078,6 +2125,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "collaborator"
+      job_status: "pending" | "processing" | "completed" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2206,6 +2254,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "collaborator"],
+      job_status: ["pending", "processing", "completed", "failed"],
     },
   },
 } as const

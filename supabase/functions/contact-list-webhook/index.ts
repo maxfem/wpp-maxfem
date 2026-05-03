@@ -76,7 +76,10 @@ serve(async (req) => {
         .eq('tenant_id', list.tenant_id)
         .eq('email', email)
         .maybeSingle()
-      if (existing) customerId = existing.id;
+      if (existing) {
+        console.log(`Found existing customer by email: ${existing.id}`)
+        customerId = existing.id;
+      }
     }
 
     if (!customerId && phone) {
@@ -86,7 +89,10 @@ serve(async (req) => {
         .eq('tenant_id', list.tenant_id)
         .eq('phone', phone)
         .maybeSingle()
-      if (existing) customerId = existing.id;
+      if (existing) {
+        console.log(`Found existing customer by phone: ${existing.id}`)
+        customerId = existing.id;
+      }
     }
 
     if (!customerId && document) {
@@ -96,7 +102,10 @@ serve(async (req) => {
         .eq('tenant_id', list.tenant_id)
         .eq('document', document)
         .maybeSingle()
-      if (existing) customerId = existing.id;
+      if (existing) {
+        console.log(`Found existing customer by document: ${existing.id}`)
+        customerId = existing.id;
+      }
     }
 
     if (!customerId) {
@@ -121,20 +130,24 @@ serve(async (req) => {
         throw createError
       }
       customerId = created.id
+      console.log(`Created new customer: ${customerId}`)
     } else {
       // Update existing customer info if provided
       const updateData: any = {}
-      if (name) updateData.name = name
+      if (name && name !== 'Novo Contato') updateData.name = name
       if (document) updateData.document = document
       if (tags) updateData.tags = tags
       if (custom_attributes) updateData.custom_attributes = custom_attributes
 
       if (Object.keys(updateData).length > 0) {
-        await supabase.from('customers').update(updateData).eq('id', customerId)
+        console.log(`Updating customer ${customerId}...`)
+        const { error: updateError } = await supabase.from('customers').update(updateData).eq('id', customerId)
+        if (updateError) console.error('Error updating customer:', updateError)
       }
     }
 
     // 3. Add to list
+    console.log(`Adding customer ${customerId} to list ${listId}...`)
     const { error: memberError } = await supabase
       .from('contact_list_members')
       .upsert({
@@ -149,6 +162,8 @@ serve(async (req) => {
       console.error('Error adding member to list:', memberError)
       throw memberError
     }
+
+    console.log('Successfully added member to list.')
 
     return new Response(JSON.stringify({ 
       success: true, 

@@ -90,6 +90,7 @@ function FlowEditorInner() {
           const fd = data.flow_data as any;
           if (fd.nodes?.length) setNodes(fd.nodes);
           if (fd.edges?.length) setEdges(fd.edges);
+          if (fd.whatsappAccountId) setSelectedWhatsAppAccountId(fd.whatsappAccountId);
         } else if (isAutomation && data.trigger_type) {
           // No flow data yet, set start node with trigger label
           setNodes(makeDefaultNodes(getTriggerLabel(data.trigger_type)));

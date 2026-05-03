@@ -149,6 +149,8 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [emailPreview, setEmailPreview] = useState<any | null>(null);
+  const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [emailForm, setEmailForm] = useState<{
     name: string;
     subject: string;
@@ -1265,87 +1267,165 @@ export default function MessageTemplates() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {emailTemplates.map((t: any) => (
-                  <Card key={t.id} className="overflow-hidden group">
-                    <CardHeader className="p-4 pb-2">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-base truncate max-w-[200px]">{t.name}</CardTitle>
-                          <CardDescription className="text-xs truncate max-w-[200px]">{t.subject}</CardDescription>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {emailTemplates.map((t: any) => {
+                  const openEditor = () => {
+                    setEmailForm({
+                      name: t.name,
+                      subject: t.subject || "",
+                      body_html: t.body_html || "",
+                      category: t.category || "marketing",
+                      design: t.design || null,
+                    });
+                    setEditingEmailId(t.id);
+                    setEmailDialogOpen(true);
+                  };
+                  return (
+                    <Card key={t.id} className="overflow-hidden group hover:shadow-md transition-shadow flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => setEmailPreview(t)}
+                        className="relative bg-white h-56 overflow-hidden border-b block w-full text-left"
+                        title="Visualizar"
+                      >
+                        {t.body_html ? (
+                          <iframe
+                            srcDoc={`<style>html,body{margin:0;padding:0;background:#fff;}body{transform:scale(0.5);transform-origin:top left;width:200%;height:200%;}::-webkit-scrollbar{display:none;}</style>${t.body_html}`}
+                            className="w-full h-full border-none pointer-events-none"
+                            title={t.name}
+                            sandbox=""
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                            <Mail className="h-10 w-10 opacity-30" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-black/60 backdrop-blur px-2.5 py-1 rounded-md">
+                            <Eye className="h-3.5 w-3.5" /> Visualizar
+                          </span>
                         </div>
-                        <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-2 flex flex-col gap-4">
-                      <div className="bg-muted rounded h-40 overflow-hidden border relative flex items-center justify-center">
-                         {/* Simple HTML Preview using iframe sandbox */}
-                         <iframe 
-                           srcDoc={`
-                            <style>
-                              body { margin: 0; padding: 0; transform: scale(0.4); transform-origin: top center; width: 250%; }
-                              ::-webkit-scrollbar { display: none; }
-                            </style>
-                            ${t.body_html}
-                           `} 
-                           className="w-full h-full border-none pointer-events-none" 
-                           title={t.name}
-                         />
-                         <div className="absolute inset-0 bg-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 cursor-pointer" onClick={() => {
-                            setEmailForm({
-                              name: t.name,
-                              subject: t.subject || "",
-                              body_html: t.body_html || "",
-                              category: t.category || "marketing",
-                              design: t.design || null,
-                            });
-                            setEditingEmailId(t.id);
-                            setEmailDialogOpen(true);
-                         }}>
-                            <Button variant="secondary" size="sm">
-                              <Eye className="h-4 w-4 mr-2" /> Visualizar
+                      </button>
+
+                      <CardHeader className="p-4 pb-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <CardTitle className="text-sm font-semibold truncate">{t.name}</CardTitle>
+                            <CardDescription className="text-xs truncate mt-0.5">{t.subject || "Sem assunto"}</CardDescription>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] capitalize shrink-0">{t.category}</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-2 mt-auto">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(t.created_at).toLocaleDateString("pt-BR")}
+                          </span>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setEmailPreview(t)}>
+                              <Eye className="h-3.5 w-3.5" />
                             </Button>
-                         </div>
-                      </div>
-                      <div className="flex justify-between items-center mt-auto">
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(t.created_at).toLocaleDateString()}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => {
-                            setEmailForm({
-                              name: t.name,
-                              subject: t.subject || "",
-                              body_html: t.body_html || "",
-                              category: t.category || "marketing",
-                              design: t.design || null,
-                            });
-                            setEditingEmailId(t.id);
-                            setEmailDialogOpen(true);
-                          }}>
-                            <Pencil className="h-3 w-3 mr-2" /> Editar
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem className="text-destructive" onClick={() => {
-                                if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
-                              }}>
-                                <Trash2 className="h-4 w-4 mr-2" /> Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            <Button variant="outline" size="sm" className="h-8" onClick={openEditor}>
+                              <Pencil className="h-3 w-3 mr-1.5" /> Editar
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setEmailPreview(t)}>
+                                  <Eye className="h-4 w-4 mr-2" /> Visualizar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={openEditor}>
+                                  <Pencil className="h-4 w-4 mr-2" /> Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive" onClick={() => {
+                                  if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                                }}>
+                                  <Trash2 className="h-4 w-4 mr-2" /> Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
+
+            <Dialog open={!!emailPreview} onOpenChange={(o) => { if (!o) setEmailPreview(null); }}>
+              <DialogContent className="max-w-5xl w-full h-[90vh] flex flex-col p-0 gap-0">
+                <DialogHeader className="p-4 pb-3 border-b">
+                  <div className="flex items-center justify-between gap-4 pr-8">
+                    <div className="min-w-0 flex-1">
+                      <DialogTitle className="text-base truncate">{emailPreview?.name}</DialogTitle>
+                      <DialogDescription className="text-xs truncate mt-0.5">
+                        Assunto: {emailPreview?.subject || "—"}
+                      </DialogDescription>
+                    </div>
+                    <div className="flex items-center gap-1 bg-muted rounded-md p-0.5 shrink-0">
+                      <Button
+                        variant={emailPreviewMode === "desktop" ? "default" : "ghost"}
+                        size="sm"
+                        className="h-7 px-3 text-xs"
+                        onClick={() => setEmailPreviewMode("desktop")}
+                      >
+                        Desktop
+                      </Button>
+                      <Button
+                        variant={emailPreviewMode === "mobile" ? "default" : "ghost"}
+                        size="sm"
+                        className="h-7 px-3 text-xs"
+                        onClick={() => setEmailPreviewMode("mobile")}
+                      >
+                        Mobile
+                      </Button>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="flex-1 overflow-auto bg-muted/40 p-6 flex justify-center">
+                  <div
+                    className="bg-white shadow-lg rounded-md overflow-hidden transition-all"
+                    style={{
+                      width: emailPreviewMode === "mobile" ? 390 : "100%",
+                      maxWidth: emailPreviewMode === "mobile" ? 390 : 800,
+                      height: "100%",
+                    }}
+                  >
+                    <iframe
+                      srcDoc={emailPreview?.body_html || "<p style='padding:24px;font-family:sans-serif;color:#888'>Sem conteúdo</p>"}
+                      className="w-full h-full border-none"
+                      title={emailPreview?.name}
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                </div>
+                {emailPreview && (
+                  <div className="p-3 border-t flex justify-end gap-2 bg-background">
+                    <Button variant="outline" size="sm" onClick={() => setEmailPreview(null)}>Fechar</Button>
+                    <Button size="sm" onClick={() => {
+                      const t = emailPreview;
+                      setEmailForm({
+                        name: t.name,
+                        subject: t.subject || "",
+                        body_html: t.body_html || "",
+                        category: t.category || "marketing",
+                        design: t.design || null,
+                      });
+                      setEditingEmailId(t.id);
+                      setEmailPreview(null);
+                      setEmailDialogOpen(true);
+                    }}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar template
+                    </Button>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
         </Tabs>
 

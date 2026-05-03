@@ -29,35 +29,40 @@ const groupLabels: Record<string, string> = {
   extra: "Extra",
 };
 
-export const AUTOMATION_TRIGGERS = [
+type TriggerItem = { value: string; label: string; description: string; enabled?: boolean };
+type TriggerGroup = { group: string; items: TriggerItem[] };
+
+export const AUTOMATION_TRIGGERS: TriggerGroup[] = [
   { group: "Pedido", items: [
-    { value: "order_created", label: "Pedido criado", description: "Disparado quando houver novo pedido" },
-    { value: "order_created_boleto", label: "Pedido criado (Boleto)", description: "Disparado quando houver novo pedido de boleto" },
-    { value: "order_created_pix", label: "Pedido criado (Pix)", description: "Disparado quando houver novo pedido de Pix" },
-    { value: "order_paid", label: "Pedido pago", description: "Disparado quando pedido atualizado para pago" },
-    { value: "order_rejected_card", label: "Pedido recusado (Cartão)", description: "Disparado quando pedido de cartão recusado" },
+    { value: "order_created", label: "Pedido criado", description: "Disparado quando houver novo pedido (qualquer método)", enabled: true },
+    { value: "order_created_pix", label: "Pedido criado (Pix)", description: "Pedido criado aguardando pagamento Pix", enabled: true },
+    { value: "order_created_boleto", label: "Pedido criado (Boleto)", description: "Pedido criado aguardando pagamento de boleto", enabled: true },
+    { value: "order_paid", label: "Pedido pago", description: "Disparado quando o pagamento for confirmado", enabled: true },
+    { value: "order_approved", label: "Pedido aprovado", description: "Pedido aprovado/faturado pelo lojista", enabled: true },
+    { value: "order_delivered", label: "Pedido entregue", description: "Status alterado para entregue", enabled: true },
+    { value: "order_rejected_card", label: "Pedido recusado (Cartão)", description: "Pagamento de cartão recusado", enabled: true },
+    { value: "invoice_issued", label: "Nota fiscal emitida", description: "NF-e emitida para o pedido", enabled: true },
+    { value: "return_approved", label: "Devolução aprovada", description: "Devolução, troca ou estorno aprovado", enabled: true },
+    { value: "first_purchase", label: "Primeira compra", description: "Cliente concluiu sua primeira compra", enabled: true },
   ]},
-  { group: "Carrinho abandonado", items: [
-    { value: "cart_abandoned", label: "Carrinho abandonado criado", description: "Disparado quando houver novo carrinho abandonado" },
-    { value: "cart_abandonment_pixel", label: "Carrinho abandonado (Pixel)", description: "Cliente identificado iniciou checkout no site e não comprou" },
+  { group: "Carrinho & Navegação", items: [
+    { value: "cart_abandoned", label: "Carrinho abandonado", description: "Carrinho registrado pela Yampi sem conversão", enabled: true },
+    { value: "cart_abandonment_pixel", label: "Checkout abandonado (Pixel)", description: "Cliente identificado iniciou checkout no site e não comprou", enabled: true },
+    { value: "browse_abandonment", label: "Navegação abandonada (Pixel)", description: "Cliente identificado viu produtos mas não comprou", enabled: true },
   ]},
-  { group: "Pixel de Rastreamento", items: [
-    { value: "browse_abandonment", label: "Navegação abandonada", description: "Cliente identificado viu produtos no site mas não comprou" },
+  { group: "Pós-venda & Retenção", items: [
+    { value: "birthday", label: "Aniversário do cliente", description: "Disparado todo dia no aniversário do cliente", enabled: true },
+    { value: "first_purchase_anniversary", label: "Aniversário da 1ª compra", description: "Disparado anualmente na data da primeira compra", enabled: true },
+    { value: "inactivity", label: "Inatividade", description: "Cliente sem comprar há X dias (defina X no nome: ex. \"60 dias\")", enabled: true },
+    { value: "pos_delivery_7d", label: "7 dias após entrega", description: "Pós-venda 7 dias após o pedido ser entregue", enabled: true },
   ]},
-  { group: "Número de rastreio", items: [
-    { value: "tracking_created", label: "Número de rastreio criado", description: "Disparado quando houver novo número de rastreio" },
-    { value: "tracking_updated", label: "Número de rastreio atualizado", description: "Disparado quando número de rastreio atualizado" },
-  ]},
-  { group: "Lead", items: [
-    { value: "lead_created", label: "Lead inserido", description: "Disparado quando houver novo lead na lista" },
-    { value: "lead_birthday", label: "Lead aniversariante", description: "Disparado quando houver lead aniversariante" },
-  ]},
-  { group: "Conversa", items: [
-    { value: "conversation_created", label: "Conversa criada (WhatsApp)", description: "Disparado quando houver nova conversa de WhatsApp" },
-    { value: "conversation_archived", label: "Conversa arquivada", description: "Disparado quando houver conversa arquivada" },
-  ]},
-  { group: "Avançado", items: [
-    { value: "webhook", label: "Webhook", description: "Disparado quando houver nova requisição de webhook" },
+  { group: "Em breve", items: [
+    { value: "tracking_created", label: "Rastreio gerado", description: "Em desenvolvimento", enabled: false },
+    { value: "tracking_updated", label: "Rastreio atualizado", description: "Em desenvolvimento", enabled: false },
+    { value: "lead_created", label: "Lead inserido na lista", description: "Em desenvolvimento", enabled: false },
+    { value: "conversation_created", label: "Nova conversa WhatsApp", description: "Em desenvolvimento", enabled: false },
+    { value: "conversation_archived", label: "Conversa arquivada", description: "Em desenvolvimento", enabled: false },
+    { value: "webhook", label: "Webhook customizado", description: "Em desenvolvimento", enabled: false },
   ]},
 ];
 
@@ -158,9 +163,10 @@ export function FlowSidebar({
                       {group.group}
                     </div>
                     {group.items.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        <div className="flex flex-col">
+                      <SelectItem key={item.value} value={item.value} disabled={item.enabled === false}>
+                        <div className="flex items-center gap-2">
                           <span>{item.label}</span>
+                          {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground" />}
                         </div>
                       </SelectItem>
                     ))}
@@ -169,7 +175,7 @@ export function FlowSidebar({
               </SelectContent>
             </Select>
             {selectedTrigger && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground leading-snug">
                 ⚡ {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger)?.description}
               </p>
             )}

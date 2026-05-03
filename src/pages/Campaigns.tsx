@@ -31,16 +31,7 @@ import {
 import { toast } from "sonner";
 import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { cn, formatSP } from "@/lib/utils";
-
-const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
-  draft: { label: "Rascunho", icon: FileText, className: "bg-muted text-muted-foreground" },
-  scheduled: { label: "Agendado", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
-  sending: { label: "Enviando", icon: Zap, className: "bg-blue-100 text-blue-700" },
-  sent: { label: "Enviado", icon: Check, className: "bg-green-100 text-green-700" },
-  running: { label: "Ativa", icon: Zap, className: "bg-green-100 text-green-700" },
-  failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
-  finished: { label: "Encerrada", icon: Check, className: "bg-muted text-muted-foreground" },
-};
+import { getStatusMeta, toneClass } from "@/lib/statusBadges";
 
 const campaignTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
@@ -387,7 +378,7 @@ export default function Campaigns() {
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
-              const st = statusConfig[c.status] || statusConfig.draft;
+              const st = getStatusMeta(c.status, "campaign");
               const StIcon = st.icon;
               const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
               const metrics = metricsMap[c.id];
@@ -414,7 +405,7 @@ export default function Campaigns() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between pt-1 border-t border-border">
-                      <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                      <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
                         <StIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
@@ -449,7 +440,7 @@ export default function Campaigns() {
               </TableHeader>
               <TableBody>
                 {filtered.map((c) => {
-                  const st = statusConfig[c.status] || statusConfig.draft;
+                  const st = getStatusMeta(c.status, "campaign");
                   const StIcon = st.icon;
                   const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
                   const metrics = metricsMap[c.id];
@@ -459,7 +450,7 @@ export default function Campaigns() {
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-muted-foreground text-xs">{typeLabel}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                        <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
                           <StIcon className="h-3 w-3" />
                           {st.label}
                         </Badge>

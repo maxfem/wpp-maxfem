@@ -21,19 +21,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Check, Clock, FileText, AlertTriangle, LayoutList, CalendarIcon } from "lucide-react";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Clock, LayoutList, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { isWithinInterval } from "date-fns";
 import { cn, formatSP, toSaoPaulo, getStandardPeriodRange, type DatePeriodKey } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
-
-const statusConfig: Record<string, { label: string; icon: React.ElementType; className: string }> = {
-  draft: { label: "Inativa", icon: FileText, className: "bg-muted text-muted-foreground" },
-  running: { label: "Ativa", icon: Zap, className: "bg-green-100 text-green-700" },
-  paused: { label: "Pausada", icon: Clock, className: "bg-yellow-100 text-yellow-700" },
-  failed: { label: "Falhou", icon: AlertTriangle, className: "bg-destructive/10 text-destructive" },
-};
+import { getStatusMeta, toneClass } from "@/lib/statusBadges";
 
 const datePresets: { label: string; key: DatePeriodKey }[] = [
   { label: "Hoje", key: "today" },
@@ -361,24 +355,32 @@ export default function Automations() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
-              const st = statusConfig[c.status] || statusConfig.draft;
+              const st = getStatusMeta(c.status, "automation");
               const StIcon = st.icon;
               const typeLabel = c.trigger_type ? getTriggerLabel(c.trigger_type) : (automationTypes.find((t) => t.value === c.type)?.label || c.type);
               const metrics = metricsMap[c.id];
               const pendingCount = pendingQueueCounts[c.id] || 0;
+              const isActive = c.status === "running";
 
               return (
-                <Card key={c.id} className="border border-border hover:border-primary/30 transition-colors group">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="text-sm font-semibold leading-tight pr-6">{c.name}</CardTitle>
+                <Card
+                  key={c.id}
+                  className="border border-border hover:border-primary/40 hover:shadow-sm transition-all group cursor-pointer"
+                  onClick={() => navigate(`/automations/${c.id}`)}
+                >
+                  <CardHeader className="pb-2 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isActive ? "bg-success animate-pulse" : "bg-muted-foreground/40")} />
+                        <CardTitle className="text-sm font-semibold leading-tight truncate">{c.name}</CardTitle>
+                      </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem onClick={() => navigate(`/automations/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => navigate(`/automations/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => duplicateCampaign.mutate(c)}><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
@@ -388,40 +390,48 @@ export default function Automations() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                    <CardDescription className="text-xs flex items-center gap-1">
-                      <Zap className="h-3 w-3 text-primary" />
-                      {typeLabel}
+                    <CardDescription className="text-xs flex items-center gap-1.5 text-muted-foreground">
+                      <Zap className="h-3 w-3 text-primary shrink-0" />
+                      <span className="truncate">{typeLabel}</span>
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-3 pt-0">
                     {/* Metrics */}
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{(metrics?.envios || 0).toLocaleString("pt-BR")} envios</span>
-                      <span className="text-border">|</span>
-                      <span>{metrics && metrics.envios > 0 ? ((metrics.conversoes / metrics.envios) * 100).toFixed(1) : "0.0"}% conversão</span>
-                      <span className="text-border">|</span>
-                      <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>
-                        R$ {(metrics?.conversao || 0) >= 1000 ? `${((metrics?.conversao || 0) / 1000).toFixed(1)}k` : (metrics?.conversao || 0).toFixed(2)}
-                      </span>
+                    <div className="grid grid-cols-3 gap-2 py-2 border-y border-border/60">
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Envios</p>
+                        <p className="text-sm font-semibold tabular-nums">{(metrics?.envios || 0).toLocaleString("pt-BR")}</p>
+                      </div>
+                      <div className="text-center border-x border-border/60">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Conv.</p>
+                        <p className="text-sm font-semibold tabular-nums">{metrics && metrics.envios > 0 ? ((metrics.conversoes / metrics.envios) * 100).toFixed(1) : "0.0"}%</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Receita</p>
+                        <p className="text-sm font-semibold tabular-nums text-success">
+                          R$ {(metrics?.conversao || 0) >= 1000 ? `${((metrics?.conversao || 0) / 1000).toFixed(1)}k` : (metrics?.conversao || 0).toFixed(0)}
+                        </p>
+                      </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-between pt-1 border-t border-border">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
-                          <StIcon className="h-3 w-3" />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className={cn("text-[10px] gap-1 font-medium px-1.5 py-0.5", toneClass(st.tone))}>
+                          <StIcon className="h-2.5 w-2.5" />
                           {st.label}
                         </Badge>
                         {pendingCount > 0 && (
-                          <Badge variant="outline" className="text-[10px] gap-1 bg-orange-100 text-orange-700 border-orange-200">
-                            <Clock className="h-3 w-3" />
-                            {pendingCount} na fila
+                          <Badge variant="outline" className={cn("text-[10px] gap-1 px-1.5 py-0.5", toneClass("warning"))}>
+                            <Clock className="h-2.5 w-2.5" />
+                            {pendingCount}
                           </Badge>
                         )}
                       </div>
                       <Switch
-                        className="scale-75"
-                        checked={c.status === "running"}
+                        className="scale-75 -mr-1"
+                        checked={isActive}
+                        onClick={(e) => e.stopPropagation()}
                         onCheckedChange={() => toggleAutomation.mutate({ id: c.id, currentStatus: c.status })}
                       />
                     </div>
@@ -463,7 +473,9 @@ export default function Automations() {
                         {group.group}
                       </div>
                       {group.items.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                        <SelectItem key={item.value} value={item.value} disabled={item.enabled === false}>
+                          {item.label}{item.enabled === false ? " (em breve)" : ""}
+                        </SelectItem>
                       ))}
                     </div>
                   ))}

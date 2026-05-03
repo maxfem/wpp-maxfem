@@ -1,0 +1,1 @@
+UPDATE public.campaigns SET trigger_type = 'pos_delivery_7d' WHERE trigger_type = '7 dias após entrega';

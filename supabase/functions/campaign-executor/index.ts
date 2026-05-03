@@ -116,7 +116,7 @@ function getCustomerDynamicUrl(customer: any, templateName: string): string | nu
 // ===== TEMPLATE BUILDER =====
 
 function buildTemplateComponents(
-  variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any },
+  variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string },
   bodyVarCount: number, hasHeaderVar: boolean,
   buttonUrlCode?: string, buttonUrlIndex?: number,
   copyCodeButtons?: { index: number; value: string }[],

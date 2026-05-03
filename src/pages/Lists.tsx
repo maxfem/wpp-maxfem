@@ -312,6 +312,7 @@ export default function Lists() {
     csv_import: "Importação CSV",
     dynamic: "Dinâmica",
     rfm: "RFM",
+    webhook: "Webhook",
   };
 
   const isRfmList = (list: ContactList) => list.type === "rfm";

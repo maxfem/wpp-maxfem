@@ -6,7 +6,6 @@ import {
   CreateConfigurationSetCommand,
   DescribeConfigurationSetCommand,
   ListConfigurationSetsCommand,
-  DescribeConfigurationSetEventDestinationsCommand,
   CreateConfigurationSetEventDestinationCommand,
   UpdateConfigurationSetEventDestinationCommand,
 } from "npm:@aws-sdk/client-ses@3.645.0";

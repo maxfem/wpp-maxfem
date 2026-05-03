@@ -108,47 +108,69 @@ async function processJob(job_id: string) {
         data?.forEach((c: any) => c.document && byDoc.set(c.document, c.id));
       }
 
-      // Resolve / collect inserts
-      const toInsert: any[] = [];
-      const resolved: (string | null)[] = recs.map((r) => {
-        const id =
+      // Resolve each record's customer_id; insert unresolved with parallelism
+      const seenInBatch = new Set<string>();
+      const tasks: Promise<string | null>[] = [];
+
+      for (const r of recs) {
+        const existing =
           (r.phone && byPhone.get(r.phone)) ||
           (r.email && byEmail.get(r.email)) ||
           (r.document && byDoc.get(r.document)) ||
           null;
-        if (!id) {
-          toInsert.push({
-            tenant_id,
-            name: r.name || "Novo Contato",
-            email: r.email,
-            phone: r.phone,
-            document: r.document,
-          });
-        }
-        return id;
-      });
 
-      // Bulk insert new customers
-      let insertedIds: string[] = [];
-      if (toInsert.length) {
-        const { data: ins, error: insErr } = await supabase
-          .from("customers")
-          .insert(toInsert)
-          .select("id");
-        if (insErr) {
-          console.error(`[bg-import] insert error:`, insErr.message);
-        } else {
-          insertedIds = (ins || []).map((c: any) => c.id);
+        if (existing) {
+          tasks.push(Promise.resolve(existing));
+          continue;
         }
+
+        const dedupeKey = r.email || r.phone || r.document!;
+        if (seenInBatch.has(dedupeKey)) {
+          tasks.push(Promise.resolve(null));
+          continue;
+        }
+        seenInBatch.add(dedupeKey);
+
+        tasks.push((async () => {
+          const { data: ins, error: insErr } = await supabase
+            .from("customers")
+            .insert({
+              tenant_id,
+              name: r.name || "Novo Contato",
+              email: r.email,
+              phone: r.phone,
+              document: r.document,
+            })
+            .select("id")
+            .single();
+          if (!insErr && ins) {
+            if (r.email) byEmail.set(r.email, ins.id);
+            if (r.phone) byPhone.set(r.phone, ins.id);
+            if (r.document) byDoc.set(r.document, ins.id);
+            return ins.id as string;
+          }
+          // Conflict — find existing
+          const orClause = [
+            r.email ? `email.eq.${r.email}` : null,
+            r.phone ? `phone.eq.${r.phone}` : null,
+            r.document ? `document.eq.${r.document}` : null,
+          ].filter(Boolean).join(",");
+          if (!orClause) return null;
+          const { data: found } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .or(orClause)
+            .limit(1)
+            .maybeSingle();
+          return found?.id ?? null;
+        })());
       }
 
-      // Map inserted ids back into resolved list (in order)
-      let insIdx = 0;
-      const customerIds: string[] = [];
-      for (let i = 0; i < recs.length; i++) {
-        if (resolved[i]) customerIds.push(resolved[i] as string);
-        else if (insIdx < insertedIds.length) customerIds.push(insertedIds[insIdx++]);
-      }
+      // Run all DB ops in parallel
+      const results = await Promise.all(tasks);
+      const customerIds: string[] = results.filter((id): id is string => !!id);
+
 
       // Bulk upsert list members
       if (customerIds.length) {

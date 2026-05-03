@@ -191,7 +191,7 @@ export default function CampaignDetails() {
           <KpiCard icon={CheckCheck} label="Entregues" value={metrics.delivered} suffix={`${deliveryRate}%`} />
           <KpiCard icon={Eye} label="Lidos" value={metrics.read} suffix={`${readRate}%`} />
           <KpiCard icon={MousePointerClick} label="Cliques" value={metrics.clicked} suffix={`${clickRate}%`} />
-          <KpiCard icon={Send} label="Respostas" value={metrics.replied} />
+          <KpiCard icon={AlertTriangle} label="Falhas" value={metrics.failed} destructive />
           <KpiCard icon={TrendingUp} label="Conversões" value={metrics.converted} suffix={`${conversionRate}%`} />
           <KpiCard icon={DollarSign} label="Receita" value={`R$ ${metrics.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} highlight />
         </div>
@@ -288,32 +288,39 @@ export default function CampaignDetails() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Cliente</TableHead>
-                          <TableHead>Telefone</TableHead>
+                          <TableHead>Destino</TableHead>
+                          <TableHead>Status</TableHead>
                           <TableHead>Enviado</TableHead>
                           <TableHead>Entregue</TableHead>
                           <TableHead>Lido</TableHead>
                           <TableHead>Clicado</TableHead>
+                          <TableHead>Erro</TableHead>
                           <TableHead>Conversão</TableHead>
                           <TableHead className="text-right">Valor</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activities.map((a: any) => (
-                          <TableRow key={a.id}>
-                            <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
-                            <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {Number(a.conversion_value) > 0
-                                ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {activities.map((a: any) => {
+                          const activityStatus = getActivityStatus(a);
+                          return (
+                            <TableRow key={a.id}>
+                              <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{a.customers?.email || a.customers?.phone || "—"}</TableCell>
+                              <TableCell><Badge className={activityStatus.className}>{activityStatus.label}</Badge></TableCell>
+                              <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell className="max-w-[320px] truncate text-xs text-muted-foreground" title={a.error_message || ""}>{a.error_message || "—"}</TableCell>
+                              <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {Number(a.conversion_value) > 0
+                                  ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>

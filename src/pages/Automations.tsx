@@ -473,7 +473,9 @@ export default function Automations() {
                         {group.group}
                       </div>
                       {group.items.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                        <SelectItem key={item.value} value={item.value} disabled={item.enabled === false}>
+                          {item.label}{item.enabled === false ? " (em breve)" : ""}
+                        </SelectItem>
                       ))}
                     </div>
                   ))}

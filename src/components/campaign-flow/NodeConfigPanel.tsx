@@ -173,6 +173,14 @@ const getNodeConfigs = (
       { key: "content", label: "Conteúdo da nota", type: "textarea", placeholder: "Anotação sobre esta etapa do fluxo..." },
     ],
   },
+  startNode: {
+    title: "Gatilho",
+    fields: [
+      { key: "filterProducts", label: "Filtrar por Produtos (ID ou Nome)", type: "text", placeholder: "Ex: SKU1, SKU2" },
+      { key: "filterStates", label: "Filtrar por Estados", type: "text", placeholder: "Ex: SP, RJ, MG" },
+      { key: "filterDays", label: "Dias da Semana Permitidos", type: "text", placeholder: "Ex: Seg, Ter, Qua" },
+    ],
+  },
 });
 
 function ConfigField({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void }) {

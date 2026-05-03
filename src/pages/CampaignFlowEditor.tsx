@@ -153,7 +153,6 @@ function FlowEditorInner() {
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    if (node.type === "startNode") return;
     setSelectedNode(node);
   }, []);
 

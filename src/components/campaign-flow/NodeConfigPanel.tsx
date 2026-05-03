@@ -259,7 +259,7 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
   );
 
   const nodeData = node.data as Record<string, unknown>;
-  const nodeType = nodeData.nodeType as string;
+  const nodeType = (nodeData.nodeType as string) || (node.type as string);
   const config = getNodeConfigs(whatsappOpts, emailOpts)[nodeType];
 
   const selectedWhatsApp = useMemo(

@@ -345,11 +345,13 @@ export default function Dashboard() {
                 title="Receita Total"
                 value={fmtMoney(totalRevenue)}
                 gradient="pink"
+                tooltip="Valor total bruto de todos os pedidos aprovados e completos no período selecionado."
               />
               <KPIGradientCard
                 title={"Receita\nGerada"}
                 value={fmtMoney(martzRevenue)}
                 gradient="cyan"
+                tooltip="Receita de clientes que receberam mensagens e converteram em até 72h (Efeito Halo)."
               />
               <KPIGradientCard
                 title="LTV Médio"

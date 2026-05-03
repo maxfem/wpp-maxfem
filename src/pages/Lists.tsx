@@ -269,64 +269,74 @@ export default function Lists() {
 
   const handleFileUpload = async (file: File) => {
     if (!currentTenant) return;
-    const rows = await parseFileToRows(file);
-    if (rows.length < 2) {
-      toast.error("Arquivo vazio ou sem dados");
-      return;
-    }
-    const headers = rows[0].map((h) => h.toLowerCase());
-    const nameIdx = headers.findIndex((h) => h === "nome" || h === "name");
-    const emailIdx = headers.findIndex((h) => h === "email" || h === "e-mail");
-    const phoneIdx = headers.findIndex((h) => h === "telefone" || h === "phone" || h === "celular" || h === "whatsapp");
+    setImporting(true);
+    try {
+      const rows = await parseFileToRows(file);
+      if (rows.length < 2) {
+        toast.error("Arquivo vazio ou sem dados");
+        return;
+      }
+      const headers = rows[0].map((h) => h.toLowerCase());
+      
+      // Map common headers to internal names
+      const headerMap: Record<string, string> = {
+        nome: "name", name: "name",
+        email: "email", "e-mail": "email",
+        telefone: "phone", phone: "phone", celular: "phone", whatsapp: "phone",
+        cpf: "document", cnpj: "document", documento: "document", document: "document"
+      };
 
-    if (nameIdx === -1) {
-      toast.error("Coluna 'nome' não encontrada no arquivo");
-      return;
-    }
+      const mappedHeaders = headers.map(h => headerMap[h] || h);
+      const nameIdx = mappedHeaders.indexOf("name");
 
-    const listName = csvListName.trim() || file.name.replace(/\.(csv|xlsx|xls)$/i, "");
-    const { data: newListData, error: listError } = await supabase
-      .from("contact_lists")
-      .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
-      .select("id")
-      .single();
-    if (listError) { toast.error(listError.message); return; }
+      if (nameIdx === -1) {
+        toast.error("Coluna 'nome' não encontrada no arquivo");
+        return;
+      }
 
-    let count = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const cols = rows[i];
-      const name = cols[nameIdx];
-      if (!name) continue;
+      const listName = csvListName.trim() || file.name.replace(/\.(csv|xlsx|xls)$/i, "");
+      const { data: newListData, error: listError } = await supabase
+        .from("contact_lists")
+        .insert({ tenant_id: currentTenant.id, name: listName, type: "csv_import" })
+        .select("id")
+        .single();
+      
+      if (listError) { toast.error(listError.message); return; }
 
-      const { data: cust, error: custErr } = await supabase
-        .from("customers")
+      // Create background job
+      const { data: job, error: jobErr } = await supabase
+        .from("background_jobs")
         .insert({
           tenant_id: currentTenant.id,
-          name,
-          email: emailIdx >= 0 ? cols[emailIdx] || null : null,
-          phone: phoneIdx >= 0 ? cols[phoneIdx] || null : null,
+          type: "contact_import",
+          status: "pending",
+          total: rows.length - 1,
+          progress: 0,
+          payload: {
+            list_id: newListData.id,
+            headers: mappedHeaders,
+            rows: rows.slice(1)
+          }
         })
         .select("id")
         .single();
-      if (custErr) continue;
 
-      await supabase.from("contact_list_members").insert({
-        list_id: newListData.id,
-        customer_id: cust.id,
+      if (jobErr) { toast.error(jobErr.message); return; }
+
+      // Trigger background processing (fire and forget)
+      supabase.functions.invoke("background-import", {
+        body: { job_id: job.id }
       });
-      count++;
+
+      setCsvOpen(false);
+      setCsvListName("");
+      toast.success("Importação iniciada em segundo plano!");
+      refetchJobs();
+    } catch (error: any) {
+      toast.error("Erro ao processar arquivo: " + error.message);
+    } finally {
+      setImporting(false);
     }
-
-    await supabase
-      .from("contact_lists")
-      .update({ customer_count: count })
-      .eq("id", newListData.id);
-
-    queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
-    queryClient.invalidateQueries({ queryKey: ["customers"] });
-    setCsvOpen(false);
-    setCsvListName("");
-    toast.success(`${count} contatos importados!`);
   };
 
   const filtered = lists.filter((l) =>

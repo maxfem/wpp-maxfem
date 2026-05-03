@@ -347,7 +347,7 @@ export default function Dashboard() {
                 gradient="pink"
               />
               <KPIGradientCard
-                title="Receita Martz"
+                title={"Receita\nGerada"}
                 value={fmtMoney(martzRevenue)}
                 gradient="cyan"
               />

@@ -973,7 +973,7 @@ async function processScheduledCampaigns(supabase: any) {
 
       for (const customer of customers) {
         try {
-          const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars };
+          const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars, tenantId: campaign.tenant_id };
 
           // 1. WhatsApp send
           if (templateName && customer.phone) {

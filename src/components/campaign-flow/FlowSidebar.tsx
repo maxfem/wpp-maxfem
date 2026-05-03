@@ -3,16 +3,21 @@ import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
   Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap,
-  Lock,
+  Lock, CalendarIcon,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn, formatSP } from "@/lib/utils";
+import { ptBR } from "date-fns/locale";
 
 const iconMap: Record<string, React.ElementType> = {
   MessageCircle, Mail, MessageSquare, Phone, Globe,

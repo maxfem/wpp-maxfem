@@ -378,5 +378,3 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
     </div>
   );
 }
-  );
-}

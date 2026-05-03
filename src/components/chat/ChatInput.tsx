@@ -23,6 +23,7 @@ interface ChatInputProps {
   onSendTemplate?: () => void;
   tenantId?: string;
   channel?: "whatsapp" | "instagram";
+  pendingPixCodes?: { orderNumber?: string; code: string }[];
 }
 
 const quickReplies = [

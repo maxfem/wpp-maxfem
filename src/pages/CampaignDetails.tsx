@@ -30,6 +30,28 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   finished: { label: "Encerrada", className: "bg-muted text-muted-foreground" },
 };
 
+const activityStatusConfig: Record<string, { label: string; className: string }> = {
+  sent: { label: "Enviado", className: "bg-primary/10 text-primary" },
+  delivered: { label: "Entregue", className: "bg-primary/10 text-primary" },
+  read: { label: "Aberto", className: "bg-accent text-accent-foreground" },
+  clicked: { label: "Clicado", className: "bg-secondary text-secondary-foreground" },
+  converted: { label: "Convertido", className: "bg-primary/10 text-primary" },
+  failed: { label: "Falhou", className: "bg-destructive/10 text-destructive" },
+  bounced: { label: "Bounce", className: "bg-destructive/10 text-destructive" },
+  complained: { label: "Reclamação", className: "bg-destructive/10 text-destructive" },
+};
+
+const getActivityStatus = (activity: any) => {
+  if (activity.error_message || ["failed", "bounced", "complained", "rejected"].includes(activity.status)) {
+    return activityStatusConfig[activity.status] || activityStatusConfig.failed;
+  }
+  if (activity.converted_at) return activityStatusConfig.converted;
+  if (activity.clicked_at) return activityStatusConfig.clicked;
+  if (activity.read_at) return activityStatusConfig.read;
+  if (activity.delivered_at) return activityStatusConfig.delivered;
+  return activityStatusConfig.sent;
+};
+
 export default function CampaignDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,6 +91,7 @@ export default function CampaignDetails() {
     delivered: activities.filter((a) => a.delivered_at).length,
     read: activities.filter((a) => a.read_at).length,
     clicked: activities.filter((a) => a.clicked_at).length,
+    failed: activities.filter((a) => a.error_message || ["failed", "bounced", "complained", "rejected"].includes(a.status)).length,
     replied: activities.filter((a) => a.replied_at).length,
     converted: activities.filter((a) => a.converted_at).length,
     revenue: activities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
@@ -84,6 +107,7 @@ export default function CampaignDetails() {
     { name: "Entregues", value: metrics.delivered, fill: "hsl(210, 70%, 55%)" },
     { name: "Lidos", value: metrics.read, fill: "hsl(180, 60%, 45%)" },
     { name: "Clicados", value: metrics.clicked, fill: "hsl(45, 80%, 50%)" },
+    { name: "Falhas", value: metrics.failed, fill: "hsl(var(--destructive))" },
     { name: "Convertidos", value: metrics.converted, fill: "hsl(140, 60%, 45%)" },
   ];
 
@@ -92,6 +116,7 @@ export default function CampaignDetails() {
     { name: "Entregue", value: metrics.delivered - metrics.read, fill: "hsl(210, 70%, 55%)" },
     { name: "Lido", value: metrics.read - metrics.clicked, fill: "hsl(180, 60%, 45%)" },
     { name: "Clicado", value: metrics.clicked - metrics.converted, fill: "hsl(45, 80%, 50%)" },
+    { name: "Falhou", value: metrics.failed, fill: "hsl(var(--destructive))" },
     { name: "Convertido", value: metrics.converted, fill: "hsl(140, 60%, 45%)" },
   ].filter((d) => d.value > 0);
 

@@ -635,6 +635,30 @@ export default function Lists() {
           </Card>
         </div>
 
+        {/* Progress for background jobs */}
+        {activeJobs.length > 0 && (
+          <div className="space-y-4">
+            {activeJobs.map((job) => (
+              <Card key={job.id} className="border-primary/20 bg-primary/5">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm font-medium">
+                        Importando contatos...
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {job.progress} de {job.total} ({Math.round((job.progress / job.total) * 100)}%)
+                    </span>
+                  </div>
+                  <Progress value={(job.progress / job.total) * 100} className="h-2" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {/* Lists grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* "All contacts" virtual card */}

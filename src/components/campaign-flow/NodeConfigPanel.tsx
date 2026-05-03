@@ -184,40 +184,54 @@ const getNodeConfigs = (
 });
 
 function ConfigField({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void }) {
+  const labelClass = "text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 mb-1.5 block px-0.5";
+  
   switch (field.type) {
     case "text":
       return (
-        <div className="space-y-1.5">
-          <Label className="text-xs">{field.label}</Label>
-          <Input value={(value as string) || ""} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} className="h-8 text-sm" />
+        <div className="space-y-1">
+          <Label className={labelClass}>{field.label}</Label>
+          <Input 
+            value={(value as string) || ""} 
+            onChange={(e) => onChange(e.target.value)} 
+            placeholder={field.placeholder} 
+            className="h-7 text-xs bg-muted/20 border-border/40 hover:bg-muted/30 focus:bg-background transition-colors" 
+          />
         </div>
       );
     case "textarea":
       return (
-        <div className="space-y-1.5">
-          <Label className="text-xs">{field.label}</Label>
-          <Textarea value={(value as string) || ""} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} className="text-sm min-h-[70px] resize-none" />
+        <div className="space-y-1">
+          <Label className={labelClass}>{field.label}</Label>
+          <Textarea 
+            value={(value as string) || ""} 
+            onChange={(e) => onChange(e.target.value)} 
+            placeholder={field.placeholder} 
+            className="text-xs min-h-[80px] bg-muted/20 border-border/40 hover:bg-muted/30 focus:bg-background transition-colors resize-none leading-relaxed" 
+          />
         </div>
       );
     case "select":
       return (
-        <div className="space-y-1.5">
-          <Label className="text-xs">{field.label}</Label>
+        <div className="space-y-1">
+          <Label className={labelClass}>{field.label}</Label>
           <Select value={(value as string) || ""} onValueChange={onChange}>
-            <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs bg-muted/20 border-border/40 hover:bg-muted/30 focus:bg-background transition-colors">
+              <SelectValue placeholder="Selecionar..." />
+            </SelectTrigger>
             <SelectContent>
               {field.options?.length
-                ? field.options.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)
-                : <SelectItem value="__none" disabled>Nenhum item</SelectItem>}
+                ? field.options.map((opt) => <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>)
+                : <SelectItem value="__none" disabled className="text-xs">Nenhum item</SelectItem>}
             </SelectContent>
           </Select>
         </div>
       );
     case "toggle":
       return (
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">{field.label}</Label>
-          <Switch checked={!!value} onCheckedChange={onChange} />
+        <div className="flex items-center justify-between py-1 px-0.5">
+          <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80">{field.label}</Label>
+          <Switch checked={!!value} onCheckedChange={onChange} className="scale-75 origin-right" />
         </div>
       );
     default:
@@ -288,72 +302,81 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
   };
 
   return (
-    <div className="w-[340px] border-l border-border bg-background flex flex-col h-full">
-      <div className="flex items-center justify-between p-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: nodeData.color as string }} />
-          <span className="text-sm font-semibold">{config.title}</span>
+    <div className="w-[320px] border-l border-border bg-background flex flex-col h-full shadow-2xl animate-in slide-in-from-right duration-200">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-muted/20">
+        <div className="flex items-center gap-2.5">
+          <div className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: nodeData.color as string }} />
+          <span className="text-xs font-bold uppercase tracking-widest text-foreground/80">{config.title}</span>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7"><X className="h-3.5 w-3.5" /></Button>
+        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7 hover:bg-background/80 transition-colors">
+          <X className="h-3.5 w-3.5" />
+        </Button>
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Nome do nó</Label>
-            <Input value={(nodeData.label as string) || ""} onChange={(e) => handleFieldChange("label", e.target.value)} className="h-8 text-sm" />
+        <div className="p-4 space-y-5">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 mb-1.5 block px-0.5">Identificação do Nó</Label>
+            <Input 
+              value={(nodeData.label as string) || ""} 
+              onChange={(e) => handleFieldChange("label", e.target.value)} 
+              className="h-7 text-xs bg-muted/20 border-border/40 hover:bg-muted/30 focus:bg-background transition-colors" 
+              placeholder="Ex: Enviar Cupom"
+            />
           </div>
-          <Separator />
-          {config.fields.map((field) => (
-            <ConfigField key={field.key} field={field} value={nodeData[field.key]} onChange={(v) => handleFieldChange(field.key, v)} />
-          ))}
+          
+          <div className="h-px bg-gradient-to-r from-border/10 via-border to-border/10 my-1" />
+
+          <div className="space-y-4">
+            {config.fields.map((field) => (
+              <ConfigField key={field.key} field={field} value={nodeData[field.key]} onChange={(v) => handleFieldChange(field.key, v)} />
+            ))}
+          </div>
 
           {/* WhatsApp preview */}
           {nodeType === "sendWhatsApp" && selectedWhatsApp && (
-            <>
-              <Separator />
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Pré-visualização</Label>
-                <div className="scale-90 origin-top-left -ml-3">
-                  <WhatsAppPhonePreview
-                    companyName={currentTenant?.name || "Empresa"}
-                    headerType={selectedWhatsApp.header_type || "none"}
-                    headerContent={selectedWhatsApp.header_content || ""}
-                    body={selectedWhatsApp.body || ""}
-                    footer={selectedWhatsApp.footer || ""}
-                    buttons={Array.isArray(selectedWhatsApp.buttons) ? (selectedWhatsApp.buttons as { type: string; text: string }[]) : []}
-                    sampleValues={Array.isArray(selectedWhatsApp.sample_values) ? (selectedWhatsApp.sample_values as string[]) : []}
-                  />
-                </div>
+            <div className="pt-2 space-y-3">
+              <div className="h-px bg-border/40" />
+              <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 block px-0.5">Preview WhatsApp</Label>
+              <div className="scale-[0.82] origin-top-left -ml-2 -mb-24">
+                <WhatsAppPhonePreview
+                  companyName={currentTenant?.name || "Empresa"}
+                  headerType={selectedWhatsApp.header_type || "none"}
+                  headerContent={selectedWhatsApp.header_content || ""}
+                  body={selectedWhatsApp.body || ""}
+                  footer={selectedWhatsApp.footer || ""}
+                  buttons={Array.isArray(selectedWhatsApp.buttons) ? (selectedWhatsApp.buttons as { type: string; text: string }[]) : []}
+                  sampleValues={Array.isArray(selectedWhatsApp.sample_values) ? (selectedWhatsApp.sample_values as string[]) : []}
+                />
               </div>
-            </>
+            </div>
           )}
 
           {/* Email preview */}
           {nodeType === "sendEmail" && selectedEmail && (
-            <>
-              <Separator />
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Pré-visualização</Label>
-                <div className="rounded border border-border bg-background overflow-hidden">
-                  <div className="px-3 py-2 border-b border-border bg-muted/30">
-                    <p className="text-[10px] text-muted-foreground">Assunto</p>
-                    <p className="text-xs font-medium truncate">{(nodeData.subject as string) || selectedEmail.subject || "(sem assunto)"}</p>
-                  </div>
-                  <div className="max-h-[280px] overflow-auto bg-white">
-                    <iframe
-                      title="email-preview"
-                      srcDoc={(nodeData.content as string) || selectedEmail.body_html || "<p style='padding:16px;font-family:sans-serif;color:#666'>Sem conteúdo</p>"}
-                      className="w-full h-[280px] border-0"
-                      sandbox=""
-                    />
-                  </div>
+            <div className="pt-2 space-y-3">
+              <div className="h-px bg-border/40" />
+              <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 block px-0.5">Preview E-mail</Label>
+              <div className="rounded-lg border border-border bg-white overflow-hidden shadow-sm">
+                <div className="px-3 py-1.5 border-b border-border bg-muted/30">
+                  <p className="text-[9px] font-bold uppercase tracking-tighter text-muted-foreground/60 leading-none mb-1">Subject</p>
+                  <p className="text-[11px] font-semibold truncate text-foreground/80">{(nodeData.subject as string) || selectedEmail.subject || "(sem assunto)"}</p>
+                </div>
+                <div className="max-h-[320px] overflow-auto bg-white">
+                  <iframe
+                    title="email-preview"
+                    srcDoc={(nodeData.content as string) || selectedEmail.body_html || "<p style='padding:16px;font-family:sans-serif;color:#666'>Sem conteúdo</p>"}
+                    className="w-full h-[320px] border-0"
+                    sandbox=""
+                  />
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </ScrollArea>
     </div>
+  );
+}
   );
 }

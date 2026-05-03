@@ -135,38 +135,37 @@ export function FlowSidebar({
   };
 
   return (
-    <div className="w-[280px] border-r border-border bg-background flex flex-col h-full">
-      {/* Config */}
-      <div className="p-4 border-b border-border space-y-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Nome</Label>
+    <div className="w-[260px] border-r border-border bg-background flex flex-col h-full overflow-hidden">
+      {/* Configuration Section */}
+      <div className="p-3 border-b border-border space-y-3 bg-muted/20">
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Nome</Label>
           <Input
             value={campaignName}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder={isAutomation ? "Nome da automação" : "Nome da campanha"}
-            className="h-8 text-sm"
+            className="h-7 text-xs border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1.5 focus:bg-background"
           />
         </div>
 
         {isAutomation ? (
-          /* Trigger selector for automations */
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-primary">Gatilho</Label>
+          <div className="space-y-1">
+            <Label className="text-[10px] font-medium text-primary uppercase tracking-wider px-0.5">Gatilho</Label>
             <Select value={selectedTrigger || ""} onValueChange={(v) => onTriggerChange?.(v)}>
-              <SelectTrigger className="h-8 text-sm">
+              <SelectTrigger className="h-7 text-xs border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1.5 focus:bg-background">
                 <SelectValue placeholder="Selecionar gatilho" />
               </SelectTrigger>
               <SelectContent>
                 {AUTOMATION_TRIGGERS.map((group) => (
                   <div key={group.group}>
-                    <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/30">
                       {group.group}
                     </div>
                     {group.items.map((item) => (
-                      <SelectItem key={item.value} value={item.value} disabled={item.enabled === false}>
-                        <div className="flex items-center gap-2">
+                      <SelectItem key={item.value} value={item.value} disabled={item.enabled === false} className="text-xs">
+                        <div className="flex items-center gap-2 py-0.5">
                           <span>{item.label}</span>
-                          {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground" />}
+                          {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground/50" />}
                         </div>
                       </SelectItem>
                     ))}
@@ -175,82 +174,83 @@ export function FlowSidebar({
               </SelectContent>
             </Select>
             {selectedTrigger && (
-              <p className="text-[10px] text-muted-foreground leading-snug">
-                ⚡ {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger)?.description}
+              <p className="text-[10px] text-muted-foreground/80 leading-snug px-1 pt-1 italic">
+                {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger)?.description}
               </p>
             )}
           </div>
         ) : (
-          /* Date/time for campaigns */
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Data de envio</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Data</Label>
               <Input
                 type="date"
                 value={scheduledDate || ""}
                 onChange={(e) => onScheduledDateChange?.(e.target.value)}
-                className="h-8 text-sm"
+                className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Horário de envio</Label>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Hora</Label>
               <Input
                 type="time"
                 value={scheduledTime || ""}
                 onChange={(e) => onScheduledTimeChange?.(e.target.value)}
-                className="h-8 text-sm"
+                className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background"
               />
             </div>
-          </>
+          </div>
         )}
 
-        <div className="space-y-1.5">
-          <Label className="text-xs">Lista</Label>
-          <Select value={selectedListId || "all"} onValueChange={(v) => onListChange?.(v)}>
-            <SelectTrigger className="h-8 text-sm">
-              <SelectValue placeholder="Selecionar lista" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os contatos</SelectItem>
-              {lists.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.name} ({l.customer_count || 0})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">Perfil WhatsApp</Label>
-          <Select value={selectedWhatsAppAccountId || ""} onValueChange={(v) => onWhatsAppAccountChange?.(v)}>
-            <SelectTrigger className="h-8 text-sm">
-              <SelectValue placeholder="Selecionar perfil" />
-            </SelectTrigger>
-            <SelectContent>
-              {whatsappAccounts.length === 0 ? (
-                <SelectItem value="__none" disabled>Nenhum perfil ativo</SelectItem>
-              ) : (
-                whatsappAccounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>
-                    {acc.verified_name || acc.display_phone || acc.phone_number_id}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Lista</Label>
+            <Select value={selectedListId || "all"} onValueChange={(v) => onListChange?.(v)}>
+              <SelectTrigger className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background">
+                <SelectValue placeholder="Lista" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">Todos os contatos</SelectItem>
+                {lists.map((l) => (
+                  <SelectItem key={l.id} value={l.id} className="text-xs">
+                    {l.name}
                   </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Perfil WA</Label>
+            <Select value={selectedWhatsAppAccountId || ""} onValueChange={(v) => onWhatsAppAccountChange?.(v)}>
+              <SelectTrigger className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background">
+                <SelectValue placeholder="Perfil" />
+              </SelectTrigger>
+              <SelectContent>
+                {whatsappAccounts.length === 0 ? (
+                  <SelectItem value="__none" disabled className="text-xs">Nenhum</SelectItem>
+                ) : (
+                  whatsappAccounts.map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id} className="text-xs">
+                      {acc.verified_name || acc.display_phone || acc.phone_number_id}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
-      {/* Node palette */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+      {/* Nodes Palette */}
+      <ScrollArea className="flex-1 border-t border-border/40">
+        <div className="p-3 space-y-4">
           {Object.entries(NODE_PALETTE).map(([group, items]) => (
-            <div key={group}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            <div key={group} className="space-y-1">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5 px-1">
                 {groupLabels[group] || group}
               </p>
-              <div className="space-y-1">
+              <div className="grid grid-cols-1 gap-0.5">
                 {items.map((item) => {
                   const Icon = iconMap[item.icon] || Zap;
                   return (
@@ -261,20 +261,20 @@ export function FlowSidebar({
                         item.enabled &&
                         onDragStart(e, { type: item.type, label: item.label, icon: item.icon, color: item.color })
                       }
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                      className={`flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-xs transition-all border border-transparent ${
                         item.enabled
-                          ? "cursor-grab hover:bg-accent active:cursor-grabbing"
-                          : "opacity-40 cursor-not-allowed"
+                          ? "cursor-grab hover:bg-accent hover:border-border/50 active:cursor-grabbing text-foreground/80 hover:text-foreground"
+                          : "opacity-30 cursor-not-allowed grayscale"
                       }`}
                     >
                       <div
-                        className="w-5 h-5 rounded flex items-center justify-center text-white shrink-0"
+                        className="w-4 h-4 rounded-sm flex items-center justify-center text-white shrink-0 shadow-sm"
                         style={{ backgroundColor: item.color }}
                       >
-                        <Icon className="h-3 w-3" />
+                        <Icon className="h-2.5 w-2.5" />
                       </div>
-                      <span className="text-foreground">{item.label}</span>
-                      {!item.enabled && <Lock className="h-3 w-3 ml-auto text-muted-foreground" />}
+                      <span className="font-medium truncate">{item.label}</span>
+                      {!item.enabled && <Lock className="h-2.5 w-2.5 ml-auto text-muted-foreground" />}
                     </div>
                   );
                 })}

@@ -65,12 +65,44 @@ export default function SettingsAWS() {
     enabled: !!currentTenant,
   });
 
+  const [trackingSetup, setTrackingSetup] = useState<{ configuration_set?: string; topic_arn?: string; tracking_setup_at?: string } | null>(null);
+  const [isSettingUpTracking, setIsSettingUpTracking] = useState(false);
+  const [trackingLog, setTrackingLog] = useState<string[]>([]);
+
   useEffect(() => {
     if (integration?.config) {
       const cfg = integration.config as any;
       setSenderEmail(cfg.sender_email || "");
+      setTrackingSetup({
+        configuration_set: cfg.configuration_set,
+        topic_arn: cfg.sns_topic_arn,
+        tracking_setup_at: cfg.tracking_setup_at,
+      });
     }
   }, [integration]);
+
+  const setupTracking = async () => {
+    setIsSettingUpTracking(true);
+    setTrackingLog([]);
+    try {
+      const { data, error } = await supabase.functions.invoke("ses-setup-tracking", { body: {} });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      setTrackingLog(data.log || []);
+      setTrackingSetup({
+        configuration_set: data.configuration_set,
+        topic_arn: data.topic_arn,
+        tracking_setup_at: new Date().toISOString(),
+      });
+      toast.success("Rastreamento de e-mails configurado!", {
+        description: `Configuration Set: ${data.configuration_set}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["aws-integration"] });
+    } catch (e: any) {
+      toast.error(`Falha ao configurar tracking: ${e.message}`);
+    } finally {
+      setIsSettingUpTracking(false);
+    }
+  };
 
   // Fetch secrets status on mount
   useEffect(() => {

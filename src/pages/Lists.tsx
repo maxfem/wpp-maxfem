@@ -318,6 +318,15 @@ export default function Lists() {
 
   if (selectedList) {
     const isRfm = isRfmList(selectedList);
+    const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/contact-list-webhook?list_id=${selectedList.id}`;
+    
+    const copyWebhookUrl = () => {
+      navigator.clipboard.writeText(webhookUrl);
+      setCopied(true);
+      toast.success("URL do Webhook copiada!");
+      setTimeout(() => setCopied(false), 2000);
+    };
+
     return (
       <AppLayout>
         <div className="p-6 space-y-6 animate-fade-in">
@@ -342,6 +351,31 @@ export default function Lists() {
               </Button>
             )}
           </div>
+
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Webhook className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Webhook de População Automática</p>
+                  <p className="text-xs text-muted-foreground max-w-xl">
+                    Use esta URL para adicionar contatos a esta lista automaticamente de outros sistemas. 
+                    Envie um JSON POST com <code>email</code> ou <code>phone</code> e <code>name</code>.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="bg-background border px-2 py-1 rounded text-xs truncate max-w-[200px] md:max-w-[400px] text-muted-foreground">
+                  {webhookUrl}
+                </code>
+                <Button variant="outline" size="sm" className="shrink-0" onClick={copyWebhookUrl}>
+                  {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="border border-border">
             <CardContent className="p-0">

@@ -1026,8 +1026,8 @@ async function processScheduledCampaigns(supabase: any) {
           // 2. Email send
           if (emailTemplate && customer.email) {
             const varRegex = /\{\{([^}]+)\}\}/g;
-            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
             
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
               tenantId: campaign.tenant_id,

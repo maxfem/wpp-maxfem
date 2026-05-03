@@ -53,23 +53,16 @@ function getAwsEnv(): AwsEnv {
   return { accessKeyId, secretAccessKey, region };
 }
 
-async function getSenderEmailFromDb(): Promise<string> {
+async function getAwsConfigFromDb(tenantId?: string | null): Promise<{ senderEmail: string; configurationSet: string | null }> {
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data } = await supabase
-    .from("integrations")
-    .select("config")
-    .eq("provider", "aws")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  if (!data?.config) {
-    throw new Error("Integração AWS SES não configurada ou inativa.");
-  }
-  const senderEmail = ((data.config as any).sender_email || "").trim();
-  if (!senderEmail) {
-    throw new Error("E-mail remetente não configurado na integração AWS SES.");
-  }
-  return senderEmail;
+  let q = supabase.from("integrations").select("config, tenant_id").eq("provider", "aws").eq("is_active", true);
+  if (tenantId) q = q.eq("tenant_id", tenantId);
+  const { data } = await q.limit(1).maybeSingle();
+  if (!data?.config) throw new Error("Integração AWS SES não configurada ou inativa.");
+  const cfg = data.config as any;
+  const senderEmail = (cfg.sender_email || "").trim();
+  if (!senderEmail) throw new Error("E-mail remetente não configurado na integração AWS SES.");
+  return { senderEmail, configurationSet: (cfg.configuration_set || "").trim() || null };
 }
 
 serve(async (req) => {
@@ -176,18 +169,28 @@ serve(async (req) => {
     }
 
     // ========== TEST & SEND MODE ==========
-    const { to, subject, html, text, fromName, configurationSet, tenantId, campaignId, customerId } = payload;
+    const { to, subject, html, text, fromName, tenantId, campaignId, customerId } = payload;
+    let configurationSet: string | null = (payload.configurationSet || "").trim() || null;
     if (!to || !subject || !html) {
       throw new Error("Campos obrigatórios: to, subject, html.");
     }
 
-    // Resolve sender: payload (test) or DB (send)
+    // Resolve sender + configuration set: payload (test) or DB (send)
     let senderEmail: string;
     if (mode === "test") {
       senderEmail = (payload.fromEmail || "").trim();
       if (!senderEmail) throw new Error("E-mail do remetente é obrigatório no modo teste.");
+      // Mesmo em teste, usa o CS do tenant se houver, para validar tracking
+      if (!configurationSet) {
+        try {
+          const cfg = await getAwsConfigFromDb(tenantId || null);
+          configurationSet = cfg.configurationSet;
+        } catch {}
+      }
     } else {
-      senderEmail = await getSenderEmailFromDb();
+      const cfg = await getAwsConfigFromDb(tenantId || null);
+      senderEmail = cfg.senderEmail;
+      if (!configurationSet) configurationSet = cfg.configurationSet;
     }
 
     // Resolve user via auth header for logging

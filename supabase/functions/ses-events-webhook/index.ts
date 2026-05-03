@@ -152,26 +152,56 @@ serve(async (req) => {
           activityUpdates.error_message = "Rejected by SES";
         }
 
-        await supabase.from("email_logs").update(updates).eq("aws_message_id", messageId);
-
         if (ev.event_type === "Open") {
-          const { data: log } = await supabase.from("email_logs").select("id, opens").eq("aws_message_id", messageId).maybeSingle();
-          if (log) await supabase.from("email_logs").update({ opens: (log.opens || 0) + 1, last_event_at: ev.timestamp }).eq("id", log.id);
+          const { data: log } = await supabase.from("email_logs").select("id, opens, status").eq("aws_message_id", messageId).maybeSingle();
+          if (log) {
+            await supabase.from("email_logs").update({
+              opens: (log.opens || 0) + 1,
+              last_event_at: ev.timestamp,
+              // Se ainda não temos Delivery confirmado, marcar como delivered (open implica delivered)
+              ...(log.status === "sent" ? { status: "delivered" } : {}),
+            }).eq("id", log.id);
+          }
           activityUpdates.read_at = ev.timestamp;
-        }
-
-        if (ev.event_type === "Click") {
-          const { data: log } = await supabase.from("email_logs").select("id, clicks").eq("aws_message_id", messageId).maybeSingle();
-          if (log) await supabase.from("email_logs").update({ clicks: (log.clicks || 0) + 1, last_event_at: ev.timestamp }).eq("id", log.id);
+          if (!activityUpdates.delivered_at) activityUpdates.delivered_at = ev.timestamp;
+          activityUpdates.status = "read";
+        } else if (ev.event_type === "Click") {
+          const { data: log } = await supabase.from("email_logs").select("id, clicks, status").eq("aws_message_id", messageId).maybeSingle();
+          if (log) {
+            await supabase.from("email_logs").update({
+              clicks: (log.clicks || 0) + 1,
+              last_event_at: ev.timestamp,
+              ...(log.status === "sent" ? { status: "delivered" } : {}),
+            }).eq("id", log.id);
+          }
           activityUpdates.clicked_at = ev.timestamp;
+          if (!activityUpdates.delivered_at) activityUpdates.delivered_at = ev.timestamp;
+          if (!activityUpdates.read_at) activityUpdates.read_at = ev.timestamp;
+          activityUpdates.status = "clicked";
+        } else {
+          // Para Delivery/Bounce/Complaint/Reject — aplicar updates no email_logs
+          if (Object.keys(updates).length > 1) {
+            await supabase.from("email_logs").update(updates).eq("aws_message_id", messageId);
+          }
         }
 
-        // Sync to campaign_activities if IDs are available
-        if (campaignId && customerId && Object.keys(activityUpdates).length > 0) {
+        // Sync to campaign_activities — se IDs vieram nas tags do SES; senão, buscar via email_logs
+        let cId = campaignId;
+        let custId = customerId;
+        if ((!cId || !custId) && Object.keys(activityUpdates).length > 0) {
+          const { data: log } = await supabase.from("email_logs")
+            .select("campaign_id, customer_id, tenant_id")
+            .eq("aws_message_id", messageId).maybeSingle();
+          if (log) {
+            cId = cId || log.campaign_id;
+            custId = custId || log.customer_id;
+          }
+        }
+        if (cId && custId && Object.keys(activityUpdates).length > 0) {
           await supabase.from("campaign_activities")
             .update(activityUpdates)
-            .eq("campaign_id", campaignId)
-            .eq("customer_id", customerId);
+            .eq("campaign_id", cId)
+            .eq("customer_id", custId);
         }
       }
 

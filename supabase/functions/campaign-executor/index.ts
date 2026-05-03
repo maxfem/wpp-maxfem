@@ -352,6 +352,10 @@ async function processAutomationQueue(supabase: any) {
     for (const item of items) {
       try {
         console.log(`[automation] Processing item ${item.id} (trigger: ${item.trigger_type}, customer: ${item.customer_id})`);
+        
+        // Fetch customer for filter matching and variable resolution
+        const { data: customer } = await supabase.from("customers").select("*").eq("id", item.customer_id).single();
+        
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;

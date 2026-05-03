@@ -607,6 +607,14 @@ export default function Chat() {
                       disabled={sendMutation.isPending || sendMediaMutation.isPending}
                       tenantId={tenantId}
                       channel={selectedConv?.channel}
+                      pendingPixCodes={(customerOrders || []).flatMap((o: any) =>
+                        (Array.isArray(o.payment_summary) ? o.payment_summary : [])
+                          .filter((p: any) => p.is_pix && p.pix_qr_code && !["captured", "paid", "approved"].includes(p.status))
+                          .map((p: any) => ({
+                            orderNumber: o.order_number || o.external_id?.replace("yampi_", "") || o.id?.slice(0, 8),
+                            code: p.pix_qr_code as string,
+                          }))
+                      )}
                     />
                   </>
                 )}

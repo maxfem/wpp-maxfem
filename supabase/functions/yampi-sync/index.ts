@@ -304,6 +304,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
     const isPix = txList.some((tx: any) => tx.payment?.data?.is_pix && !["captured", "paid", "approved"].includes(tx.status));
 
+    const orderPixCode = o.pix?.data?.pix_qr_code || o.pix?.data?.qr_code || null;
     const paymentSummary = txList.map((tx: any) => ({
       method: tx.payment?.data?.name || tx.payment?.data?.alias || "N/A",
       alias: tx.payment?.data?.alias || "",
@@ -313,6 +314,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       status: tx.status || "N/A",
       value: tx.amount || tx.buyer_amount || 0,
       installments: tx.installments || 1,
+      pix_qr_code: tx.payment?.data?.is_pix
+        ? (tx.pix?.data?.pix_qr_code || tx.pix?.qr_code || tx.payment?.data?.pix_qr_code || orderPixCode)
+        : null,
     }));
 
     const trackingCode = o.track_code || o.tracking_code || null;

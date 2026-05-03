@@ -240,12 +240,12 @@ export default function TrackingDashboard() {
                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{kpi.label}</span>
                     {kpi.tooltip && (
                       <UITooltip>
-                        <UITooltipTrigger asChild>
+                        <TooltipTrigger asChild>
                           <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
-                        </UITooltipTrigger>
-                        <UITooltipContent className="max-w-[200px] text-[11px] p-2 leading-tight">
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[200px] text-[11px] p-2 leading-tight">
                           {kpi.tooltip}
-                        </UITooltipContent>
+                        </TooltipContent>
                       </UITooltip>
                     )}
                   </div>

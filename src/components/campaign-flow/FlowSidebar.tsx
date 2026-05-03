@@ -163,9 +163,10 @@ export function FlowSidebar({
                       {group.group}
                     </div>
                     {group.items.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        <div className="flex flex-col">
+                      <SelectItem key={item.value} value={item.value} disabled={item.enabled === false}>
+                        <div className="flex items-center gap-2">
                           <span>{item.label}</span>
+                          {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground" />}
                         </div>
                       </SelectItem>
                     ))}
@@ -174,7 +175,7 @@ export function FlowSidebar({
               </SelectContent>
             </Select>
             {selectedTrigger && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground leading-snug">
                 ⚡ {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger)?.description}
               </p>
             )}

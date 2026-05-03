@@ -7,8 +7,8 @@ const corsHeaders = {
 
 // ===== VARIABLE RESOLUTION =====
 
-function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any }): string {
-  const { customer, order, campaign } = ctx;
+function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
+  const { customer, order, campaign, tenantId } = ctx;
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
   
@@ -42,6 +42,11 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "campaign.product_name": return campaign?.product_name || "-";
     case "campaign.product_desc": return campaign?.product_desc || "-";
     case "campaign.return_days": return campaign?.return_days || "5";
+    case "unsubscribe_url":
+    case "link_descadastro": {
+      if (!tenantId || !customer?.email) return "#";
+      return `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${tenantId}&e=${encodeURIComponent(customer.email)}`;
+    }
     default: return "-";
   }
 }
@@ -111,7 +116,7 @@ function getCustomerDynamicUrl(customer: any, templateName: string): string | nu
 // ===== TEMPLATE BUILDER =====
 
 function buildTemplateComponents(
-  variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any },
+  variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string },
   bodyVarCount: number, hasHeaderVar: boolean,
   buttonUrlCode?: string, buttonUrlIndex?: number,
   copyCodeButtons?: { index: number; value: string }[],
@@ -490,7 +495,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
 
             // Resolve variables in subject and body
             let resolvedSubject = subject;
@@ -498,12 +503,8 @@ async function processAutomationQueue(supabase: any) {
 
             // Simple variable replacement: {{customer.name}} -> "John"
             const varRegex = /\{\{([^}]+)\}\}/g;
-            resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-            resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-
-            // Inject Unsubscribe Link
-            const unsubscribeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${campaign.tenant_id}&e=${encodeURIComponent(customer.email)}`;
-            resolvedBody = resolvedBody.replace(/\{\{unsubscribe_url\}\}/g, unsubscribeUrl);
+            resolvedSubject = resolvedSubject.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+            resolvedBody = resolvedBody.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
 
             // Wrap links for tracking
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
@@ -635,7 +636,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
 
             let buttonUrlCode: string | undefined;
             if (hasDynamicUrlButton) {
@@ -972,7 +973,7 @@ async function processScheduledCampaigns(supabase: any) {
 
       for (const customer of customers) {
         try {
-          const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars };
+          const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars, tenantId: campaign.tenant_id };
 
           // 1. WhatsApp send
           if (templateName && customer.phone) {
@@ -1025,8 +1026,8 @@ async function processScheduledCampaigns(supabase: any) {
           // 2. Email send
           if (emailTemplate && customer.email) {
             const varRegex = /\{\{([^}]+)\}\}/g;
-            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            const resolvedSubject = emailTemplate.subject.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+            const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
             
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
               tenantId: campaign.tenant_id,

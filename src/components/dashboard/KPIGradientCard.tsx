@@ -29,7 +29,7 @@ export function KPIGradientCard({ title, value, unit, gradient }: KPIGradientCar
       <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10 blur-xl" />
       <div className="absolute -right-4 -bottom-4 w-24 h-24 rounded-full bg-white/5" />
 
-      <p className="text-sm font-medium text-white/80 mb-2">{title}</p>
+      <p className="text-sm font-medium text-white/80 mb-2 whitespace-pre-line leading-tight">{title}</p>
       <div className="flex items-baseline gap-1.5">
         <span className="font-heading text-3xl font-bold tracking-tight">{value}</span>
         {unit && <span className="text-sm font-medium text-white/70">{unit}</span>}

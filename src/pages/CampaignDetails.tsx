@@ -30,6 +30,28 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   finished: { label: "Encerrada", className: "bg-muted text-muted-foreground" },
 };
 
+const activityStatusConfig: Record<string, { label: string; className: string }> = {
+  sent: { label: "Enviado", className: "bg-primary/10 text-primary" },
+  delivered: { label: "Entregue", className: "bg-primary/10 text-primary" },
+  read: { label: "Aberto", className: "bg-accent text-accent-foreground" },
+  clicked: { label: "Clicado", className: "bg-secondary text-secondary-foreground" },
+  converted: { label: "Convertido", className: "bg-primary/10 text-primary" },
+  failed: { label: "Falhou", className: "bg-destructive/10 text-destructive" },
+  bounced: { label: "Bounce", className: "bg-destructive/10 text-destructive" },
+  complained: { label: "Reclamação", className: "bg-destructive/10 text-destructive" },
+};
+
+const getActivityStatus = (activity: any) => {
+  if (activity.error_message || ["failed", "bounced", "complained", "rejected"].includes(activity.status)) {
+    return activityStatusConfig[activity.status] || activityStatusConfig.failed;
+  }
+  if (activity.converted_at) return activityStatusConfig.converted;
+  if (activity.clicked_at) return activityStatusConfig.clicked;
+  if (activity.read_at) return activityStatusConfig.read;
+  if (activity.delivered_at) return activityStatusConfig.delivered;
+  return activityStatusConfig.sent;
+};
+
 export default function CampaignDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,6 +91,7 @@ export default function CampaignDetails() {
     delivered: activities.filter((a) => a.delivered_at).length,
     read: activities.filter((a) => a.read_at).length,
     clicked: activities.filter((a) => a.clicked_at).length,
+    failed: activities.filter((a) => a.error_message || ["failed", "bounced", "complained", "rejected"].includes(a.status)).length,
     replied: activities.filter((a) => a.replied_at).length,
     converted: activities.filter((a) => a.converted_at).length,
     revenue: activities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
@@ -84,6 +107,7 @@ export default function CampaignDetails() {
     { name: "Entregues", value: metrics.delivered, fill: "hsl(210, 70%, 55%)" },
     { name: "Lidos", value: metrics.read, fill: "hsl(180, 60%, 45%)" },
     { name: "Clicados", value: metrics.clicked, fill: "hsl(45, 80%, 50%)" },
+    { name: "Falhas", value: metrics.failed, fill: "hsl(var(--destructive))" },
     { name: "Convertidos", value: metrics.converted, fill: "hsl(140, 60%, 45%)" },
   ];
 
@@ -92,6 +116,7 @@ export default function CampaignDetails() {
     { name: "Entregue", value: metrics.delivered - metrics.read, fill: "hsl(210, 70%, 55%)" },
     { name: "Lido", value: metrics.read - metrics.clicked, fill: "hsl(180, 60%, 45%)" },
     { name: "Clicado", value: metrics.clicked - metrics.converted, fill: "hsl(45, 80%, 50%)" },
+    { name: "Falhou", value: metrics.failed, fill: "hsl(var(--destructive))" },
     { name: "Convertido", value: metrics.converted, fill: "hsl(140, 60%, 45%)" },
   ].filter((d) => d.value > 0);
 
@@ -166,7 +191,7 @@ export default function CampaignDetails() {
           <KpiCard icon={CheckCheck} label="Entregues" value={metrics.delivered} suffix={`${deliveryRate}%`} />
           <KpiCard icon={Eye} label="Lidos" value={metrics.read} suffix={`${readRate}%`} />
           <KpiCard icon={MousePointerClick} label="Cliques" value={metrics.clicked} suffix={`${clickRate}%`} />
-          <KpiCard icon={Send} label="Respostas" value={metrics.replied} />
+          <KpiCard icon={AlertTriangle} label="Falhas" value={metrics.failed} destructive />
           <KpiCard icon={TrendingUp} label="Conversões" value={metrics.converted} suffix={`${conversionRate}%`} />
           <KpiCard icon={DollarSign} label="Receita" value={`R$ ${metrics.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} highlight />
         </div>
@@ -263,32 +288,39 @@ export default function CampaignDetails() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Cliente</TableHead>
-                          <TableHead>Telefone</TableHead>
+                          <TableHead>Destino</TableHead>
+                          <TableHead>Status</TableHead>
                           <TableHead>Enviado</TableHead>
                           <TableHead>Entregue</TableHead>
                           <TableHead>Lido</TableHead>
                           <TableHead>Clicado</TableHead>
+                          <TableHead>Erro</TableHead>
                           <TableHead>Conversão</TableHead>
                           <TableHead className="text-right">Valor</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activities.map((a: any) => (
-                          <TableRow key={a.id}>
-                            <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
-                            <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              {Number(a.conversion_value) > 0
-                                ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                                : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {activities.map((a: any) => {
+                          const activityStatus = getActivityStatus(a);
+                          return (
+                            <TableRow key={a.id}>
+                              <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground">{a.customers?.email || a.customers?.phone || "—"}</TableCell>
+                              <TableCell><Badge className={activityStatus.className}>{activityStatus.label}</Badge></TableCell>
+                              <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(new Date(a.read_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell>{a.clicked_at ? <StatusDot color="hsl(45, 80%, 50%)" label={formatSP(new Date(a.clicked_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell className="max-w-[320px] truncate text-xs text-muted-foreground" title={a.error_message || ""}>{a.error_message || "—"}</TableCell>
+                              <TableCell>{a.converted_at ? <StatusDot color="hsl(140, 60%, 45%)" label={formatSP(new Date(a.converted_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {Number(a.conversion_value) > 0
+                                  ? `R$ ${Number(a.conversion_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                                  : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -302,19 +334,20 @@ export default function CampaignDetails() {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, suffix, highlight }: {
+function KpiCard({ icon: Icon, label, value, suffix, highlight, destructive }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   suffix?: string;
   highlight?: boolean;
+  destructive?: boolean;
 }) {
   return (
-    <Card className={highlight ? "border-primary/30 bg-primary/5" : ""}>
+    <Card className={highlight ? "border-primary/30 bg-primary/5" : destructive ? "border-destructive/30 bg-destructive/5" : ""}>
       <CardContent className="p-3 flex flex-col items-center text-center gap-1">
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <Icon className={destructive ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-lg font-bold text-foreground">{value}</span>
+        <span className={destructive ? "text-lg font-bold text-destructive" : "text-lg font-bold text-foreground"}>{value}</span>
         {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
       </CardContent>
     </Card>

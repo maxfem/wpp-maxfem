@@ -38,27 +38,11 @@ import {
 } from "recharts";
 import { differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatSP, getStandardPeriodRange, type DatePeriodKey, toSaoPaulo } from "@/lib/utils";
+import { formatSP, getStandardPeriodRange, type DatePeriodKey, toSaoPaulo, fetchAll } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 import { KPIGradientCard } from "@/components/dashboard/KPIGradientCard";
 import { MiniMetricCard } from "@/components/dashboard/MiniMetricCard";
 import type { DateRange } from "react-day-picker";
-
-// Fetch all rows bypassing the 1000-row default limit
-async function fetchAll<T>(query: any): Promise<T[]> {
-  const PAGE = 1000;
-  let from = 0;
-  let all: T[] = [];
-  while (true) {
-    const { data, error } = await query.range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
-}
 
 type PeriodKey = DatePeriodKey;
 
@@ -345,11 +329,13 @@ export default function Dashboard() {
                 title="Receita Total"
                 value={fmtMoney(totalRevenue)}
                 gradient="pink"
+                tooltip="Valor total bruto de todos os pedidos aprovados e completos no período selecionado."
               />
               <KPIGradientCard
                 title={"Receita\nGerada"}
                 value={fmtMoney(martzRevenue)}
                 gradient="cyan"
+                tooltip="Receita de clientes que receberam mensagens e converteram em até 72h (Efeito Halo)."
               />
               <KPIGradientCard
                 title="LTV Médio"

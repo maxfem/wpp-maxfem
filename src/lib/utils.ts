@@ -61,3 +61,18 @@ export function getStandardPeriodRange(key: DatePeriodKey, customRange?: { from?
       return { from: startOfDay(now), to: endOfDay(now), days: 1 };
   }
 }
+
+export async function fetchAll<T>(query: any): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  let from = 0;
+  let all: T[] = [];
+  while (true) {
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}

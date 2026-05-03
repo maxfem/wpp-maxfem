@@ -108,22 +108,30 @@ async function processJob(job_id: string) {
         data?.forEach((c: any) => c.document && byDoc.set(c.document, c.id));
       }
 
-      // Resolve each record's customer_id (insert one-by-one for unresolved to handle conflicts safely)
-      const customerIds: string[] = [];
+      // Resolve each record's customer_id; insert unresolved with parallelism
       const seenInBatch = new Set<string>();
+      const tasks: Promise<string | null>[] = [];
+
       for (const r of recs) {
-        let id =
+        const existing =
           (r.phone && byPhone.get(r.phone)) ||
           (r.email && byEmail.get(r.email)) ||
           (r.document && byDoc.get(r.document)) ||
           null;
 
-        if (!id) {
-          // Skip if duplicate within same batch (avoids unique constraint collisions)
-          const dedupeKey = r.email || r.phone || r.document!;
-          if (seenInBatch.has(dedupeKey)) continue;
-          seenInBatch.add(dedupeKey);
+        if (existing) {
+          tasks.push(Promise.resolve(existing));
+          continue;
+        }
 
+        const dedupeKey = r.email || r.phone || r.document!;
+        if (seenInBatch.has(dedupeKey)) {
+          tasks.push(Promise.resolve(null));
+          continue;
+        }
+        seenInBatch.add(dedupeKey);
+
+        tasks.push((async () => {
           const { data: ins, error: insErr } = await supabase
             .from("customers")
             .insert({
@@ -135,33 +143,34 @@ async function processJob(job_id: string) {
             })
             .select("id")
             .single();
-
-          if (insErr) {
-            // Conflict — try to find existing by any identifier
-            const { data: found } = await supabase
-              .from("customers")
-              .select("id")
-              .eq("tenant_id", tenant_id)
-              .or(
-                [
-                  r.email ? `email.eq.${r.email}` : null,
-                  r.phone ? `phone.eq.${r.phone}` : null,
-                  r.document ? `document.eq.${r.document}` : null,
-                ].filter(Boolean).join(",")
-              )
-              .limit(1)
-              .maybeSingle();
-            if (found) id = found.id;
-          } else if (ins) {
-            id = ins.id;
-            if (r.email) byEmail.set(r.email, id);
-            if (r.phone) byPhone.set(r.phone, id);
-            if (r.document) byDoc.set(r.document, id);
+          if (!insErr && ins) {
+            if (r.email) byEmail.set(r.email, ins.id);
+            if (r.phone) byPhone.set(r.phone, ins.id);
+            if (r.document) byDoc.set(r.document, ins.id);
+            return ins.id as string;
           }
-        }
-
-        if (id) customerIds.push(id);
+          // Conflict — find existing
+          const orClause = [
+            r.email ? `email.eq.${r.email}` : null,
+            r.phone ? `phone.eq.${r.phone}` : null,
+            r.document ? `document.eq.${r.document}` : null,
+          ].filter(Boolean).join(",");
+          if (!orClause) return null;
+          const { data: found } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .or(orClause)
+            .limit(1)
+            .maybeSingle();
+          return found?.id ?? null;
+        })());
       }
+
+      // Run all DB ops in parallel
+      const results = await Promise.all(tasks);
+      const customerIds: string[] = results.filter((id): id is string => !!id);
+
 
       // Bulk upsert list members
       if (customerIds.length) {

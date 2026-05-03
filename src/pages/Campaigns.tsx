@@ -378,7 +378,7 @@ export default function Campaigns() {
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
-              const st = statusConfig[c.status] || statusConfig.draft;
+              const st = getStatusMeta(c.status, "campaign");
               const StIcon = st.icon;
               const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
               const metrics = metricsMap[c.id];
@@ -405,7 +405,7 @@ export default function Campaigns() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between pt-1 border-t border-border">
-                      <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                      <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
                         <StIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
@@ -440,7 +440,7 @@ export default function Campaigns() {
               </TableHeader>
               <TableBody>
                 {filtered.map((c) => {
-                  const st = statusConfig[c.status] || statusConfig.draft;
+                  const st = getStatusMeta(c.status, "campaign");
                   const StIcon = st.icon;
                   const typeLabel = campaignTypes.find((t) => t.value === c.type)?.label || c.type;
                   const metrics = metricsMap[c.id];
@@ -450,7 +450,7 @@ export default function Campaigns() {
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-muted-foreground text-xs">{typeLabel}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] gap-1 ${st.className}`}>
+                        <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
                           <StIcon className="h-3 w-3" />
                           {st.label}
                         </Badge>

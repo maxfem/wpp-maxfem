@@ -169,7 +169,7 @@ function FlowEditorInner() {
   }, [setNodes]);
 
   const handleSave = async () => {
-    const flowData = { nodes, edges };
+    const flowData = { nodes, edges, whatsappAccountId: selectedWhatsAppAccountId || null };
 
     let scheduledAt: string | null = null;
     let status = isActive ? "running" : "draft";

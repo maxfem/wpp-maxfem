@@ -44,7 +44,17 @@ serve(async (req) => {
     const body = await req.json()
     console.log(`Received webhook for list "${list.name}" (${listId}):`, body)
 
-    const { name, email, phone, document, tags, custom_attributes } = body
+    // Support both flat payloads and nested { data: {...} } payloads (e.g. event-based webhooks)
+    const payload = (body && typeof body === 'object' && body.data && typeof body.data === 'object')
+      ? { ...body, ...body.data }
+      : body || {}
+
+    const name = payload.name || payload.full_name || payload.nome || 'Novo Contato'
+    const email = payload.email || payload.e_mail || null
+    const phone = payload.phone || payload.telefone || payload.celular || payload.whatsapp || null
+    const document = payload.document || payload.cpf || payload.cnpj || payload.documento || null
+    const tags = payload.tags || null
+    const custom_attributes = payload.custom_attributes || null
 
     if (!email && !phone) {
       return new Response(JSON.stringify({ error: 'Email or phone is required' }), {

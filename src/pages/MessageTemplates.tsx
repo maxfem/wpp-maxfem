@@ -151,6 +151,7 @@ export default function MessageTemplates() {
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
   const [emailPreview, setEmailPreview] = useState<any | null>(null);
   const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
+  const [emailEditorMode, setEmailEditorMode] = useState<"builder" | "html" | "preview">("builder");
   const [emailForm, setEmailForm] = useState<{
     name: string;
     subject: string;
@@ -1239,15 +1240,88 @@ export default function MessageTemplates() {
                     
                     <div className="min-h-[600px]">
                       <Label className="mb-2 block">Design do E-mail</Label>
-                      <EmailBuilder 
-                        initialHtml={emailForm.body_html}
-                        initialDesign={emailForm.design}
-                        isLoading={saveEmailMutation.isPending}
-                        onSave={({ html, design }) => {
-                          setEmailForm(prev => ({ ...prev, body_html: html, design }));
-                          saveEmailMutation.mutate({ ...emailForm, body_html: html, design });
-                        }}
-                      />
+                      <Tabs value={emailEditorMode} onValueChange={(v) => setEmailEditorMode(v as any)} className="w-full">
+                        <div className="flex items-center justify-between mb-3">
+                          <TabsList>
+                            <TabsTrigger value="builder">🎨 Drag & Drop</TabsTrigger>
+                            <TabsTrigger value="html">{"</>"} HTML</TabsTrigger>
+                            <TabsTrigger value="preview"><Eye className="h-3.5 w-3.5 mr-1.5" /> Preview</TabsTrigger>
+                          </TabsList>
+                          {emailEditorMode !== "builder" && (
+                            <div className="flex items-center gap-2">
+                              {emailEditorMode === "preview" && (
+                                <div className="flex gap-1 p-1 bg-muted rounded-md">
+                                  <Button type="button" size="sm" variant={emailPreviewMode === "desktop" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setEmailPreviewMode("desktop")}>Desktop</Button>
+                                  <Button type="button" size="sm" variant={emailPreviewMode === "mobile" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setEmailPreviewMode("mobile")}>Mobile</Button>
+                                </div>
+                              )}
+                              <Button
+                                type="button"
+                                onClick={() => saveEmailMutation.mutate(emailForm)}
+                                disabled={saveEmailMutation.isPending}
+                              >
+                                {saveEmailMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                Salvar Template
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        <TabsContent value="builder" className="mt-0">
+                          <EmailBuilder 
+                            initialHtml={emailForm.body_html}
+                            initialDesign={emailForm.design}
+                            isLoading={saveEmailMutation.isPending}
+                            onSave={({ html, design }) => {
+                              setEmailForm(prev => ({ ...prev, body_html: html, design }));
+                              saveEmailMutation.mutate({ ...emailForm, body_html: html, design });
+                            }}
+                          />
+                        </TabsContent>
+
+                        <TabsContent value="html" className="mt-0">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 h-[600px]">
+                            <div className="flex flex-col border rounded-md overflow-hidden">
+                              <div className="px-3 py-2 text-xs font-medium bg-muted border-b">Código HTML</div>
+                              <Textarea
+                                value={emailForm.body_html}
+                                onChange={(e) => setEmailForm({ ...emailForm, body_html: e.target.value, design: null })}
+                                placeholder="<html>...</html> — cole seu HTML aqui. Use {{customer.name}}, {{link_descadastro}}, etc."
+                                className="flex-1 font-mono text-xs resize-none border-0 focus-visible:ring-0 rounded-none"
+                              />
+                            </div>
+                            <div className="flex flex-col border rounded-md overflow-hidden bg-white">
+                              <div className="px-3 py-2 text-xs font-medium bg-muted border-b text-foreground">Pré-visualização ao vivo</div>
+                              <iframe
+                                srcDoc={emailForm.body_html || "<p style='padding:24px;font-family:sans-serif;color:#888'>Cole HTML para visualizar</p>"}
+                                className="flex-1 w-full border-none"
+                                sandbox=""
+                                title="HTML preview"
+                              />
+                            </div>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="preview" className="mt-0">
+                          <div className="h-[600px] bg-muted/30 rounded-md p-4 overflow-auto flex justify-center">
+                            <div
+                              className="bg-white rounded-md shadow-sm overflow-hidden transition-all"
+                              style={{
+                                width: emailPreviewMode === "mobile" ? 390 : "100%",
+                                maxWidth: emailPreviewMode === "mobile" ? 390 : 800,
+                                height: "100%",
+                              }}
+                            >
+                              <iframe
+                                srcDoc={emailForm.body_html || "<p style='padding:24px;font-family:sans-serif;color:#888'>Sem conteúdo. Use o editor Drag & Drop ou cole um HTML.</p>"}
+                                className="w-full h-full border-none"
+                                sandbox=""
+                                title="Email preview"
+                              />
+                            </div>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
                     </div>
                   </div>
                 </DialogContent>

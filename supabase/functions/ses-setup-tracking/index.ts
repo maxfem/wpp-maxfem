@@ -153,7 +153,7 @@ serve(async (req) => {
         for (const cs of list.ConfigurationSets || []) {
           const name = cs.Name!;
           try {
-            const eds = await ses.send(new DescribeConfigurationSetEventDestinationsCommand({ ConfigurationSetName: name }));
+            const eds = await ses.send(new DescribeConfigurationSetCommand({ ConfigurationSetName: name, ConfigurationSetAttributeNames: ["eventDestinations"] as any }));
             const match = (eds.EventDestinations || []).find((e: any) => e?.SNSDestination?.TopicARN === topicArn);
             if (match) {
               csName = name;

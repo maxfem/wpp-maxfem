@@ -57,6 +57,7 @@ function FlowEditorInner() {
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [selectedTrigger, setSelectedTrigger] = useState<string>("");
+  const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string>("");
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";

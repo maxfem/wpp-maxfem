@@ -495,7 +495,7 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
-            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData };
+            const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
 
             // Resolve variables in subject and body
             let resolvedSubject = subject;
@@ -505,10 +505,6 @@ async function processAutomationQueue(supabase: any) {
             const varRegex = /\{\{([^}]+)\}\}/g;
             resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
             resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-
-            // Inject Unsubscribe Link
-            const unsubscribeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${campaign.tenant_id}&e=${encodeURIComponent(customer.email)}`;
-            resolvedBody = resolvedBody.replace(/\{\{unsubscribe_url\}\}/g, unsubscribeUrl);
 
             // Wrap links for tracking
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {

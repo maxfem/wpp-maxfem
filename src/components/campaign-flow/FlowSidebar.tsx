@@ -217,12 +217,20 @@ export function FlowSidebar({
 
         <div className="space-y-1.5">
           <Label className="text-xs">Perfil WhatsApp</Label>
-          <Select>
+          <Select value={selectedWhatsAppAccountId || ""} onValueChange={(v) => onWhatsAppAccountChange?.(v)}>
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Selecionar perfil" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="default">Perfil padrão</SelectItem>
+              {whatsappAccounts.length === 0 ? (
+                <SelectItem value="__none" disabled>Nenhum perfil ativo</SelectItem>
+              ) : (
+                whatsappAccounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>
+                    {acc.verified_name || acc.display_phone || acc.phone_number_id}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>

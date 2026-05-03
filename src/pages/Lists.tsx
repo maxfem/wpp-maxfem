@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -23,9 +24,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles, Webhook, Copy, Check
+  Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles, Webhook, Copy, Check, Loader2, AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+
+type BackgroundJob = {
+  id: string;
+  type: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  total: number;
+  error_message: string | null;
+};
 
 type ContactList = {
   id: string;

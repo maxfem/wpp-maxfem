@@ -65,6 +65,26 @@ export default function Lists() {
   const [renamingList, setRenamingList] = useState<ContactList | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const { data: activeJobs = [], refetch: refetchJobs } = useQuery({
+    queryKey: ["active_background_jobs", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("background_jobs")
+        .select("*")
+        .eq("tenant_id", currentTenant.id)
+        .in("status", ["pending", "processing"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as BackgroundJob[];
+    },
+    enabled: !!currentTenant,
+    refetchInterval: (query) => {
+      return query.state.data?.length ? 2000 : false;
+    },
+  });
 
   const { data: lists = [], isLoading } = useQuery({
     queryKey: ["contact_lists", currentTenant?.id],

@@ -3,16 +3,21 @@ import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
   Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap,
-  Lock,
+  Lock, CalendarIcon,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn, formatSP } from "@/lib/utils";
+import { ptBR } from "date-fns/locale";
 
 const iconMap: Record<string, React.ElementType> = {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
@@ -183,21 +188,57 @@ export function FlowSidebar({
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Data</Label>
-              <Input
-                type="date"
-                value={scheduledDate || ""}
-                onChange={(e) => onScheduledDateChange?.(e.target.value)}
-                className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-7 w-full justify-start text-left font-normal text-[11px] px-2 border-transparent hover:border-border bg-transparent hover:bg-background",
+                      !scheduledDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-1.5 h-3 w-3 shrink-0" />
+                    {scheduledDate
+                      ? formatSP(`${scheduledDate}T12:00:00`, "dd/MM/yyyy")
+                      : "Selecionar"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    locale={ptBR}
+                    selected={scheduledDate ? new Date(`${scheduledDate}T12:00:00`) : undefined}
+                    onSelect={(d) => {
+                      if (!d) return;
+                      const yyyy = d.getFullYear();
+                      const mm = String(d.getMonth() + 1).padStart(2, "0");
+                      const dd = String(d.getDate()).padStart(2, "0");
+                      onScheduledDateChange?.(`${yyyy}-${mm}-${dd}`);
+                    }}
+                    disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+                    initialFocus
+                    className="p-2 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Hora</Label>
-              <Input
-                type="time"
-                value={scheduledTime || ""}
-                onChange={(e) => onScheduledTimeChange?.(e.target.value)}
-                className="h-7 text-[10px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-1 focus:bg-background"
-              />
+              <Select value={scheduledTime || ""} onValueChange={(v) => onScheduledTimeChange?.(v)}>
+                <SelectTrigger className="h-7 text-[11px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-2 focus:bg-background">
+                  <SelectValue placeholder="--:--" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[260px]">
+                  {Array.from({ length: 48 }, (_, i) => {
+                    const h = String(Math.floor(i / 2)).padStart(2, "0");
+                    const m = i % 2 === 0 ? "00" : "30";
+                    const v = `${h}:${m}`;
+                    return (
+                      <SelectItem key={v} value={v} className="text-xs">{v}</SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         )}

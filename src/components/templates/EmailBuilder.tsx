@@ -100,6 +100,7 @@ export const EmailBuilder = ({ initialDesign, initialHtml, onSave, isLoading }: 
               customer_name: { name: "Nome do Cliente", value: "{{customer.name}}" },
               customer_first_name: { name: "Primeiro Nome", value: "{{customer.first_name}}" },
               unsubscribe_url: { name: "Link de Descadastro", value: "{{unsubscribe_url}}" },
+              link_descadastro: { name: "Link de Descadastro (AWS)", value: "{{link_descadastro}}" },
             },
             locale: "pt-BR",
           }}

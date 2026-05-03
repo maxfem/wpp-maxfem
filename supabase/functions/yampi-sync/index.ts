@@ -509,6 +509,8 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
             payment_method: paymentAlias,
             status: orderStatus,
             pix_qr_code: o.pix?.data?.pix_qr_code || null,
+            items: itemsSummary,
+            state: o.customer?.data?.spreadsheet?.data?.uf || null,
           },
           status: "pending",
           current_node_id: "start",

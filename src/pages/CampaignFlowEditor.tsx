@@ -57,6 +57,7 @@ function FlowEditorInner() {
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [selectedTrigger, setSelectedTrigger] = useState<string>("");
+  const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string>("");
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";
@@ -89,6 +90,7 @@ function FlowEditorInner() {
           const fd = data.flow_data as any;
           if (fd.nodes?.length) setNodes(fd.nodes);
           if (fd.edges?.length) setEdges(fd.edges);
+          if (fd.whatsappAccountId) setSelectedWhatsAppAccountId(fd.whatsappAccountId);
         } else if (isAutomation && data.trigger_type) {
           // No flow data yet, set start node with trigger label
           setNodes(makeDefaultNodes(getTriggerLabel(data.trigger_type)));
@@ -167,7 +169,7 @@ function FlowEditorInner() {
   }, [setNodes]);
 
   const handleSave = async () => {
-    const flowData = { nodes, edges };
+    const flowData = { nodes, edges, whatsappAccountId: selectedWhatsAppAccountId || null };
 
     let scheduledAt: string | null = null;
     let status = isActive ? "running" : "draft";
@@ -264,6 +266,8 @@ function FlowEditorInner() {
           isAutomation={isAutomation}
           selectedTrigger={selectedTrigger}
           onTriggerChange={handleTriggerChange}
+          selectedWhatsAppAccountId={selectedWhatsAppAccountId}
+          onWhatsAppAccountChange={setSelectedWhatsAppAccountId}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

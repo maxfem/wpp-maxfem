@@ -81,12 +81,15 @@ interface FlowSidebarProps {
   isAutomation?: boolean;
   selectedTrigger?: string;
   onTriggerChange?: (trigger: string) => void;
+  selectedWhatsAppAccountId?: string;
+  onWhatsAppAccountChange?: (id: string) => void;
 }
 
 export function FlowSidebar({
   campaignName, onNameChange, selectedListId, onListChange,
   scheduledDate, onScheduledDateChange, scheduledTime, onScheduledTimeChange,
   isAutomation, selectedTrigger, onTriggerChange,
+  selectedWhatsAppAccountId, onWhatsAppAccountChange,
 }: FlowSidebarProps) {
   const { currentTenant } = useAuth();
 
@@ -99,6 +102,22 @@ export function FlowSidebar({
         .select("id, name, customer_count")
         .eq("tenant_id", currentTenant.id)
         .order("name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const { data: whatsappAccounts = [] } = useQuery({
+    queryKey: ["whatsapp_accounts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("whatsapp_accounts")
+        .select("id, display_phone, verified_name, phone_number_id")
+        .eq("tenant_id", currentTenant.id)
+        .eq("is_active", true)
+        .order("created_at");
       if (error) throw error;
       return data;
     },
@@ -198,12 +217,20 @@ export function FlowSidebar({
 
         <div className="space-y-1.5">
           <Label className="text-xs">Perfil WhatsApp</Label>
-          <Select>
+          <Select value={selectedWhatsAppAccountId || ""} onValueChange={(v) => onWhatsAppAccountChange?.(v)}>
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Selecionar perfil" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="default">Perfil padrão</SelectItem>
+              {whatsappAccounts.length === 0 ? (
+                <SelectItem value="__none" disabled>Nenhum perfil ativo</SelectItem>
+              ) : (
+                whatsappAccounts.map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id}>
+                    {acc.verified_name || acc.display_phone || acc.phone_number_id}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>

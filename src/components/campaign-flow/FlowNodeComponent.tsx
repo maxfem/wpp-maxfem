@@ -23,23 +23,44 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
   const Icon = iconMap[data.icon] || Zap;
   const isExit = data.nodeType === "exit";
   const isWhatsApp = data.nodeType === "sendWhatsApp";
+  const isEmail = data.nodeType === "sendEmail";
+  const isSms = data.nodeType === "sendSms";
   const isCondition = data.nodeType === "condition" || data.nodeType === "multiCondition";
   const isWait = data.nodeType === "wait" || data.nodeType === "waitCondition" || data.nodeType === "waitDate";
+  const isWaitDate = data.nodeType === "waitDate";
   const isNote = data.nodeType === "note";
+  const isTag = data.nodeType === "addTag" || data.nodeType === "removeTag";
+  const isWebhook = data.nodeType === "sendWebhook";
+  const isTransfer = data.nodeType === "transferChat";
+  const isArchive = data.nodeType === "archiveChat";
+  const isExit2 = data.nodeType === "exit";
 
   // Build body text based on node type
   let bodyText = "Configurar...";
-  if (isWhatsApp && data.templateName) {
-    bodyText = String(data.templateName);
-  } else if (isWhatsApp && data.template) {
-    bodyText = String(data.template);
-  } else if (isWait && data.waitTime) {
-    const units: Record<string, string> = { minutes: "minutos", hours: "horas", days: "dias" };
-    bodyText = `${data.waitTime} ${units[String(data.waitUnit)] || data.waitUnit}`;
-  } else if (isCondition && data.conditionField) {
-    bodyText = `${data.conditionField} ${data.conditionOp} ${data.conditionValue || ""}`;
-  } else if (isNote && data.noteText) {
-    bodyText = String(data.noteText);
+  if (isWhatsApp && (data.template || data.templateName)) {
+    bodyText = String(data.templateName || data.template);
+  } else if (isEmail && data.emailTemplate) {
+    bodyText = String(data.emailTemplate);
+  } else if (isSms && data.message) {
+    bodyText = String(data.message).slice(0, 60);
+  } else if (isWaitDate && (data.date || data.time)) {
+    bodyText = `${data.date || ""} ${data.time || ""}`.trim();
+  } else if (isWait && data.duration) {
+    bodyText = `${data.duration} ${String(data.unit || "").toLowerCase()}`.trim();
+  } else if (isCondition && data.field) {
+    bodyText = `${data.field} ${data.operator || ""} ${data.value || ""}`.trim();
+  } else if (isNote && data.content) {
+    bodyText = String(data.content);
+  } else if (isTag && data.tagName) {
+    bodyText = String(data.tagName);
+  } else if (isWebhook && data.url) {
+    bodyText = `${data.method || "POST"} ${String(data.url).slice(0, 30)}`;
+  } else if (isTransfer && data.department) {
+    bodyText = String(data.department);
+  } else if (isArchive && data.reason) {
+    bodyText = String(data.reason);
+  } else if (isExit2 && data.reason) {
+    bodyText = String(data.reason);
   }
 
   return (

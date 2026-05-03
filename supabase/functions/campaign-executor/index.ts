@@ -503,8 +503,8 @@ async function processAutomationQueue(supabase: any) {
 
             // Simple variable replacement: {{customer.name}} -> "John"
             const varRegex = /\{\{([^}]+)\}\}/g;
-            resolvedSubject = resolvedSubject.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
-            resolvedBody = resolvedBody.replace(varRegex, (match, key) => resolveVariable(key.trim(), ctx));
+            resolvedSubject = resolvedSubject.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+            resolvedBody = resolvedBody.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
 
             // Wrap links for tracking
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {

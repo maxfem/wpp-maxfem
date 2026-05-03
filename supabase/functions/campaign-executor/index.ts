@@ -366,6 +366,12 @@ async function processAutomationQueue(supabase: any) {
           if (currentNodeId === "start") {
             const startNode = nodes.find(n => n.type === "startNode" || n.data?.nodeType === "start");
             if (startNode) {
+              // Check filters on the start node
+              if (!matchesFilters(startNode, item.trigger_data, customer)) {
+                console.log(`[automation] Item ${item.id} skipped due to filters on start node`);
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now }).eq("id", item.id);
+                break;
+              }
               const nextId = getNextNodeId(edges, startNode.id);
               if (nextId) { currentNodeId = nextId; continue; }
             }

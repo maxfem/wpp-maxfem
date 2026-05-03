@@ -765,14 +765,27 @@ export default function Lists() {
                 <Download className="h-4 w-4 mr-2" />
                 Baixar modelo Excel
               </Button>
-              <Input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file);
-                }}
-              />
+              <div className="space-y-2">
+                <Label>Selecionar arquivo</Label>
+                <div className="relative">
+                  <Input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    disabled={importing}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload(file);
+                    }}
+                    className={importing ? "opacity-50" : ""}
+                  />
+                  {importing && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-md">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <span className="text-xs">Processando...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

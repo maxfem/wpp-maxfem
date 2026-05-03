@@ -188,7 +188,7 @@ serve(async (req) => {
       SNSDestination: { TopicARN: topicArn },
     };
     try {
-      const eds = await ses.send(new DescribeConfigurationSetEventDestinationsCommand({ ConfigurationSetName: csName }));
+      const eds = await ses.send(new DescribeConfigurationSetCommand({ ConfigurationSetName: csName, ConfigurationSetAttributeNames: ["eventDestinations"] as any }));
       const matchOurTopic = (eds.EventDestinations || []).find((e: any) => e?.SNSDestination?.TopicARN === topicArn);
       const sameName = (eds.EventDestinations || []).find((e: any) => e?.Name === EVENT_DESTINATION_NAME);
       if (matchOurTopic) {

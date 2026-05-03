@@ -56,8 +56,8 @@ serve(async (req) => {
     const tags = payload.tags || null
     const custom_attributes = payload.custom_attributes || null
 
-    if (!email && !phone) {
-      return new Response(JSON.stringify({ error: 'Email or phone is required' }), {
+    if (!email && !phone && !document) {
+      return new Response(JSON.stringify({ error: 'Email, phone or document is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -65,8 +65,7 @@ serve(async (req) => {
 
     // 2. Find or create customer
     let customerId;
-    
-    // Try find by email
+
     if (email) {
       const { data: existing } = await supabase
         .from('customers')
@@ -74,11 +73,9 @@ serve(async (req) => {
         .eq('tenant_id', list.tenant_id)
         .eq('email', email)
         .maybeSingle()
-      
       if (existing) customerId = existing.id;
     }
 
-    // Try find by phone if not found by email
     if (!customerId && phone) {
       const { data: existing } = await supabase
         .from('customers')
@@ -86,7 +83,16 @@ serve(async (req) => {
         .eq('tenant_id', list.tenant_id)
         .eq('phone', phone)
         .maybeSingle()
-      
+      if (existing) customerId = existing.id;
+    }
+
+    if (!customerId && document) {
+      const { data: existing } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('tenant_id', list.tenant_id)
+        .eq('document', document)
+        .maybeSingle()
       if (existing) customerId = existing.id;
     }
 

@@ -662,11 +662,28 @@ export function ContactInfoPanel({ conversation, messages, customer, orders = []
                         )}
                         {/* Payment info */}
                         {order.payment_summary && Array.isArray(order.payment_summary) && order.payment_summary.length > 0 && (
-                          <div className="flex items-center gap-1.5">
-                            <CreditCard className="h-3 w-3 text-muted-foreground shrink-0" />
-                            <span className="text-[10px] text-muted-foreground truncate">
-                              {order.payment_summary.map((p: any) => p.method).join(", ")}
-                            </span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <CreditCard className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="text-[10px] text-muted-foreground truncate">
+                                {order.payment_summary.map((p: any) => p.method).join(", ")}
+                              </span>
+                            </div>
+                            {order.payment_summary
+                              .filter((p: any) => p.is_pix && p.pix_qr_code && !["captured", "paid", "approved"].includes(p.status))
+                              .map((p: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-1.5 rounded-md bg-orange-500/10 border border-orange-200 px-2 py-1.5">
+                                  <CreditCard className="h-3 w-3 text-orange-600 shrink-0" />
+                                  <span className="text-[10px] text-orange-700 font-medium flex-1">Pix copia e cola</span>
+                                  <button
+                                    onClick={() => copyToClipboard(p.pix_qr_code)}
+                                    className="text-orange-700 hover:text-orange-900 shrink-0 inline-flex items-center gap-1 text-[10px] font-medium"
+                                    title="Copiar código Pix para enviar ao cliente"
+                                  >
+                                    <Copy className="h-3 w-3" /> Copiar
+                                  </button>
+                                </div>
+                              ))}
                           </div>
                         )}
                       </div>

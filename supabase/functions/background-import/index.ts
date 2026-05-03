@@ -63,47 +63,45 @@ Deno.serve(async (req) => {
     // Process in batches
     for (let i = processed; i < total; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
-      const customersToInsert = [];
-
+      
       for (const row of batch) {
         const name = row[nameIdx];
         if (!name) continue;
 
-        customersToInsert.push({
-          tenant_id,
-          name,
-          email: emailIdx >= 0 ? row[emailIdx] || null : null,
-          phone: phoneIdx >= 0 ? row[phoneIdx] || null : null,
-          document: documentIdx >= 0 ? row[documentIdx] || null : null,
-        });
-      }
+        const email = emailIdx >= 0 ? row[emailIdx] || null : null;
+        const phone = phoneIdx >= 0 ? row[phoneIdx] || null : null;
+        const document = documentIdx >= 0 ? row[documentIdx] || null : null;
 
-      if (customersToInsert.length > 0) {
-        // Upsert customers to avoid duplicates if possible, or just insert
-        // Using onConflict: 'tenant_id, email' or similar would be good but depends on DB constraints
-        // For now, let's do a simple insert and get IDs
-        const { data: insertedCustomers, error: insertErr } = await supabase
-          .from("customers")
-          .upsert(customersToInsert, { 
-            onConflict: 'tenant_id, phone', // Assuming phone is unique per tenant for this logic
-            ignoreDuplicates: false 
-          })
-          .select("id");
-
-        if (insertErr) {
-          console.error("Error inserting customers:", insertErr);
-          // If upsert fails due to missing constraint, fallback to loop or handle error
+        // Find or create customer (more robust than bulk upsert with single conflict)
+        // Try phone first
+        let customerId;
+        if (phone) {
+          const { data } = await supabase.from("customers").select("id").eq("tenant_id", tenant_id).eq("phone", phone).maybeSingle();
+          if (data) customerId = data.id;
         }
 
-        if (insertedCustomers) {
-          const membersToInsert = insertedCustomers.map(c => ({
-            list_id,
-            customer_id: c.id
-          }));
+        // Try email if phone not found
+        if (!customerId && email) {
+          const { data } = await supabase.from("customers").select("id").eq("tenant_id", tenant_id).eq("email", email).maybeSingle();
+          if (data) customerId = data.id;
+        }
 
-          await supabase.from("contact_list_members").upsert(membersToInsert, {
-            onConflict: 'list_id, customer_id'
-          });
+        // Create if not found
+        if (!customerId) {
+          const { data, error } = await supabase.from("customers").insert({
+            tenant_id, name, email, phone, document
+          }).select("id").single();
+          if (!error && data) customerId = data.id;
+        } else {
+          // Update existing
+          await supabase.from("customers").update({ name, document, email, phone }).eq("id", customerId);
+        }
+
+        if (customerId) {
+          await supabase.from("contact_list_members").upsert({
+            list_id,
+            customer_id: customerId
+          }, { onConflict: 'list_id, customer_id' });
         }
       }
 

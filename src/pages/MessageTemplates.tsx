@@ -149,6 +149,8 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [emailPreview, setEmailPreview] = useState<any | null>(null);
+  const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [emailForm, setEmailForm] = useState<{
     name: string;
     subject: string;

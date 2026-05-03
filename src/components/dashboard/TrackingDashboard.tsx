@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { MousePointerClick, Target, DollarSign, PercentIcon } from "lucide-react";
+import { MousePointerClick, Target, DollarSign, PercentIcon, Info } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { subDays } from "date-fns";
-import { formatSP } from "@/lib/utils";
+import { formatSP, getStandardPeriodRange, fetchAll, type DatePeriodKey } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -30,11 +30,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-const PERIOD_OPTIONS = [
-  { value: "7", label: "7 dias" },
-  { value: "14", label: "14 dias" },
-  { value: "30", label: "30 dias" },
+const PERIOD_OPTIONS: { value: DatePeriodKey; label: string }[] = [
+  { value: "7d", label: "7 dias" },
+  { value: "14d", label: "14 dias" },
+  { value: "30d", label: "30 dias" },
 ];
 
 const fmtNumber = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
@@ -54,48 +60,61 @@ function buildDayEntries(days: number) {
 export default function TrackingDashboard() {
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
-  const [periodDays, setPeriodDays] = useState(14);
-  const periodStart = subDays(new Date(), periodDays).toISOString();
+  const [periodKey, setPeriodKey] = useState<DatePeriodKey>("14d");
+  
+  const { from: periodFrom, to: periodTo, days: periodDays } = useMemo(
+    () => getStandardPeriodRange(periodKey),
+    [periodKey]
+  );
 
   // Fetch tracked links for this tenant
   const { data: trackedLinks = [] } = useQuery({
     queryKey: ["tracking-links", tenantId],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("tracked_links")
-        .select("id, campaign_id, created_at")
-        .eq("tenant_id", tenantId!);
-      return data || [];
+      return fetchAll<{ id: string; campaign_id: string | null; created_at: string }>(
+        supabase
+          .from("tracked_links")
+          .select("id, campaign_id, created_at")
+          .eq("tenant_id", tenantId!)
+      );
     },
     enabled: !!tenantId,
   });
 
   // Fetch clicks for period
   const { data: clicks = [] } = useQuery({
-    queryKey: ["tracking-clicks", tenantId, trackedLinks.length, periodDays],
+    queryKey: ["tracking-clicks", tenantId, trackedLinks.length, periodKey],
     queryFn: async () => {
       if (trackedLinks.length === 0) return [];
       const linkIds = trackedLinks.map((l) => l.id);
-      const { data } = await supabase
-        .from("link_clicks")
-        .select("link_id, clicked_at")
-        .in("link_id", linkIds)
-        .gte("clicked_at", periodStart);
-      return data || [];
+      
+      // We still use link_id filter, but we fetch all pages
+      // To optimize, if linkIds is too large, we might need a different approach, 
+      // but fetchAll handles the result set size, not the linkIds array size.
+      return fetchAll<{ link_id: string; clicked_at: string }>(
+        supabase
+          .from("link_clicks")
+          .select("link_id, clicked_at")
+          .in("link_id", linkIds)
+          .gte("clicked_at", periodFrom.toISOString())
+          .lte("clicked_at", periodTo.toISOString())
+      );
     },
     enabled: !!tenantId && trackedLinks.length > 0,
   });
 
   // Fetch activities with conversions
   const { data: activities = [] } = useQuery({
-    queryKey: ["tracking-activities", tenantId, periodDays],
+    queryKey: ["tracking-activities", tenantId, periodKey],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("campaign_id, status, delivered_at, clicked_at, converted_at, conversion_value, created_at")
-        .eq("tenant_id", tenantId!)
-        .gte("created_at", periodStart);
-      return data || [];
+      return fetchAll<{ campaign_id: string | null; status: string; delivered_at: string | null; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
+        supabase
+          .from("campaign_activities")
+          .select("campaign_id, status, delivered_at, clicked_at, converted_at, conversion_value, created_at")
+          .eq("tenant_id", tenantId!)
+          .gte("created_at", periodFrom.toISOString())
+          .lte("created_at", periodTo.toISOString())
+      );
     },
     enabled: !!tenantId,
   });
@@ -126,7 +145,12 @@ export default function TrackingDashboard() {
     { label: "Cliques", value: fmtNumber(totalClicks), icon: MousePointerClick },
     { label: "CTR", value: fmtPct(ctr), icon: PercentIcon },
     { label: "Conversões", value: fmtNumber(totalConversions), icon: Target },
-    { label: "Receita Atribuída", value: fmtMoney(attributedRevenue), icon: DollarSign },
+    { 
+      label: "Receita Atribuída", 
+      value: fmtMoney(attributedRevenue), 
+      icon: DollarSign,
+      tooltip: "Receita gerada via cliques diretos nos links rastreados (rastreio.maxfem.com.br) dentro da janela de 72h."
+    },
   ];
 
   // Clicks by day chart
@@ -191,13 +215,13 @@ export default function TrackingDashboard() {
     <div className="space-y-6">
       {/* Period selector */}
       <div className="flex items-center justify-end">
-        <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
-          <SelectTrigger className="w-[130px]">
+        <Select value={periodKey} onValueChange={(v) => setPeriodKey(v as DatePeriodKey)}>
+          <SelectTrigger className="w-[130px] h-8 text-xs font-medium border-border glass">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PERIOD_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
+              <SelectItem key={opt.value} value={opt.value} className="text-xs">
                 {opt.label}
               </SelectItem>
             ))}
@@ -207,83 +231,115 @@ export default function TrackingDashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label} className="border border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-muted-foreground">{kpi.label}</span>
-                <kpi.icon className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="text-xl font-bold text-foreground">{kpi.value}</div>
-            </CardContent>
-          </Card>
-        ))}
+        <TooltipProvider>
+          {kpis.map((kpi) => (
+            <Card key={kpi.label} className="border border-border glass shadow-sm overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">{kpi.label}</span>
+                    {kpi.tooltip && (
+                      <UITooltip>
+                        <UITooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+                        </UITooltipTrigger>
+                        <UITooltipContent className="max-w-[200px] text-[11px] p-2 leading-tight">
+                          {kpi.tooltip}
+                        </UITooltipContent>
+                      </UITooltip>
+                    )}
+                  </div>
+                  <kpi.icon className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors" />
+                </div>
+                <div className="text-2xl font-bold text-foreground tracking-tight">{kpi.value}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </TooltipProvider>
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border border-border">
+        <Card className="border border-border glass shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-foreground">
+            <CardTitle className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70">
               Cliques por Dia
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={clicksPerDay}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="day" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                <XAxis 
+                  dataKey="day" 
+                  className="text-[10px]" 
+                  tick={{ fill: "hsl(var(--muted-foreground))" }} 
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis 
+                  className="text-[10px]" 
+                  tick={{ fill: "hsl(var(--muted-foreground))" }} 
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip
+                  cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",
                     border: "1px solid hsl(var(--border))",
                     borderRadius: "8px",
-                    fontSize: "12px",
+                    fontSize: "11px",
+                    boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
                   }}
                 />
-                <Bar dataKey="cliques" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                <Bar 
+                  dataKey="cliques" 
+                  fill="hsl(var(--primary))" 
+                  radius={[3, 3, 0, 0]} 
+                  maxBarSize={40}
+                />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card className="border border-border">
+        <Card className="border border-border glass shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-foreground">
+            <CardTitle className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/70">
               Top Campanhas por Cliques
             </CardTitle>
           </CardHeader>
           <CardContent>
             {rankedCampaigns.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
+              <p className="text-sm text-muted-foreground py-12 text-center">
                 Nenhum dado de cliques por campanha ainda.
               </p>
             ) : (
               <div className="overflow-auto max-h-[300px]">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Campanha</TableHead>
-                      <TableHead className="text-xs text-right">Cliques</TableHead>
-                      <TableHead className="text-xs text-right">Conv.</TableHead>
-                      <TableHead className="text-xs text-right">Receita</TableHead>
+                    <TableRow className="hover:bg-transparent border-border">
+                      <TableHead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground h-10">Campanha</TableHead>
+                      <TableHead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-right h-10">Cliques</TableHead>
+                      <TableHead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-right h-10">Conv.</TableHead>
+                      <TableHead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-right h-10">Receita</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rankedCampaigns.map((c, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="text-sm">
+                      <TableRow key={i} className="border-border hover:bg-muted/30 transition-colors">
+                        <TableCell className="py-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase tracking-tight">
                               {c.kind === "automation" ? "Régua" : "Camp."}
                             </span>
-                            {c.name}
+                            <span className="text-xs font-medium truncate max-w-[150px]">{c.name}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm text-right">{fmtNumber(c.clicks)}</TableCell>
-                        <TableCell className="text-sm text-right">{fmtNumber(c.conversions)}</TableCell>
-                        <TableCell className="text-sm text-right">{fmtMoney(c.revenue)}</TableCell>
+                        <TableCell className="text-xs text-right py-2.5 font-mono">{fmtNumber(c.clicks)}</TableCell>
+                        <TableCell className="text-xs text-right py-2.5 font-mono">{fmtNumber(c.conversions)}</TableCell>
+                        <TableCell className="text-xs text-right py-2.5 font-mono font-semibold">{fmtMoney(c.revenue)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

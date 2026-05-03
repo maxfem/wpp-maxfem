@@ -169,18 +169,28 @@ serve(async (req) => {
     }
 
     // ========== TEST & SEND MODE ==========
-    const { to, subject, html, text, fromName, configurationSet, tenantId, campaignId, customerId } = payload;
+    const { to, subject, html, text, fromName, tenantId, campaignId, customerId } = payload;
+    let configurationSet: string | null = (payload.configurationSet || "").trim() || null;
     if (!to || !subject || !html) {
       throw new Error("Campos obrigatórios: to, subject, html.");
     }
 
-    // Resolve sender: payload (test) or DB (send)
+    // Resolve sender + configuration set: payload (test) or DB (send)
     let senderEmail: string;
     if (mode === "test") {
       senderEmail = (payload.fromEmail || "").trim();
       if (!senderEmail) throw new Error("E-mail do remetente é obrigatório no modo teste.");
+      // Mesmo em teste, usa o CS do tenant se houver, para validar tracking
+      if (!configurationSet) {
+        try {
+          const cfg = await getAwsConfigFromDb(tenantId || null);
+          configurationSet = cfg.configurationSet;
+        } catch {}
+      }
     } else {
-      senderEmail = await getSenderEmailFromDb();
+      const cfg = await getAwsConfigFromDb(tenantId || null);
+      senderEmail = cfg.senderEmail;
+      if (!configurationSet) configurationSet = cfg.configurationSet;
     }
 
     // Resolve user via auth header for logging

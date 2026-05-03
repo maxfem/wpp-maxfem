@@ -81,12 +81,15 @@ interface FlowSidebarProps {
   isAutomation?: boolean;
   selectedTrigger?: string;
   onTriggerChange?: (trigger: string) => void;
+  selectedWhatsAppAccountId?: string;
+  onWhatsAppAccountChange?: (id: string) => void;
 }
 
 export function FlowSidebar({
   campaignName, onNameChange, selectedListId, onListChange,
   scheduledDate, onScheduledDateChange, scheduledTime, onScheduledTimeChange,
   isAutomation, selectedTrigger, onTriggerChange,
+  selectedWhatsAppAccountId, onWhatsAppAccountChange,
 }: FlowSidebarProps) {
   const { currentTenant } = useAuth();
 
@@ -99,6 +102,22 @@ export function FlowSidebar({
         .select("id, name, customer_count")
         .eq("tenant_id", currentTenant.id)
         .order("name");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const { data: whatsappAccounts = [] } = useQuery({
+    queryKey: ["whatsapp_accounts", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return [];
+      const { data, error } = await supabase
+        .from("whatsapp_accounts")
+        .select("id, display_phone, verified_name, phone_number_id")
+        .eq("tenant_id", currentTenant.id)
+        .eq("is_active", true)
+        .order("created_at");
       if (error) throw error;
       return data;
     },

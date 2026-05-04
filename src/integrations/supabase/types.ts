@@ -21,6 +21,7 @@ export type Database = {
           current_node_id: string | null
           customer_id: string | null
           id: string
+          metadata: Json | null
           processed_at: string | null
           scheduled_for: string | null
           status: string
@@ -34,6 +35,7 @@ export type Database = {
           current_node_id?: string | null
           customer_id?: string | null
           id?: string
+          metadata?: Json | null
           processed_at?: string | null
           scheduled_for?: string | null
           status?: string
@@ -47,6 +49,7 @@ export type Database = {
           current_node_id?: string | null
           customer_id?: string | null
           id?: string
+          metadata?: Json | null
           processed_at?: string | null
           scheduled_for?: string | null
           status?: string

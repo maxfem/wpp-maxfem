@@ -426,9 +426,20 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
             <CardTitle>Histórico de Envios</CardTitle>
             <CardDescription>Todos os e-mails enviados via SES com status atual</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setPage(0); }}>
+              <SelectTrigger className="h-8 w-20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 20, 30, 40, 50].map(v => (
+                  <SelectItem key={v} value={v.toString()}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {["all", "sent", "delivered", "bounced", "complained", "rejected"].map(s => (
-              <Button key={s} size="sm" variant={statusFilter === s ? "default" : "outline"} onClick={() => setStatusFilter(s)}>
+              <Button key={s} size="sm" variant={statusFilter === s ? "default" : "outline"} onClick={() => { setStatusFilter(s); setPage(0); }}>
                 {s === "all" ? "Todos" : s}
               </Button>
             ))}

@@ -106,6 +106,7 @@ export function FlowSidebar({
   scheduledDate, onScheduledDateChange, scheduledTime, onScheduledTimeChange,
   isAutomation, selectedTrigger, onTriggerChange,
   selectedWhatsAppAccountId, onWhatsAppAccountChange,
+  stoEnabled, onStoChange, isAbTest, onAbTestChange,
 }: FlowSidebarProps) {
   const { currentTenant } = useAuth();
 

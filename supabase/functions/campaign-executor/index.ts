@@ -1454,10 +1454,15 @@ async function processScheduledCampaigns(supabase: any) {
         }
       }
 
-      const finalStatus = sentCount > 0 ? "sent" : "failed";
+      let finalStatus: string;
+      if (timedOut) {
+        finalStatus = "sending"; // keep as sending so next cron resumes
+      } else {
+        finalStatus = sentCount > 0 ? "sent" : "failed";
+      }
       const errorMsg = finalStatus === "failed" ? `Todos os ${failedCount} envios falharam. Último erro: ${lastError}` : null;
-      await supabase.from("campaigns").update({ status: finalStatus, last_error: errorMsg }).eq("id", campaign.id);
-      results.push({ campaign_id: campaign.id, sent: sentCount, failed: failedCount, total: customers.length, status: finalStatus });
+      await supabase.from("campaigns").update({ status: finalStatus, last_error: errorMsg, updated_at: new Date().toISOString() }).eq("id", campaign.id);
+      results.push({ campaign_id: campaign.id, sent: sentCount, failed: failedCount, total: customers.length, status: finalStatus, resumed: timedOut });
     } catch (err) {
       const errMsg = `Erro interno: ${String(err)}`;
       await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);

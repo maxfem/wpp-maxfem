@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import AppLayout from "@/components/AppLayout";
+import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -71,9 +71,9 @@ export default function SettingsPolicies() {
     queryKey: ["wa_quality", tenantId],
     enabled: !!tenantId,
     queryFn: async () => {
-      const { data } = await supabase.from("whatsapp_accounts").select("quality_rating, messaging_limit_tier, name_status, last_quality_check_at, display_phone_number")
+      const { data } = await supabase.from("whatsapp_accounts").select("quality_rating, messaging_limit_tier, name_status, last_quality_check_at")
         .eq("tenant_id", tenantId!).maybeSingle();
-      return data;
+      return data as any;
     },
   });
 

@@ -330,6 +330,50 @@ export type Database = {
           },
         ]
       }
+      contact_blocklist: {
+        Row: {
+          channel: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          identifier: string
+          notes: string | null
+          reason: string
+          source: string | null
+          tenant_id: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          identifier: string
+          notes?: string | null
+          reason?: string
+          source?: string | null
+          tenant_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          identifier?: string
+          notes?: string | null
+          reason?: string
+          source?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_blocklist_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_list_members: {
         Row: {
           added_at: string
@@ -436,6 +480,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "customer_groups_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_preferences: {
+        Row: {
+          category: string
+          channel: string
+          customer_id: string
+          id: string
+          opted_in: boolean
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          channel: string
+          customer_id: string
+          id?: string
+          opted_in?: boolean
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          channel?: string
+          customer_id?: string
+          id?: string
+          opted_in?: boolean
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_preferences_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -1327,6 +1409,71 @@ export type Database = {
           },
         ]
       }
+      messaging_policies: {
+        Row: {
+          auto_pause_on_red: boolean
+          created_at: string
+          email_max_per_day: number
+          email_max_per_week: number
+          email_paused: boolean
+          id: string
+          pause_reason: string | null
+          quiet_hours_enabled: boolean
+          quiet_hours_end: string
+          quiet_hours_start: string
+          tenant_id: string
+          timezone: string
+          updated_at: string
+          whatsapp_max_per_day: number
+          whatsapp_max_per_week: number
+          whatsapp_paused: boolean
+        }
+        Insert: {
+          auto_pause_on_red?: boolean
+          created_at?: string
+          email_max_per_day?: number
+          email_max_per_week?: number
+          email_paused?: boolean
+          id?: string
+          pause_reason?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string
+          quiet_hours_start?: string
+          tenant_id: string
+          timezone?: string
+          updated_at?: string
+          whatsapp_max_per_day?: number
+          whatsapp_max_per_week?: number
+          whatsapp_paused?: boolean
+        }
+        Update: {
+          auto_pause_on_red?: boolean
+          created_at?: string
+          email_max_per_day?: number
+          email_max_per_week?: number
+          email_paused?: boolean
+          id?: string
+          pause_reason?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string
+          quiet_hours_start?: string
+          tenant_id?: string
+          timezone?: string
+          updated_at?: string
+          whatsapp_max_per_day?: number
+          whatsapp_max_per_week?: number
+          whatsapp_paused?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messaging_policies_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           carrier: string | null
@@ -1839,6 +1986,44 @@ export type Database = {
           },
         ]
       }
+      unsubscribe_tokens: {
+        Row: {
+          created_at: string
+          customer_id: string
+          email: string | null
+          expires_at: string | null
+          phone: string | null
+          tenant_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          email?: string | null
+          expires_at?: string | null
+          phone?: string | null
+          tenant_id: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          email?: string | null
+          expires_at?: string | null
+          phone?: string | null
+          tenant_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unsubscribe_tokens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -1864,7 +2049,11 @@ export type Database = {
           display_phone: string | null
           id: string
           is_active: boolean | null
+          last_quality_check_at: string | null
+          messaging_limit_tier: string | null
+          name_status: string | null
           phone_number_id: string
+          quality_history: Json | null
           quality_rating: string | null
           tenant_id: string
           updated_at: string
@@ -1876,7 +2065,11 @@ export type Database = {
           display_phone?: string | null
           id?: string
           is_active?: boolean | null
+          last_quality_check_at?: string | null
+          messaging_limit_tier?: string | null
+          name_status?: string | null
           phone_number_id: string
+          quality_history?: Json | null
           quality_rating?: string | null
           tenant_id: string
           updated_at?: string
@@ -1888,7 +2081,11 @@ export type Database = {
           display_phone?: string | null
           id?: string
           is_active?: boolean | null
+          last_quality_check_at?: string | null
+          messaging_limit_tier?: string | null
+          name_status?: string | null
           phone_number_id?: string
+          quality_history?: Json | null
           quality_rating?: string | null
           tenant_id?: string
           updated_at?: string
@@ -2105,12 +2302,20 @@ export type Database = {
     }
     Functions: {
       calculate_rfm_scores: { Args: { _tenant_id: string }; Returns: undefined }
+      get_or_create_unsubscribe_token: {
+        Args: { _customer_id: string; _tenant_id: string }
+        Returns: string
+      }
       get_user_tenant_ids: { Args: { _user_id: string }; Returns: string[] }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_blocked: {
+        Args: { _channel: string; _identifier: string; _tenant_id: string }
         Returns: boolean
       }
       is_tenant_member: {

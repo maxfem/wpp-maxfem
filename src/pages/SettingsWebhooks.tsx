@@ -201,11 +201,73 @@ export default function SettingsWebhooks() {
   return (
     <AppLayout>
       <div className="p-6 space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Webhooks</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            URLs de entrada para integrações externas e testes de recebimento.
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              <Webhook className="h-6 w-6 text-primary" /> Integrações via Webhook
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Configure endpoints para receber e enviar dados em tempo real.
+            </p>
+          </div>
+          
+          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" /> Novo Webhook de Saída
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Configurar Webhook de Saída</DialogTitle>
+                <DialogDescription>
+                  Envie notificações do CRM para o seu sistema externo (ERP, Dashboard, etc).
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>URL do seu Endpoint</Label>
+                  <Input 
+                    placeholder="https://seu-sistema.com/webhook" 
+                    value={newWebhook.url}
+                    onChange={(e) => setNewWebhook({ ...newWebhook, url: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Eventos para Notificar</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    {AVAILABLE_EVENTS.map((event) => (
+                      <div key={event.id} className="flex items-center space-x-2 border rounded-md p-2">
+                        <Checkbox 
+                          id={event.id} 
+                          checked={newWebhook.events.includes(event.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setNewWebhook({ ...newWebhook, events: [...newWebhook.events, event.id] });
+                            } else {
+                              setNewWebhook({ ...newWebhook, events: newWebhook.events.filter(e => e !== event.id) });
+                            }
+                          }}
+                        />
+                        <label htmlFor={event.id} className="text-[10px] font-medium leading-none cursor-pointer">
+                          {event.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
+                <Button 
+                  onClick={() => createWebhookMutation.mutate(newWebhook)}
+                  disabled={!newWebhook.url || newWebhook.events.length === 0 || createWebhookMutation.isPending}
+                >
+                  {createWebhookMutation.isPending ? "Criando..." : "Salvar Webhook"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

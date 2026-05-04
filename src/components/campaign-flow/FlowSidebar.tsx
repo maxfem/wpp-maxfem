@@ -95,6 +95,10 @@ interface FlowSidebarProps {
   onTriggerChange?: (trigger: string) => void;
   selectedWhatsAppAccountId?: string;
   onWhatsAppAccountChange?: (id: string) => void;
+  stoEnabled?: boolean;
+  onStoChange?: (enabled: boolean) => void;
+  isAbTest?: boolean;
+  onAbTestChange?: (enabled: boolean) => void;
 }
 
 export function FlowSidebar({

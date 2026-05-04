@@ -287,7 +287,62 @@ export default function SettingsPolicies() {
                 <Button onClick={addBlock}><Plus className="w-4 h-4 mr-1" />Adicionar</Button>
               </CardContent>
             </Card>
+          <TabsContent value="sla" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Metas de Atendimento (SLA)</CardTitle>
+                <CardDescription>Defina o tempo máximo esperado para resposta e resolução</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Tempo de resposta (minutos)</Label>
+                  <Input 
+                    type="number" 
+                    value={slaForm?.target_response_time_minutes || 30} 
+                    onChange={e => setSlaForm({ ...slaForm, target_response_time_minutes: +e.target.value })} 
+                  />
+                  <p className="text-[10px] text-muted-foreground">Tempo máximo para o atendente dar o primeiro retorno após a mensagem do cliente</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tempo de resolução (horas)</Label>
+                  <Input 
+                    type="number" 
+                    value={slaForm?.target_resolution_time_hours || 24} 
+                    onChange={e => setSlaForm({ ...slaForm, target_resolution_time_hours: +e.target.value })} 
+                  />
+                  <p className="text-[10px] text-muted-foreground">Tempo máximo para encerrar o ticket como 'Resolvido'</p>
+                </div>
+              </CardContent>
+            </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle>Horário de Expediente</CardTitle>
+                <CardDescription>O cálculo do SLA pausará fora destes horários (Em breve)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3">
+                  {['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'].map(day => (
+                    <div key={day} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+                      <span className="text-sm font-medium uppercase w-12">{day}</span>
+                      <div className="flex items-center gap-4">
+                        <Input type="time" className="h-8 w-32" defaultValue="08:00" disabled />
+                        <span className="text-muted-foreground">até</span>
+                        <Input type="time" className="h-8 w-32" defaultValue="18:00" disabled />
+                      </div>
+                      <Switch defaultChecked={day !== 'sab' && day !== 'dom'} disabled />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-end">
+              <Button onClick={() => saveSlaMutation.mutate(slaForm)} disabled={saveSlaMutation.isPending}>
+                {saveSlaMutation.isPending ? "Salvando..." : "Salvar SLA"}
+              </Button>
+            </div>
+          </TabsContent>
             <Card>
               <CardContent className="p-0">
                 <Table>

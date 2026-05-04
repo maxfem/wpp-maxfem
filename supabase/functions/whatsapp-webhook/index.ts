@@ -637,6 +637,44 @@ Deno.serve(async (req) => {
               await markRepliedActivity(customer!.id, tenantId);
               console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
 
+              // === Onda 1: STOP keyword detection (LGPD/CAN-SPAM compliance) ===
+              if (msgType === "text" && content) {
+                const normalized = content.trim().toLowerCase();
+                const stopKeywords = ["sair", "parar", "cancelar", "stop", "unsubscribe", "descadastrar", "remover", "nao quero mais", "não quero mais"];
+                if (stopKeywords.some(k => normalized === k || normalized.startsWith(k + " ") || normalized.startsWith(k + "."))) {
+                  console.log(`[webhook] STOP keyword detected from ${phone}: "${content}"`);
+                  await supabase.from("contact_blocklist").upsert({
+                    tenant_id: tenantId, channel: "whatsapp", identifier: phone,
+                    reason: "stop_keyword", source: `inbound:"${content.slice(0, 100)}"`,
+                    customer_id: customer!.id,
+                  }, { onConflict: "tenant_id,channel,identifier" });
+
+                  // Resposta automática de confirmação (free-form, dentro da janela 24h)
+                  try {
+                    const { data: waAccount } = await supabase.from("whatsapp_accounts")
+                      .select("phone_number_id, access_token").eq("tenant_id", tenantId).eq("is_active", true).single();
+                    if (waAccount) {
+                      await fetch(`https://graph.facebook.com/v22.0/${waAccount.phone_number_id}/messages`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${waAccount.access_token}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          messaging_product: "whatsapp", to: phone, type: "text",
+                          text: { body: "✅ Você foi descadastrado das nossas mensagens promocionais. Não enviaremos mais campanhas para este número. Para voltar a receber, responda VOLTAR." }
+                        }),
+                      });
+                    }
+                  } catch (e) { console.error("[webhook] STOP confirmation send error:", e); }
+                  continue; // não dispara IA
+                }
+
+                // Reativação
+                if (normalized === "voltar" || normalized === "reativar" || normalized === "subscribe") {
+                  await supabase.from("contact_blocklist")
+                    .delete().eq("tenant_id", tenantId).eq("channel", "whatsapp").eq("identifier", phone);
+                  console.log(`[webhook] Reactivation requested from ${phone}`);
+                }
+              }
+
               tryAutoRespondWithAI(tenantId, customer!.id, phone, customer!.custom_attributes || null);
             }
           }

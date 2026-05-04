@@ -608,6 +608,34 @@ async function processAutomationQueue(supabase: any) {
               campaignName: campaign.name
             });
 
+            // === Onda 1: Policy check email ===
+            const { data: emailPolicyCheck } = await supabase.rpc("check_send_allowed", {
+              _tenant_id: campaign.tenant_id,
+              _channel: "email",
+              _identifier: (customer.email || "").toLowerCase(),
+              _customer_id: customer.id,
+              _category: "marketing",
+            });
+            const emailPolicyResult = (emailPolicyCheck as any) || { allowed: true };
+            if (!emailPolicyResult.allowed) {
+              console.log(`[automation] Email policy blocked for ${customer.email}: ${emailPolicyResult.reason}`);
+              if (emailPolicyResult.reason === "quiet_hours" && emailPolicyResult.reschedule_until) {
+                await supabase.from("automation_queue").update({ scheduled_for: emailPolicyResult.reschedule_until }).eq("id", item.id);
+                break;
+              }
+              if (emailPolicyResult.reason?.startsWith("frequency_cap")) {
+                await supabase.from("automation_queue").update({ scheduled_for: new Date(Date.now() + 6*60*60*1000).toISOString() }).eq("id", item.id);
+                break;
+              }
+              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                status: "skipped", channel: "email", sent_at: new Date().toISOString(),
+                error_message: `policy_blocked:${emailPolicyResult.reason}`,
+              });
+              break;
+            }
+
             // Call send-email-ses edge function
             const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
               method: "POST",
@@ -719,6 +747,44 @@ async function processAutomationQueue(supabase: any) {
 
             let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
             if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
+
+            // === Onda 1: Policy check (blocklist, frequency cap, quiet hours, opt-out) ===
+            const policyCategory = (templateRecord?.category || "marketing").toLowerCase() === "utility"
+              ? "transactional" : "marketing";
+            const { data: policyCheck } = await supabase.rpc("check_send_allowed", {
+              _tenant_id: campaign.tenant_id,
+              _channel: "whatsapp",
+              _identifier: phone,
+              _customer_id: customer.id,
+              _category: policyCategory,
+            });
+            const policyResult = (policyCheck as any) || { allowed: true };
+            if (!policyResult.allowed) {
+              console.log(`[automation] Policy blocked send to ${phone}: ${policyResult.reason}`, policyResult);
+              if (policyResult.reason === "quiet_hours" && policyResult.reschedule_until) {
+                // Reagenda para fim do quiet hours
+                await supabase.from("automation_queue").update({
+                  scheduled_for: policyResult.reschedule_until,
+                }).eq("id", item.id);
+                break;
+              }
+              if (policyResult.reason === "frequency_cap_day" || policyResult.reason === "frequency_cap_week") {
+                // Reagenda para 6h depois
+                const nextRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+                await supabase.from("automation_queue").update({ scheduled_for: nextRun }).eq("id", item.id);
+                break;
+              }
+              // Bloqueio definitivo (blocklist, opt-out, channel paused)
+              await supabase.from("automation_queue").update({
+                status: "skipped", processed_at: now, current_node_id: currentNodeId,
+              }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                status: "skipped", channel: "whatsapp", sent_at: new Date().toISOString(),
+                error_message: `policy_blocked:${policyResult.reason}`,
+              });
+              break;
+            }
 
             let orderRecord: any = null;
             if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {

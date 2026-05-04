@@ -510,6 +510,16 @@ async function processAutomationQueue(supabase: any) {
           }
         }
 
+        // --- Onda 2: A/B Testing Variant Assignment ---
+        let abVariantId = (item.metadata as any)?.ab_variant_id;
+        if (campaign.is_ab_test && !abVariantId) {
+          abVariantId = pickAbVariant(campaign.ab_test_config);
+          console.log(`[automation] A/B Test: Assigned variant ${abVariantId} to item ${item.id}`);
+          // Update metadata so it's persisted for future steps in this flow
+          item.metadata = { ...(item.metadata as any || {}), ab_variant_id: abVariantId };
+          await supabase.from("automation_queue").update({ metadata: item.metadata }).eq("id", item.id);
+        }
+
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;

@@ -85,6 +85,8 @@ function FlowEditorInner() {
       if (data) {
         setCampaignName(data.name);
         setIsActive(data.status === "running");
+        setStoEnabled(!!data.sto_enabled);
+        setIsAbTest(!!data.is_ab_test);
         if (data.trigger_type) {
           setSelectedTrigger(data.trigger_type);
         }

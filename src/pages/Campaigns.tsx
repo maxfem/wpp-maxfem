@@ -89,11 +89,12 @@ export default function Campaigns() {
     queryKey: ["campaign-activities-raw", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("campaign_id, status, clicked_at, conversion_value, created_at")
-        .eq("tenant_id", currentTenant.id);
-      return (data as CampaignActivity[]) || [];
+      return fetchAll<CampaignActivity>(
+        supabase
+          .from("campaign_activities")
+          .select("campaign_id, status, clicked_at, conversion_value, created_at")
+          .eq("tenant_id", currentTenant.id)
+      );
     },
     enabled: !!currentTenant,
   });

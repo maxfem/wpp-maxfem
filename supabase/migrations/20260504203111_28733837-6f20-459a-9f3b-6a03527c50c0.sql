@@ -1,0 +1,1 @@
+UPDATE campaigns SET updated_at = now() - interval '10 minutes', last_error = NULL WHERE id = '7bf98223-624a-4752-9e28-89ca7a08aa17' AND status = 'sending';

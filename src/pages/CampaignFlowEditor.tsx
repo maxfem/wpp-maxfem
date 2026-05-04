@@ -60,6 +60,7 @@ function FlowEditorInner() {
   const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string>("");
   const [stoEnabled, setStoEnabled] = useState(false);
   const [isAbTest, setIsAbTest] = useState(false);
+  const [isSandbox, setIsSandbox] = useState(false);
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";

@@ -114,6 +114,7 @@ const App = () => (
                    <Route path="/settings/webhooks" element={<ProtectedRoute><SettingsWebhooks /></ProtectedRoute>} />
                    <Route path="/settings/collaborators" element={<ProtectedRoute><SettingsCollaborators /></ProtectedRoute>} />
                    <Route path="/settings/policies" element={<ProtectedRoute><SettingsPolicies /></ProtectedRoute>} />
+                   <Route path="/auditoria" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
                    <Route path="/preferences/:token" element={<PreferenceCenter />} />
                    <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />

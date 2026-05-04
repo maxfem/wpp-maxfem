@@ -221,6 +221,8 @@ export type Database = {
           audience_rules: Json | null
           created_at: string
           end_date: string | null
+          fallback_channel: string | null
+          fallback_delay_minutes: number | null
           flow_data: Json | null
           has_bonus: boolean | null
           has_survey: boolean | null
@@ -245,6 +247,8 @@ export type Database = {
           audience_rules?: Json | null
           created_at?: string
           end_date?: string | null
+          fallback_channel?: string | null
+          fallback_delay_minutes?: number | null
           flow_data?: Json | null
           has_bonus?: boolean | null
           has_survey?: boolean | null
@@ -269,6 +273,8 @@ export type Database = {
           audience_rules?: Json | null
           created_at?: string
           end_date?: string | null
+          fallback_channel?: string | null
+          fallback_delay_minutes?: number | null
           flow_data?: Json | null
           has_bonus?: boolean | null
           has_survey?: boolean | null
@@ -620,6 +626,7 @@ export type Database = {
       customers: {
         Row: {
           avg_ticket: number | null
+          churn_probability: number | null
           created_at: string
           custom_attributes: Json | null
           document: string | null
@@ -627,8 +634,10 @@ export type Database = {
           id: string
           is_lead: boolean | null
           last_order_at: string | null
+          last_scoring_at: string | null
           name: string
           phone: string | null
+          predicted_clv: number | null
           rfm_frequency: number | null
           rfm_monetary: number | null
           rfm_recency: number | null
@@ -641,6 +650,7 @@ export type Database = {
         }
         Insert: {
           avg_ticket?: number | null
+          churn_probability?: number | null
           created_at?: string
           custom_attributes?: Json | null
           document?: string | null
@@ -648,8 +658,10 @@ export type Database = {
           id?: string
           is_lead?: boolean | null
           last_order_at?: string | null
+          last_scoring_at?: string | null
           name: string
           phone?: string | null
+          predicted_clv?: number | null
           rfm_frequency?: number | null
           rfm_monetary?: number | null
           rfm_recency?: number | null
@@ -662,6 +674,7 @@ export type Database = {
         }
         Update: {
           avg_ticket?: number | null
+          churn_probability?: number | null
           created_at?: string
           custom_attributes?: Json | null
           document?: string | null
@@ -669,8 +682,10 @@ export type Database = {
           id?: string
           is_lead?: boolean | null
           last_order_at?: string | null
+          last_scoring_at?: string | null
           name?: string
           phone?: string | null
+          predicted_clv?: number | null
           rfm_frequency?: number | null
           rfm_monetary?: number | null
           rfm_recency?: number | null
@@ -1916,6 +1931,51 @@ export type Database = {
           },
           {
             foreignKeyName: "popups_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      predictive_scores_history: {
+        Row: {
+          created_at: string | null
+          customer_id: string
+          id: string
+          metadata: Json | null
+          score_type: string
+          score_value: number
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          customer_id: string
+          id?: string
+          metadata?: Json | null
+          score_type: string
+          score_value: number
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string | null
+          customer_id?: string
+          id?: string
+          metadata?: Json | null
+          score_type?: string
+          score_value?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "predictive_scores_history_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "predictive_scores_history_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

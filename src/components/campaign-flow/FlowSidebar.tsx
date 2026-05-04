@@ -3,7 +3,7 @@ import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
   Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap,
-  Lock, CalendarIcon, BrainCircuit, Split
+  Lock, CalendarIcon, BrainCircuit, Split, FlaskConical
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +99,8 @@ interface FlowSidebarProps {
   onStoChange?: (enabled: boolean) => void;
   isAbTest?: boolean;
   onAbTestChange?: (enabled: boolean) => void;
+  isSandbox?: boolean;
+  onSandboxChange?: (enabled: boolean) => void;
 }
 
 export function FlowSidebar({
@@ -107,6 +109,7 @@ export function FlowSidebar({
   isAutomation, selectedTrigger, onTriggerChange,
   selectedWhatsAppAccountId, onWhatsAppAccountChange,
   stoEnabled, onStoChange, isAbTest, onAbTestChange,
+  isSandbox, onSandboxChange,
 }: FlowSidebarProps) {
   const { currentTenant } = useAuth();
 
@@ -311,6 +314,17 @@ export function FlowSidebar({
             </div>
             <Switch checked={isAbTest} onCheckedChange={onAbTestChange} className="scale-75" />
           </div>
+
+          <div className="flex items-center justify-between group">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <FlaskConical className="h-3 w-3 text-orange-500" />
+                <Label className="text-[10px] font-bold uppercase tracking-wider text-orange-500">Sandbox</Label>
+              </div>
+              <span className="text-[9px] text-muted-foreground leading-tight">Modo teste (sem custo)</span>
+            </div>
+            <Switch checked={isSandbox} onCheckedChange={onSandboxChange} className="scale-75" />
+          </div>
         </div>
       </div>
       </div>
@@ -347,7 +361,6 @@ export function FlowSidebar({
                         <Icon className="h-2.5 w-2.5" />
                       </div>
                       <span className="font-medium truncate">{item.label}</span>
-                      {!item.enabled && <Lock className="h-2.5 w-2.5 ml-auto text-muted-foreground" />}
                     </div>
                   );
                 })}

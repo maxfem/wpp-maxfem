@@ -60,6 +60,7 @@ function FlowEditorInner() {
   const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string>("");
   const [stoEnabled, setStoEnabled] = useState(false);
   const [isAbTest, setIsAbTest] = useState(false);
+  const [isSandbox, setIsSandbox] = useState(false);
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";
@@ -79,7 +80,7 @@ function FlowEditorInner() {
     (async () => {
       const { data } = await supabase
         .from("campaigns")
-        .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test")
+        .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test, is_sandbox")
         .eq("id", id)
         .single();
       if (data) {
@@ -193,6 +194,7 @@ function FlowEditorInner() {
       list_id: listId,
       sto_enabled: stoEnabled,
       is_ab_test: isAbTest,
+      is_sandbox: isSandbox,
     };
 
     if (isAutomation) {
@@ -277,6 +279,8 @@ function FlowEditorInner() {
           onStoChange={setStoEnabled}
           isAbTest={isAbTest}
           onAbTestChange={setIsAbTest}
+          isSandbox={isSandbox}
+          onSandboxChange={setIsSandbox}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

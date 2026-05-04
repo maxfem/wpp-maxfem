@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, UserPlus, Shield, Mail, Lock, User, Trash2, History, CheckCircle2, Edit2 } from "lucide-react";
+import { ArrowLeft, Plus, UserPlus, Shield, Mail, Lock, User, Trash2, History, CheckCircle2, Edit2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -24,6 +24,15 @@ const PERMISSIONS = [
   { id: "settings", label: "Configurações do Sistema" },
   { id: "activities", label: "Visualizar Atividades" },
 ];
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Dono",
+  admin: "Administrador",
+  manager: "Gerente",
+  collaborator: "Colaborador",
+  agent: "Agente",
+  viewer: "Observador",
+};
 
 export default function SettingsCollaborators() {
   const navigate = useNavigate();
@@ -66,7 +75,7 @@ export default function SettingsCollaborators() {
         `)
         .eq("tenant_id", currentTenant?.id)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(10) as any;
       if (error) throw error;
       return data;
     },
@@ -86,7 +95,7 @@ export default function SettingsCollaborators() {
       return data;
     },
     onSuccess: () => {
-      toast.success("Colaborador criado com sucesso! E-mail de convite enviado via SES.");
+      toast.success("Colaborador criado com sucesso!");
       setIsModalOpen(false);
       setFormData({ user_id: "", name: "", email: "", password: "", role: "collaborator", permissions: [] });
       queryClient.invalidateQueries({ queryKey: ["collaborators"] });
@@ -151,7 +160,7 @@ export default function SettingsCollaborators() {
       user_id: collab.user_id,
       name: collab.profiles?.display_name || "",
       email: collab.email || "",
-      password: "", // Senha vazia a menos que queira mudar
+      password: "",
       role: collab.role || "collaborator",
       permissions: collab.permissions || [],
     });
@@ -177,8 +186,10 @@ export default function SettingsCollaborators() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Colaboradores</h1>
-              <p className="text-sm text-muted-foreground">Gerencie sua equipe e permissões de acesso</p>
+              <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                <Shield className="h-6 w-6 text-primary" /> Equipe e Permissões
+              </h1>
+              <p className="text-sm text-muted-foreground">Governança e controle de acesso granular (RBAC)</p>
             </div>
           </div>
 
@@ -192,9 +203,7 @@ export default function SettingsCollaborators() {
               <DialogHeader>
                 <DialogTitle>{isEditing ? "Editar Colaborador" : "Adicionar Colaborador"}</DialogTitle>
                 <DialogDescription>
-                  {isEditing 
-                    ? "Atualize os dados do colaborador. Deixe a senha em branco para manter a atual." 
-                    : "Preencha os dados abaixo. Um e-mail será enviado com as credenciais de acesso."}
+                  Defina o nível de acesso adequado para cada membro.
                 </DialogDescription>
               </DialogHeader>
 
@@ -229,23 +238,25 @@ export default function SettingsCollaborators() {
                   </div>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="password">{isEditing ? "Nova Senha (opcional)" : "Senha Temporária"}</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="••••••••"
-                      className="pl-9"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    />
+                {!isEditing && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="password">Senha Temporária</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="••••••••"
+                        className="pl-9"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="grid gap-2">
-                  <Label htmlFor="role">Função Principal</Label>
+                  <Label htmlFor="role">Nível de Acesso (Role)</Label>
                   <Select
                     value={formData.role}
                     onValueChange={(value) => setFormData({ ...formData, role: value })}
@@ -254,14 +265,18 @@ export default function SettingsCollaborators() {
                       <SelectValue placeholder="Selecione a função" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="viewer">Observador (Leitura)</SelectItem>
+                      <SelectItem value="agent">Agente (Atendimento)</SelectItem>
                       <SelectItem value="collaborator">Colaborador</SelectItem>
+                      <SelectItem value="manager">Gerente</SelectItem>
                       <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="owner">Dono</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="grid gap-2 mt-2">
-                  <Label>Permissões Específicas (Atividades)</Label>
+                  <Label>Permissões Customizadas</Label>
                   <div className="grid grid-cols-2 gap-2 mt-1">
                     {PERMISSIONS.map((perm) => (
                       <div key={perm.id} className="flex items-center space-x-2 border rounded-md p-2 hover:bg-secondary/20 transition-colors">
@@ -272,7 +287,7 @@ export default function SettingsCollaborators() {
                         />
                         <label
                           htmlFor={perm.id}
-                          className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          className="text-[10px] font-medium leading-none cursor-pointer"
                         >
                           {perm.label}
                         </label>
@@ -292,7 +307,7 @@ export default function SettingsCollaborators() {
                   onClick={() => isEditing ? updateMutation.mutate(formData) : createMutation.mutate(formData)}
                   disabled={createMutation.isPending || updateMutation.isPending || !formData.email || (!isEditing && !formData.password) || !formData.name}
                 >
-                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : (isEditing ? "Salvar Alterações" : "Criar e Enviar Convite")}
+                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : (isEditing ? "Salvar" : "Convidar")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -303,91 +318,53 @@ export default function SettingsCollaborators() {
           <div className="lg:col-span-2 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Membros da Equipe</CardTitle>
-                <CardDescription>Lista de todos os usuários com acesso a este tenant</CardDescription>
+                <CardTitle className="text-lg">Membros Ativos</CardTitle>
+                <CardDescription>Gerencie quem pode acessar este tenant</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Colaborador</TableHead>
-                      <TableHead>Função</TableHead>
-                      <TableHead>Permissões</TableHead>
+                      <TableHead>Nível</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="w-[100px]">Ações</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                          Carregando membros...
-                        </TableCell>
-                      </TableRow>
-                    ) : collaborators?.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                          Nenhum colaborador encontrado.
-                        </TableCell>
+                        <TableCell colSpan={4} className="text-center py-8">Carregando...</TableCell>
                       </TableRow>
                     ) : collaborators?.map((collab: any) => (
                       <TableRow key={collab.user_id}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs uppercase">
-                              {collab.profiles?.display_name?.substring(0, 2) || "U"}
+                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                              {collab.profiles?.display_name?.substring(0, 1) || "U"}
                             </div>
                             <div className="flex flex-col">
                               <span className="font-medium text-sm">{collab.profiles?.display_name || "Usuário"}</span>
-                              <span className="text-xs text-muted-foreground">ID: {collab.user_id.substring(0, 8)}</span>
+                              <span className="text-xs text-muted-foreground">{collab.email}</span>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={collab.role === 'admin' ? 'default' : 'secondary'} className="text-[10px] px-2 py-0 h-5">
-                            {collab.role === 'admin' ? <Shield className="h-3 w-3 mr-1" /> : null}
-                            {collab.role === 'admin' ? 'Admin' : 'Colaborador'}
+                          <Badge variant={collab.role === 'owner' || collab.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
+                            {ROLE_LABELS[collab.role] || collab.role}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {collab.permissions?.length > 0 ? collab.permissions.slice(0, 2).map((p: string) => (
-                              <Badge key={p} variant="outline" className="text-[10px] px-1 py-0 h-4 bg-muted/50 border-none">
-                                {PERMISSIONS.find(item => item.id === p)?.label || p}
-                              </Badge>
-                            )) : <span className="text-xs text-muted-foreground italic">Padrão</span>}
-                            {collab.permissions?.length > 2 && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
-                                +{collab.permissions.length - 2}
-                              </Badge>
-                            )}
-                          </div>
+                          <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/20 bg-green-500/5">Ativo</Badge>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px] gap-1 text-green-500 border-green-500/20 bg-green-500/5">
-                            <CheckCircle2 className="h-2 w-2" /> Ativo
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-muted-foreground hover:text-primary"
-                              onClick={() => handleEdit(collab)}
-                            >
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(collab)} className="h-8 w-8">
                               <Edit2 className="h-4 w-4" />
                             </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                if(confirm("Tem certeza que deseja remover este colaborador?")) {
-                                  deleteMutation.mutate(collab.user_id);
-                                }
-                              }}
-                            >
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
+                              if(confirm("Deseja remover este membro?")) deleteMutation.mutate(collab.user_id);
+                            }}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -401,51 +378,39 @@ export default function SettingsCollaborators() {
           </div>
 
           <div className="space-y-6">
-            <Card>
+            <Card className="bg-primary/5 border-primary/10">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <History className="h-5 w-5 text-primary" /> Atividades Recentes
+                <CardTitle className="text-sm flex items-center gap-2 text-primary">
+                  <ShieldAlert className="h-4 w-4" /> Logs de Auditoria
                 </CardTitle>
-                <CardDescription>Logs de alterações na equipe</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {activities?.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma atividade registrada.</p>
-                ) : activities?.map((activity: any) => (
-                  <div key={activity.id} className="relative pl-4 pb-4 border-l border-border last:pb-0">
-                    <div className="absolute left-[-5px] top-1.5 h-2 w-2 rounded-full bg-primary" />
-                    <p className="text-sm font-medium">{activity.description}</p>
-                    <div className="flex justify-between items-center mt-1">
-                      <span className="text-[10px] text-muted-foreground italic">Por: {activity.profiles?.display_name || 'Sistema'}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(activity.created_at).toLocaleDateString()} {new Date(activity.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {activities?.length > 0 && (
-                  <Button variant="link" className="w-full text-xs" onClick={() => navigate("/activities")}>
-                    Ver todos os logs
-                  </Button>
-                )}
+              <CardContent>
+                <p className="text-xs text-muted-foreground mb-4">Todas as alterações de permissões e convites são registradas para conformidade.</p>
+                <Button variant="link" className="p-0 h-auto text-xs" onClick={() => navigate("/settings/audit")}>
+                  Acessar logs completos →
+                </Button>
               </CardContent>
             </Card>
 
-            <Card className="bg-primary/5 border-primary/20">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Envio Automático</CardTitle>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Atividades da Equipe</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground">
-                  Ao criar um novo usuário, o sistema utiliza o <strong>Amazon SES</strong> configurado em sua conta para disparar um e-mail de boas-vindas com a senha gerada.
-                </p>
-                <Button 
-                  variant="link" 
-                  className="p-0 h-auto text-xs mt-2"
-                  onClick={() => navigate("/settings/integrations/aws")}
-                >
-                  Ver configurações AWS SES →
-                </Button>
+                <div className="space-y-4">
+                  {activities?.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">Nenhuma atividade recente.</p>
+                  ) : activities?.map((activity: any) => (
+                    <div key={activity.id} className="flex gap-3 text-xs">
+                      <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">{activity.profiles?.display_name || "Sistema"}</span>
+                        <span className="text-muted-foreground">{activity.description}</span>
+                        <span className="text-[10px] opacity-50">{new Date(activity.created_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>

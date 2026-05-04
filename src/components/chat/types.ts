@@ -19,6 +19,9 @@ export interface Message {
   ig_account_id?: string | null;
   ig_user_id?: string | null;
   username?: string | null;
+  assigned_to?: string | null;
+  ticket_status?: string | null;
+  ab_variant_id?: string | null;
 }
 
 export interface Conversation {
@@ -34,6 +37,9 @@ export interface Conversation {
   isMuted?: boolean;
   isArchived?: boolean;
   conversationStatus?: "open" | "resolved" | "pending";
+  slaStatus?: "ok" | "warning" | "overdue";
+  slaDeadline?: string;
+  assignedTo?: string;
   channel: Channel;
   igAccountId?: string | null;
   igUserId?: string | null;

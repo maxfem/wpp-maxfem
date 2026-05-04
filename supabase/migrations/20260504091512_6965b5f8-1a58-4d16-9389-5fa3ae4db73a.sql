@@ -1,0 +1,1 @@
+ALTER TABLE public.campaigns ADD COLUMN sto_enabled BOOLEAN DEFAULT false;

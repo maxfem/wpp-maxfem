@@ -1,0 +1,1 @@
+ALTER TABLE public.automation_queue ADD COLUMN metadata JSONB DEFAULT '{}';

@@ -58,6 +58,8 @@ function FlowEditorInner() {
   const [scheduledTime, setScheduledTime] = useState("");
   const [selectedTrigger, setSelectedTrigger] = useState<string>("");
   const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string>("");
+  const [stoEnabled, setStoEnabled] = useState(false);
+  const [isAbTest, setIsAbTest] = useState(false);
 
   const isAutomation = location.pathname.startsWith("/automations");
   const backPath = isAutomation ? "/automations" : "/campaigns";
@@ -77,12 +79,14 @@ function FlowEditorInner() {
     (async () => {
       const { data } = await supabase
         .from("campaigns")
-        .select("name, status, flow_data, scheduled_at, list_id, trigger_type")
+        .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test")
         .eq("id", id)
         .single();
       if (data) {
         setCampaignName(data.name);
         setIsActive(data.status === "running");
+        setStoEnabled(!!data.sto_enabled);
+        setIsAbTest(!!data.is_ab_test);
         if (data.trigger_type) {
           setSelectedTrigger(data.trigger_type);
         }
@@ -187,6 +191,8 @@ function FlowEditorInner() {
       status,
       flow_data: flowData as any,
       list_id: listId,
+      sto_enabled: stoEnabled,
+      is_ab_test: isAbTest,
     };
 
     if (isAutomation) {
@@ -267,6 +273,10 @@ function FlowEditorInner() {
           onTriggerChange={handleTriggerChange}
           selectedWhatsAppAccountId={selectedWhatsAppAccountId}
           onWhatsAppAccountChange={setSelectedWhatsAppAccountId}
+          stoEnabled={stoEnabled}
+          onStoChange={setStoEnabled}
+          isAbTest={isAbTest}
+          onAbTestChange={setIsAbTest}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

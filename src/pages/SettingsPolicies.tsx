@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
-import { Trash2, Plus, Shield, Clock, Ban, Activity } from "lucide-react";
+import { Trash2, Plus, Shield, Clock, Ban, Activity, MessageSquareMore } from "lucide-react";
 import { localeSP } from "@/lib/utils";
 
 const useTenantId = () => {
@@ -45,6 +45,34 @@ export default function SettingsPolicies() {
 
   const [form, setForm] = useState<any>(null);
   useEffect(() => { if (policy) setForm(policy); }, [policy]);
+
+  const { data: slaConfig, refetch: refetchSLA } = useQuery({
+    queryKey: ["chat_sla_configs", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data } = await supabase.from("chat_sla_configs").select("*").eq("tenant_id", tenantId!).maybeSingle();
+      if (!data) {
+        const { data: created } = await supabase.from("chat_sla_configs").insert({ tenant_id: tenantId! }).select().single();
+        return created;
+      }
+      return data;
+    },
+  });
+
+  const [slaForm, setSlaForm] = useState<any>(null);
+  useEffect(() => { if (slaConfig) setSlaForm(slaConfig); }, [slaConfig]);
+
+  const saveSlaMutation = useMutation({
+    mutationFn: async (updates: any) => {
+      const { error } = await supabase.from("chat_sla_configs").update(updates).eq("tenant_id", tenantId!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Configurações de SLA salvas" });
+      qc.invalidateQueries({ queryKey: ["chat_sla_configs"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" }),
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (updates: any) => {
@@ -147,6 +175,7 @@ export default function SettingsPolicies() {
           <TabsList>
             <TabsTrigger value="frequency"><Clock className="w-4 h-4 mr-2" />Frequência & Horário</TabsTrigger>
             <TabsTrigger value="blocklist"><Ban className="w-4 h-4 mr-2" />Lista de Bloqueio ({blocklist?.length || 0})</TabsTrigger>
+            <TabsTrigger value="sla"><MessageSquareMore className="w-4 h-4 mr-2" />SLA de Atendimento</TabsTrigger>
           </TabsList>
 
           <TabsContent value="frequency" className="space-y-4">
@@ -292,6 +321,63 @@ export default function SettingsPolicies() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="sla" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Metas de Atendimento (SLA)</CardTitle>
+                <CardDescription>Defina o tempo máximo esperado para resposta e resolução</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label>Tempo de resposta (minutos)</Label>
+                  <Input 
+                    type="number" 
+                    value={slaForm?.target_response_time_minutes || 30} 
+                    onChange={e => setSlaForm({ ...slaForm, target_response_time_minutes: +e.target.value })} 
+                  />
+                  <p className="text-[10px] text-muted-foreground">Tempo máximo para o atendente dar o primeiro retorno após a mensagem do cliente</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tempo de resolução (horas)</Label>
+                  <Input 
+                    type="number" 
+                    value={slaForm?.target_resolution_time_hours || 24} 
+                    onChange={e => setSlaForm({ ...slaForm, target_resolution_time_hours: +e.target.value })} 
+                  />
+                  <p className="text-[10px] text-muted-foreground">Tempo máximo para encerrar o ticket como 'Resolvido'</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Horário de Expediente</CardTitle>
+                <CardDescription>O cálculo do SLA pausará fora destes horários (Em breve)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3">
+                  {['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'].map(day => (
+                    <div key={day} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+                      <span className="text-sm font-medium uppercase w-12">{day}</span>
+                      <div className="flex items-center gap-4">
+                        <Input type="time" className="h-8 w-32" defaultValue="08:00" disabled />
+                        <span className="text-muted-foreground">até</span>
+                        <Input type="time" className="h-8 w-32" defaultValue="18:00" disabled />
+                      </div>
+                      <Switch defaultChecked={day !== 'sab' && day !== 'dom'} disabled />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-end">
+              <Button onClick={() => saveSlaMutation.mutate(slaForm)} disabled={saveSlaMutation.isPending}>
+                {saveSlaMutation.isPending ? "Salvando..." : "Salvar SLA"}
+              </Button>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

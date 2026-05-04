@@ -68,6 +68,21 @@ export default function Chat() {
     refetchInterval: 30000,
   });
 
+  // Fetch SLA Config
+  const { data: slaConfig } = useQuery({
+    queryKey: ["chat-sla-config", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const { data } = await supabase
+        .from("chat_sla_configs")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!tenantId,
+  });
+
   // Fetch WhatsApp messages
   const { data: waMessages = [] } = useQuery({
     queryKey: ["whatsapp-messages", tenantId],
@@ -249,6 +264,28 @@ export default function Chat() {
       }
       if (msg.direction === "inbound" && msg.status === "received") {
         existing.unread++;
+      }
+      
+      // Update assigned_to and ticket_status if available
+      if (msg.assigned_to) existing.assignedTo = msg.assigned_to;
+      if (msg.ticket_status) existing.conversationStatus = msg.ticket_status as any;
+    }
+
+    // Post-process to calculate SLA
+    const now = new Date();
+    for (const conv of map.values()) {
+      if (conv.lastDirection === "inbound" && conv.conversationStatus !== "resolved") {
+        const targetMinutes = slaConfig?.target_response_time_minutes || 30;
+        const deadline = new Date(new Date(conv.lastMessageAt).getTime() + targetMinutes * 60000);
+        
+        conv.slaDeadline = deadline.toISOString();
+        if (now > deadline) {
+          conv.slaStatus = "overdue";
+        } else if (new Date(now.getTime() + (targetMinutes / 3) * 60000) > deadline) {
+          conv.slaStatus = "warning";
+        } else {
+          conv.slaStatus = "ok";
+        }
       }
     }
 

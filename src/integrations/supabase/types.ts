@@ -21,6 +21,7 @@ export type Database = {
           current_node_id: string | null
           customer_id: string | null
           id: string
+          metadata: Json | null
           processed_at: string | null
           scheduled_for: string | null
           status: string
@@ -34,6 +35,7 @@ export type Database = {
           current_node_id?: string | null
           customer_id?: string | null
           id?: string
+          metadata?: Json | null
           processed_at?: string | null
           scheduled_for?: string | null
           status?: string
@@ -47,6 +49,7 @@ export type Database = {
           current_node_id?: string | null
           customer_id?: string | null
           id?: string
+          metadata?: Json | null
           processed_at?: string | null
           scheduled_for?: string | null
           status?: string
@@ -213,6 +216,7 @@ export type Database = {
       }
       campaigns: {
         Row: {
+          ab_test_config: Json | null
           actions: Json | null
           audience_rules: Json | null
           created_at: string
@@ -221,6 +225,7 @@ export type Database = {
           has_bonus: boolean | null
           has_survey: boolean | null
           id: string
+          is_ab_test: boolean | null
           kind: string
           last_error: string | null
           list_id: string | null
@@ -228,12 +233,14 @@ export type Database = {
           scheduled_at: string | null
           start_date: string | null
           status: string
+          sto_enabled: boolean | null
           tenant_id: string
           trigger_type: string | null
           type: string
           updated_at: string
         }
         Insert: {
+          ab_test_config?: Json | null
           actions?: Json | null
           audience_rules?: Json | null
           created_at?: string
@@ -242,6 +249,7 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          is_ab_test?: boolean | null
           kind?: string
           last_error?: string | null
           list_id?: string | null
@@ -249,12 +257,14 @@ export type Database = {
           scheduled_at?: string | null
           start_date?: string | null
           status?: string
+          sto_enabled?: boolean | null
           tenant_id: string
           trigger_type?: string | null
           type?: string
           updated_at?: string
         }
         Update: {
+          ab_test_config?: Json | null
           actions?: Json | null
           audience_rules?: Json | null
           created_at?: string
@@ -263,6 +273,7 @@ export type Database = {
           has_bonus?: boolean | null
           has_survey?: boolean | null
           id?: string
+          is_ab_test?: boolean | null
           kind?: string
           last_error?: string | null
           list_id?: string | null
@@ -270,6 +281,7 @@ export type Database = {
           scheduled_at?: string | null
           start_date?: string | null
           status?: string
+          sto_enabled?: boolean | null
           tenant_id?: string
           trigger_type?: string | null
           type?: string
@@ -287,6 +299,44 @@ export type Database = {
             foreignKeyName: "campaigns_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_sla_configs: {
+        Row: {
+          business_hours: Json | null
+          created_at: string | null
+          id: string
+          target_resolution_time_hours: number | null
+          target_response_time_minutes: number | null
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          business_hours?: Json | null
+          created_at?: string | null
+          id?: string
+          target_resolution_time_hours?: number | null
+          target_response_time_minutes?: number | null
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          business_hours?: Json | null
+          created_at?: string | null
+          id?: string
+          target_resolution_time_hours?: number | null
+          target_response_time_minutes?: number | null
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_sla_configs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
@@ -445,6 +495,48 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      customer_engagement_hours: {
+        Row: {
+          customer_id: string
+          hour_of_day: number | null
+          id: string
+          last_interaction_at: string | null
+          tenant_id: string
+          weight: number | null
+        }
+        Insert: {
+          customer_id: string
+          hour_of_day?: number | null
+          id?: string
+          last_interaction_at?: string | null
+          tenant_id: string
+          weight?: number | null
+        }
+        Update: {
+          customer_id?: string
+          hour_of_day?: number | null
+          id?: string
+          last_interaction_at?: string | null
+          tenant_id?: string
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_engagement_hours_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_engagement_hours_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customer_groups: {
         Row: {
@@ -703,6 +795,7 @@ export type Database = {
       }
       email_logs: {
         Row: {
+          ab_variant_id: string | null
           aws_message_id: string | null
           body_html: string | null
           bounce_subtype: string | null
@@ -729,6 +822,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          ab_variant_id?: string | null
           aws_message_id?: string | null
           body_html?: string | null
           bounce_subtype?: string | null
@@ -755,6 +849,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          ab_variant_id?: string | null
           aws_message_id?: string | null
           body_html?: string | null
           bounce_subtype?: string | null
@@ -2189,6 +2284,8 @@ export type Database = {
       }
       whatsapp_messages: {
         Row: {
+          ab_variant_id: string | null
+          assigned_to: string | null
           content: string | null
           created_at: string
           customer_id: string | null
@@ -2201,10 +2298,13 @@ export type Database = {
           status: string
           template_name: string | null
           tenant_id: string
+          ticket_status: string | null
           updated_at: string
           wamid: string | null
         }
         Insert: {
+          ab_variant_id?: string | null
+          assigned_to?: string | null
           content?: string | null
           created_at?: string
           customer_id?: string | null
@@ -2217,10 +2317,13 @@ export type Database = {
           status?: string
           template_name?: string | null
           tenant_id: string
+          ticket_status?: string | null
           updated_at?: string
           wamid?: string | null
         }
         Update: {
+          ab_variant_id?: string | null
+          assigned_to?: string | null
           content?: string | null
           created_at?: string
           customer_id?: string | null
@@ -2233,6 +2336,7 @@ export type Database = {
           status?: string
           template_name?: string | null
           tenant_id?: string
+          ticket_status?: string | null
           updated_at?: string
           wamid?: string | null
         }

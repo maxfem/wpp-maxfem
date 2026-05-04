@@ -342,6 +342,37 @@ async function evaluateCondition(supabase: any, node: FlowNode, item: any): Prom
   }
 }
 
+// ===== STO (Send Time Optimization) =====
+
+async function getBestHourForCustomer(supabase: any, tenantId: string, customerId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("customer_engagement_hours")
+    .select("hour_of_day, weight")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .order("weight", { ascending: false })
+    .limit(1);
+  
+  if (error || !data || data.length === 0) return null;
+  return data[0].hour_of_day;
+}
+
+// ===== A/B TEST VARIANT PICKER =====
+
+function pickAbVariant(config: any): string | null {
+  const variants = config?.variants || [];
+  if (variants.length === 0) return null;
+  
+  // Weights should sum to 100
+  const random = Math.random() * 100;
+  let cumulative = 0;
+  for (const v of variants) {
+    cumulative += v.weight || (100 / variants.length);
+    if (random <= cumulative) return v.id;
+  }
+  return variants[0].id;
+}
+
 // ===== CREDENTIAL RESOLVER =====
 
 async function resolveWhatsAppCredentials(supabase: any, tenantId: string): Promise<{ phoneNumberId: string; accessToken: string }> {
@@ -404,7 +435,7 @@ async function processAutomationQueue(supabase: any) {
 
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for, metadata")
     .eq("status", "pending")
     .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })
@@ -455,6 +486,40 @@ async function processAutomationQueue(supabase: any) {
         // Fetch customer for filter matching and variable resolution
         const { data: customer } = await supabase.from("customers").select("*").eq("id", item.customer_id).single();
         
+        // --- Onda 2: Send Time Optimization (STO) ---
+        if (campaign.sto_enabled && !item.scheduled_for) {
+          const bestHour = await getBestHourForCustomer(supabase, campaign.tenant_id, item.customer_id);
+          if (bestHour !== null) {
+            const nowTime = new Date();
+            const currentHour = nowTime.getHours();
+            
+            let scheduledDate = new Date();
+            scheduledDate.setHours(bestHour, 0, 0, 0);
+            
+            // If best hour already passed today, schedule for tomorrow
+            if (bestHour <= currentHour) {
+              scheduledDate.setDate(scheduledDate.getDate() + 1);
+            }
+            
+            console.log(`[automation] STO: Rescheduling item ${item.id} for customer's best hour: ${bestHour}:00 (at ${scheduledDate.toISOString()})`);
+            await supabase.from("automation_queue").update({ 
+              scheduled_for: scheduledDate.toISOString(),
+              status: "pending" 
+            }).eq("id", item.id);
+            continue; // Skip processing for now
+          }
+        }
+
+        // --- Onda 2: A/B Testing Variant Assignment ---
+        let abVariantId = (item.metadata as any)?.ab_variant_id;
+        if (campaign.is_ab_test && !abVariantId) {
+          abVariantId = pickAbVariant(campaign.ab_test_config);
+          console.log(`[automation] A/B Test: Assigned variant ${abVariantId} to item ${item.id}`);
+          // Update metadata so it's persisted for future steps in this flow
+          item.metadata = { ...(item.metadata as any || {}), ab_variant_id: abVariantId };
+          await supabase.from("automation_queue").update({ metadata: item.metadata }).eq("id", item.id);
+        }
+
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;
@@ -565,6 +630,27 @@ async function processAutomationQueue(supabase: any) {
             const { data: customer } = await supabase.from("customers")
               .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
 
+            // --- A/B Content Overrides ---
+            if (abVariantId) {
+              const variant = (campaign.ab_test_config as any)?.variants?.find((v: any) => v.id === abVariantId);
+              if (variant?.content_overrides) {
+                if (variant.content_overrides.subject) subject = variant.content_overrides.subject;
+                if (variant.content_overrides.body) bodyHtml = variant.content_overrides.body;
+                if (variant.content_overrides.template) {
+                   // If variant defines a different template
+                   const { data: vTpl } = await supabase.from("email_templates")
+                    .select("subject, body_html")
+                    .eq("name", variant.content_overrides.template)
+                    .eq("tenant_id", campaign.tenant_id)
+                    .maybeSingle();
+                  if (vTpl) {
+                    subject = vTpl.subject;
+                    bodyHtml = vTpl.body_html;
+                  }
+                }
+              }
+            }
+
             if (!customer?.email || !bodyHtml) {
               const reason = !customer?.email ? "missing email" : "missing content";
               console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);
@@ -651,7 +737,8 @@ async function processAutomationQueue(supabase: any) {
                 configurationSet,
                 tenantId: campaign.tenant_id,
                 campaignId: campaign.id,
-                customerId: customer.id
+                customerId: customer.id,
+                abVariantId: abVariantId
               }),
             });
 
@@ -681,9 +768,18 @@ async function processAutomationQueue(supabase: any) {
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
 
-            const templateName = node.data?.template || node.data?.templateName;
+            let templateName = node.data?.template || node.data?.templateName;
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
             const triggerData = (item.trigger_data || {}) as any;
+
+            // --- Onda 2: A/B Template Override for WhatsApp ---
+            if (abVariantId) {
+              const variant = (campaign.ab_test_config as any)?.variants?.find((v: any) => v.id === abVariantId);
+              if (variant?.content_overrides?.template) {
+                console.log(`[automation] A/B Test: Overriding WhatsApp template ${templateName} with ${variant.content_overrides.template}`);
+                templateName = variant.content_overrides.template;
+              }
+            }
 
             if (!templateName) {
               const nextId = getNextNodeId(edges, currentNodeId, "out-3");
@@ -938,6 +1034,7 @@ async function processAutomationQueue(supabase: any) {
                 tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
                 direction: "outbound", message_type: "template", template_name: templateName,
                 wamid: waData.messages[0].id, status: "sent", content: `[Automação: ${templateName}]`,
+                ab_variant_id: abVariantId
               });
               await supabase.from("campaign_activities").insert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,

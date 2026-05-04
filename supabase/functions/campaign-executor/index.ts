@@ -730,7 +730,61 @@ async function processAutomationQueue(supabase: any) {
               orderRecord = ord;
             }
 
+            // === Bling tracking enrichment ===
+            // Check if any variable mapping or button URL needs order.tracking_code
+            const buttonUrlsRaw = templateButtons.map((b: any) => b.url || "").join(" ");
+            const usesTracking = variableMappings.includes("order.tracking_code") ||
+              templateButtons.some((b: any) => {
+                if (b.type !== "URL" || !b.url?.includes("{{")) return false;
+                const m = b.url.match(/\{\{(\d+)\}\}/);
+                if (!m) return false;
+                const idx = parseInt(m[1], 10) - 1;
+                return variableMappings[idx] === "order.tracking_code";
+              });
+
+            if (usesTracking && !orderRecord?.tracking_code) {
+              console.log(`[automation] Template ${templateName} needs tracking_code but local order missing it. Querying Bling...`);
+              const blingDoc = customer?.document || (orderRecord?.payment_summary as any)?.[0]?.document || null;
+              const blingTracking = await fetchBlingTracking(
+                campaign.tenant_id, blingDoc,
+                orderRecord?.order_number || triggerData?.order_number || null, supabase
+              );
+              if (blingTracking?.tracking_code) {
+                console.log(`[automation] Bling returned tracking_code=${blingTracking.tracking_code}`);
+                if (orderRecord?.id) {
+                  await supabase.from("orders").update({
+                    tracking_code: blingTracking.tracking_code,
+                    tracking_url: `https://rastreio.maxfem.com.br/${blingTracking.tracking_code}`,
+                    carrier: blingTracking.carrier || orderRecord.carrier || null,
+                  }).eq("id", orderRecord.id);
+                }
+                orderRecord = { ...(orderRecord || {}), tracking_code: blingTracking.tracking_code, tracking_url: `https://rastreio.maxfem.com.br/${blingTracking.tracking_code}`, carrier: blingTracking.carrier || orderRecord?.carrier || null };
+              } else {
+                // Tracking still unavailable — reschedule for 1h, max 6 retries
+                const retries = (triggerData?.bling_retries || 0) + 1;
+                if (retries <= 6) {
+                  const nextRun = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+                  console.log(`[automation] Bling tracking not yet available. Rescheduling item ${item.id} for ${nextRun} (retry ${retries}/6).`);
+                  await supabase.from("automation_queue").update({
+                    scheduled_for: nextRun,
+                    trigger_data: { ...triggerData, bling_retries: retries },
+                  }).eq("id", item.id);
+                  break;
+                } else {
+                  console.warn(`[automation] Bling tracking still missing after ${retries} retries. Skipping item ${item.id}.`);
+                  await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+                  await supabase.from("campaign_activities").insert({
+                    tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                    status: "skipped", channel: "whatsapp", sent_at: new Date().toISOString(),
+                    error_message: "Código de rastreio não disponível no Bling após 6 tentativas (24h).",
+                  });
+                  break;
+                }
+              }
+            }
+
             const ctx = { customer, order: orderRecord, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
+            void buttonUrlsRaw;
 
             let buttonUrlCode: string | undefined;
             if (hasDynamicUrlButton) {

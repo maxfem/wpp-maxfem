@@ -767,9 +767,18 @@ async function processAutomationQueue(supabase: any) {
           // SEND WHATSAPP
           if (nodeType === "sendWhatsApp") {
 
-            const templateName = node.data?.template || node.data?.templateName;
+            let templateName = node.data?.template || node.data?.templateName;
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
             const triggerData = (item.trigger_data || {}) as any;
+
+            // --- Onda 2: A/B Template Override for WhatsApp ---
+            if (abVariantId) {
+              const variant = (campaign.ab_test_config as any)?.variants?.find((v: any) => v.id === abVariantId);
+              if (variant?.content_overrides?.template) {
+                console.log(`[automation] A/B Test: Overriding WhatsApp template ${templateName} with ${variant.content_overrides.template}`);
+                templateName = variant.content_overrides.template;
+              }
+            }
 
             if (!templateName) {
               const nextId = getNextNodeId(edges, currentNodeId, "out-3");

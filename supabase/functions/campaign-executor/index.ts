@@ -737,7 +737,8 @@ async function processAutomationQueue(supabase: any) {
                 configurationSet,
                 tenantId: campaign.tenant_id,
                 campaignId: campaign.id,
-                customerId: customer.id
+                customerId: customer.id,
+                abVariantId: abVariantId
               }),
             });
 

@@ -286,8 +286,33 @@ export function FlowSidebar({
                 )}
               </SelectContent>
             </Select>
+        </div>
+
+        <div className="space-y-3 pt-1 border-t border-border/40">
+          <div className="flex items-center justify-between group">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <BrainCircuit className="h-3 w-3 text-primary" />
+                <Label className="text-[10px] font-bold uppercase tracking-wider text-primary">STO (IA)</Label>
+                <Badge variant="outline" className="h-3 px-1 text-[8px] border-primary/30 text-primary">PRO</Badge>
+              </div>
+              <span className="text-[9px] text-muted-foreground leading-tight">Melhor horário de envio</span>
+            </div>
+            <Switch checked={stoEnabled} onCheckedChange={onStoChange} className="scale-75" />
+          </div>
+
+          <div className="flex items-center justify-between group">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Split className="h-3 w-3 text-secondary" />
+                <Label className="text-[10px] font-bold uppercase tracking-wider text-secondary">Teste A/B</Label>
+              </div>
+              <span className="text-[9px] text-muted-foreground leading-tight">Testar variações de cópia</span>
+            </div>
+            <Switch checked={isAbTest} onCheckedChange={onAbTestChange} className="scale-75" />
           </div>
         </div>
+      </div>
       </div>
 
       {/* Nodes Palette */}

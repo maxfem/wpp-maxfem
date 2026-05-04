@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/hooks/use-toast";
-import { Trash2, Plus, Shield, Clock, Ban, Activity } from "lucide-react";
+import { Trash2, Plus, Shield, Clock, Ban, Activity, MessageSquareMore } from "lucide-react";
 import { localeSP } from "@/lib/utils";
 
 const useTenantId = () => {

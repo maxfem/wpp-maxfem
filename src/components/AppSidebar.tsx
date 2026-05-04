@@ -43,6 +43,7 @@ import {
 
 const monitorItems = [
   { title: "Indicadores", url: "/dashboard", icon: BarChart3 },
+  { title: "Inteligência IA", url: "/predictive", icon: Sparkles },
 ];
 
 const planItems = [

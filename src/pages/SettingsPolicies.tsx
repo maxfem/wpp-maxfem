@@ -46,6 +46,34 @@ export default function SettingsPolicies() {
   const [form, setForm] = useState<any>(null);
   useEffect(() => { if (policy) setForm(policy); }, [policy]);
 
+  const { data: slaConfig, refetch: refetchSLA } = useQuery({
+    queryKey: ["chat_sla_configs", tenantId],
+    enabled: !!tenantId,
+    queryFn: async () => {
+      const { data } = await supabase.from("chat_sla_configs").select("*").eq("tenant_id", tenantId!).maybeSingle();
+      if (!data) {
+        const { data: created } = await supabase.from("chat_sla_configs").insert({ tenant_id: tenantId! }).select().single();
+        return created;
+      }
+      return data;
+    },
+  });
+
+  const [slaForm, setSlaForm] = useState<any>(null);
+  useEffect(() => { if (slaConfig) setSlaForm(slaConfig); }, [slaConfig]);
+
+  const saveSlaMutation = useMutation({
+    mutationFn: async (updates: any) => {
+      const { error } = await supabase.from("chat_sla_configs").update(updates).eq("tenant_id", tenantId!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Configurações de SLA salvas" });
+      qc.invalidateQueries({ queryKey: ["chat_sla_configs"] });
+    },
+    onError: (e: any) => toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" }),
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (updates: any) => {
       const { error } = await supabase.from("messaging_policies").update(updates).eq("tenant_id", tenantId!);

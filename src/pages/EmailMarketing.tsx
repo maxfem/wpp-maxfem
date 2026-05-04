@@ -443,7 +443,6 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
             <TableBody>
               {logs && logs.length > 0 ? logs.map((l: any) => {
                 const activity = Array.isArray(l.activity) ? l.activity[0] : l.activity;
-                void activity;
                 const converted = activity?.converted_at;
                 const value = activity?.conversion_value;
                 

@@ -1019,8 +1019,49 @@ async function processAutomationQueue(supabase: any) {
               const errorMessage = waData.error?.message || JSON.stringify(waData);
               console.error(`Item ${item.id}: send failed:`, errorMessage);
               
+              // === Onda 3: Cross-channel Fallback (WA -> Email) ===
+              if (node.data?.fallbackEnabled && node.data?.fallbackEmailTemplate && customer.email) {
+                console.log(`[automation] Fallback enabled. Attempting to send email to ${customer.email}...`);
+                const fallbackTplName = node.data.fallbackEmailTemplate;
+                const { data: tpl } = await supabase.from("email_templates")
+                  .select("subject, body_html")
+                  .eq("name", fallbackTplName)
+                  .eq("tenant_id", campaign.tenant_id)
+                  .maybeSingle();
+
+                if (tpl) {
+                  const resolvedSubject = (tpl.subject || "Fallback Email").replace(/\{\{([^}]+)\}\}/g, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+                  const resolvedBody = (tpl.body_html || "").replace(/\{\{([^}]+)\}\}/g, (match: string, key: string) => resolveVariable(key.trim(), ctx));
+                  const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
+                    tenantId: campaign.tenant_id, campaignId: campaign.id, customer_id: customer.id, campaignName: campaign.name
+                  });
+
+                  await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      to: customer.email, subject: resolvedSubject, html: finalBody,
+                      fromName: campaign.name, tenantId: campaign.tenant_id, campaignId: campaign.id, customerId: customer.id
+                    }),
+                  });
+
+                  await supabase.from("campaign_activities").insert({
+                    tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                    status: "sent", channel: "email", sent_at: new Date().toISOString(), error_message: "fallback_from_wa",
+                  });
+
+                  const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+                  if (nextId) {
+                    currentNodeId = nextId;
+                    await supabase.from("automation_queue").update({ current_node_id: currentNodeId }).eq("id", item.id);
+                    continue;
+                  }
+                  await supabase.from("automation_queue").update({ status: "sent", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+                  break;
+                }
+              }
+
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
-              
               await supabase.from("campaign_activities").insert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer.id, status: "failed", channel: "whatsapp", 

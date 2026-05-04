@@ -32,6 +32,8 @@ const SettingsBling = lazy(() => import("./pages/SettingsBling"));
 const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const SettingsInstagram = lazy(() => import("./pages/SettingsInstagram"));
 const SettingsAWS = lazy(() => import("./pages/SettingsAWS"));
+const SettingsPolicies = lazy(() => import("./pages/SettingsPolicies"));
+const PreferenceCenter = lazy(() => import("./pages/PreferenceCenter"));
 const LinkRedirect = lazy(() => import("./pages/LinkRedirect"));
 const CRMPlanner = lazy(() => import("./pages/CRMPlanner"));
 const EmailMarketing = lazy(() => import("./pages/EmailMarketing"));
@@ -108,7 +110,9 @@ const App = () => (
                    <Route path="/settings/integrations/aws" element={<ProtectedRoute><SettingsAWS /></ProtectedRoute>} />
                    <Route path="/settings/webhooks" element={<ProtectedRoute><SettingsWebhooks /></ProtectedRoute>} />
                    <Route path="/settings/collaborators" element={<ProtectedRoute><SettingsCollaborators /></ProtectedRoute>} />
-                  <Route path="/r/:code" element={<LinkRedirect />} />
+                   <Route path="/settings/policies" element={<ProtectedRoute><SettingsPolicies /></ProtectedRoute>} />
+                   <Route path="/preferences/:token" element={<PreferenceCenter />} />
+                   <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsOfUse />} />
                   <Route path="*" element={<NotFound />} />

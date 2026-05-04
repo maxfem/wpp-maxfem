@@ -616,7 +616,7 @@ async function processAutomationQueue(supabase: any) {
               .filter(Boolean) as { index: number; example: string }[];
 
             const { data: customer } = await supabase.from("customers")
-              .select("id, name, phone, email, custom_attributes").eq("id", item.customer_id).single();
+              .select("id, name, phone, email, document, custom_attributes").eq("id", item.customer_id).single();
 
             if (!customer?.phone) {
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);

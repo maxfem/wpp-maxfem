@@ -1334,10 +1334,28 @@ async function processScheduledCampaigns(supabase: any) {
         continue;
       }
 
+      // Skip customers already processed in a previous (timed-out) run
+      const { data: alreadyDone } = await supabase
+        .from("campaign_activities")
+        .select("customer_id")
+        .eq("campaign_id", campaign.id);
+      const doneSet = new Set((alreadyDone || []).map((r: any) => r.customer_id));
+      const totalCustomers = customers.length;
+      customers = customers.filter((c: any) => !doneSet.has(c.id));
+      console.log(`Campaign ${campaign.id}: ${totalCustomers} total, ${doneSet.size} already done, ${customers.length} remaining`);
+
       let sentCount = 0;
       let failedCount = 0;
+      const runStart = Date.now();
+      const TIME_BUDGET_MS = 110_000; // leave headroom before edge function timeout
+      let timedOut = false;
 
       for (const customer of customers) {
+        if (Date.now() - runStart > TIME_BUDGET_MS) {
+          console.log(`Time budget reached for campaign ${campaign.id}, will resume next cron`);
+          timedOut = true;
+          break;
+        }
         try {
           const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars, tenantId: campaign.tenant_id };
 

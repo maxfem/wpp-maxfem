@@ -486,6 +486,30 @@ async function processAutomationQueue(supabase: any) {
         // Fetch customer for filter matching and variable resolution
         const { data: customer } = await supabase.from("customers").select("*").eq("id", item.customer_id).single();
         
+        // --- Onda 2: Send Time Optimization (STO) ---
+        if (campaign.sto_enabled && !item.scheduled_for) {
+          const bestHour = await getBestHourForCustomer(supabase, campaign.tenant_id, item.customer_id);
+          if (bestHour !== null) {
+            const nowTime = new Date();
+            const currentHour = nowTime.getHours();
+            
+            let scheduledDate = new Date();
+            scheduledDate.setHours(bestHour, 0, 0, 0);
+            
+            // If best hour already passed today, schedule for tomorrow
+            if (bestHour <= currentHour) {
+              scheduledDate.setDate(scheduledDate.getDate() + 1);
+            }
+            
+            console.log(`[automation] STO: Rescheduling item ${item.id} for customer's best hour: ${bestHour}:00 (at ${scheduledDate.toISOString()})`);
+            await supabase.from("automation_queue").update({ 
+              scheduled_for: scheduledDate.toISOString(),
+              status: "pending" 
+            }).eq("id", item.id);
+            continue; // Skip processing for now
+          }
+        }
+
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;

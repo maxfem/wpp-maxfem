@@ -720,6 +720,44 @@ async function processAutomationQueue(supabase: any) {
             let phone = customer.phone.replace(/[\s\-\(\)\+]/g, "");
             if (!phone.startsWith("55") && phone.length <= 11) phone = "55" + phone;
 
+            // === Onda 1: Policy check (blocklist, frequency cap, quiet hours, opt-out) ===
+            const policyCategory = (templateRecord?.category || "marketing").toLowerCase() === "utility"
+              ? "transactional" : "marketing";
+            const { data: policyCheck } = await supabase.rpc("check_send_allowed", {
+              _tenant_id: campaign.tenant_id,
+              _channel: "whatsapp",
+              _identifier: phone,
+              _customer_id: customer.id,
+              _category: policyCategory,
+            });
+            const policyResult = (policyCheck as any) || { allowed: true };
+            if (!policyResult.allowed) {
+              console.log(`[automation] Policy blocked send to ${phone}: ${policyResult.reason}`, policyResult);
+              if (policyResult.reason === "quiet_hours" && policyResult.reschedule_until) {
+                // Reagenda para fim do quiet hours
+                await supabase.from("automation_queue").update({
+                  scheduled_for: policyResult.reschedule_until,
+                }).eq("id", item.id);
+                break;
+              }
+              if (policyResult.reason === "frequency_cap_day" || policyResult.reason === "frequency_cap_week") {
+                // Reagenda para 6h depois
+                const nextRun = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+                await supabase.from("automation_queue").update({ scheduled_for: nextRun }).eq("id", item.id);
+                break;
+              }
+              // Bloqueio definitivo (blocklist, opt-out, channel paused)
+              await supabase.from("automation_queue").update({
+                status: "skipped", processed_at: now, current_node_id: currentNodeId,
+              }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                status: "skipped", channel: "whatsapp", sent_at: new Date().toISOString(),
+                error_message: `policy_blocked:${policyResult.reason}`,
+              });
+              break;
+            }
+
             let orderRecord: any = null;
             if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
               let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);

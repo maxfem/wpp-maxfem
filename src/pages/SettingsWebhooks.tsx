@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Send, CheckCircle2, AlertCircle, Plus, Trash2, Webhook, ShieldCheck } from "lucide-react";
+import { Copy, Send, CheckCircle2, AlertCircle, Plus, Trash2, Webhook, ShieldCheck, History } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -272,6 +272,9 @@ export default function SettingsWebhooks() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Plus className="h-5 w-5 text-primary rotate-45" /> Webhooks de Entrada (Inbound)
+            </h2>
             {WEBHOOKS.map((w) => (
               <Card key={w.id}>
                 <CardHeader>
@@ -311,50 +314,81 @@ export default function SettingsWebhooks() {
           </div>
 
           <div className="space-y-6">
+             <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" /> Segurança e Auditoria
+                </CardTitle>
+                <CardDescription>Gerencie logs e acessos</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/settings/audit"}>
+                  <div className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-primary" />
+                    <span>Ver Log de Auditoria</span>
+                  </div>
+                  <CheckCircle2 className="h-3 w-3 opacity-50" />
+                </Button>
+                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/settings/collaborators"}>
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <span>Gerenciar Permissões (RBAC)</span>
+                  </div>
+                  <CheckCircle2 className="h-3 w-3 opacity-50" />
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Dicas de Integração</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 text-sm text-muted-foreground">
                 <p>
-                  <strong>WhatsApp:</strong> Configure a URL acima no painel do Facebook Developers (Webhooks → WhatsApp Business Account). 
-                  A <i>Verify Token</i> é o próprio ID do seu Tenant.
+                  <strong>Webhooks de Saída:</strong> Use para sincronizar dados com seu próprio banco de dados ou sistemas de BI externos sempre que uma mensagem for entregue ou uma venda ocorrer.
                 </p>
                 <p>
-                  <strong>Shopify:</strong> Para rastrear abandono de carrinho, instale o script do Pixel (disponível em Configurações → Pixel) no seu <code>theme.liquid</code>.
-                </p>
-                <p>
-                  <strong>AWS SES:</strong> Configure uma notificação SNS para o endpoint acima para rastrear aberturas e cliques em tempo real.
+                  <strong>Segurança:</strong> Cada webhook de saída inclui um <code>secret_token</code> no cabeçalho <code>X-Maxfem-Secret</code> para validação de autenticidade.
                 </p>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Acompanhamento</CardTitle>
-                <CardDescription>Veja o processamento em tempo real</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/pixel"}>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <span>Ver eventos do Pixel</span>
-                  </div>
-                  <Copy className="h-3 w-3 opacity-50" />
-                </Button>
-                <Button variant="outline" className="w-full justify-between" onClick={() => window.location.href = "/activities"}>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <span>Ver histórico de atividades</span>
-                  </div>
-                  <Copy className="h-3 w-3 opacity-50" />
-                </Button>
-              </CardContent>
-            </Card>
+            {outboundWebhooks && outboundWebhooks.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Send className="h-5 w-5" /> Webhooks de Saída Ativos
+                </h2>
+                <div className="space-y-4">
+                  {outboundWebhooks.map((webhook) => (
+                    <Card key={webhook.id} className="border-l-4 border-l-primary">
+                      <CardHeader className="py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-1">
+                            <CardTitle className="text-sm font-mono truncate max-w-[200px]">{webhook.url}</CardTitle>
+                            <div className="flex flex-wrap gap-1">
+                              {webhook.events?.map((e: string) => (
+                                <Badge key={e} variant="secondary" className="text-[10px]">
+                                  {AVAILABLE_EVENTS.find(ae => ae.id === e)?.label || e}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Switch checked={webhook.is_active} />
+                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteWebhookMutation.mutate(webhook.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </AppLayout>
   );
 }
-

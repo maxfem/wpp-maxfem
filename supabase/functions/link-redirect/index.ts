@@ -42,9 +42,14 @@ Deno.serve(async (req) => {
 
     // Update campaign_activities clicked_at if campaign + customer exist
     if (link.campaign_id && link.customer_id) {
+      const now = new Date().toISOString();
       await supabase
         .from("campaign_activities")
-        .update({ clicked_at: new Date().toISOString() })
+        .update({ 
+          clicked_at: now,
+          read_at: now, // A click implies a read
+          status: "clicked" 
+        })
         .eq("campaign_id", link.campaign_id)
         .eq("customer_id", link.customer_id)
         .is("clicked_at", null);

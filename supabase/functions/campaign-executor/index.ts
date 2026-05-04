@@ -172,7 +172,11 @@ async function wrapHtmlLinks(
   
   while ((match = urlRegex.exec(html)) !== null) {
     const originalUrl = match[1];
-    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!)) {
+    const isResource = originalUrl.includes("fonts.googleapis.com") || 
+                      originalUrl.includes("fonts.gstatic.com") || 
+                      originalUrl.match(/\.(png|jpg|jpeg|gif|webp|svg|css)$/i);
+    
+    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!) && !isResource) {
       const code = generateCode(10);
       
       // Store in tracked_links

@@ -351,26 +351,43 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
     queryKey: ["email-logs", tenantId, statusFilter],
     queryFn: async () => {
       if (!tenantId) return [];
-      // Join with campaign_activities to show conversions
-      // Note: we link via campaign_id and customer_id
       let q = supabase
         .from("email_logs")
-        .select(`
-          *,
-          activity:campaign_activities(converted_at, conversion_value)
-        `)
+        .select("*")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(100);
-      
+
       if (statusFilter !== "all") q = q.eq("status", statusFilter);
       const { data, error } = await q;
       if (error) throw error;
-      
-      // email_logs is linked to campaign_activities via campaign_id and customer_id
-      // but Supabase join might return multiple activities if not careful.
-      // In our case, we want to show if THIS send eventually led to a conversion.
-      return data || [];
+      const rows = data || [];
+
+      // Buscar conversões de campaign_activities em paralelo (sem FK direto)
+      const pairs = rows
+        .filter((r: any) => r.campaign_id && r.customer_id)
+        .map((r: any) => ({ c: r.campaign_id, u: r.customer_id }));
+
+      if (pairs.length === 0) return rows.map((r: any) => ({ ...r, activity: null }));
+
+      const campaignIds = Array.from(new Set(pairs.map(p => p.c)));
+      const customerIds = Array.from(new Set(pairs.map(p => p.u)));
+
+      const { data: acts } = await supabase
+        .from("campaign_activities")
+        .select("campaign_id, customer_id, converted_at, conversion_value")
+        .in("campaign_id", campaignIds)
+        .in("customer_id", customerIds);
+
+      const map = new Map<string, any>();
+      (acts || []).forEach((a: any) => {
+        map.set(`${a.campaign_id}:${a.customer_id}`, a);
+      });
+
+      return rows.map((r: any) => ({
+        ...r,
+        activity: r.campaign_id && r.customer_id ? map.get(`${r.campaign_id}:${r.customer_id}`) || null : null,
+      }));
     },
     enabled: !!tenantId,
   });

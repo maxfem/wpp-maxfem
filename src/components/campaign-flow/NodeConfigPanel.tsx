@@ -50,7 +50,8 @@ const getNodeConfigs = (
       { key: "template", label: "Template", type: "select", options: whatsappOpts },
       { key: "delay", label: "Atraso antes de enviar", type: "select", options: ["Sem atraso", "5 minutos", "15 minutos", "1 hora", "1 dia"].map(o => ({ value: o, label: o })) },
       { key: "trackClicks", label: "Rastrear cliques", type: "toggle" },
-      { key: "fallbackMessage", label: "Mensagem alternativa", type: "textarea", placeholder: "Se o template falhar..." },
+      { key: "fallbackEnabled", label: "Habilitar Fallback (E-mail)", type: "toggle" },
+      { key: "fallbackEmailTemplate", label: "Template E-mail Fallback", type: "select", options: emailOpts },
     ],
   },
   sendEmail: {

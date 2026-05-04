@@ -43,6 +43,7 @@ const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
 const Popups = lazy(() => import("./pages/Popups"));
 const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
 const PredictiveAnalytics = lazy(() => import("./pages/PredictiveAnalytics"));
+const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 
 const queryClient = new QueryClient();
 

@@ -25,11 +25,11 @@ export default function AuditLogs() {
         .from("audit_logs")
         .select(`
           *,
-          profiles (display_name)
+          profiles:user_id (display_name)
         `)
         .eq("tenant_id", currentTenant?.id)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(100) as any;
 
       if (error) throw error;
       return data;
@@ -37,7 +37,7 @@ export default function AuditLogs() {
     enabled: !!currentTenant,
   });
 
-  const filteredLogs = logs?.filter(log => 
+  const filteredLogs = (logs as any[])?.filter(log => 
     log.entity.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.profiles?.display_name?.toLowerCase().includes(searchTerm.toLowerCase())

@@ -1,103 +1,46 @@
-## Diagnóstico atual
+# Plano: Bling como fonte primária de rastreio nas automações
 
-Verifiquei o estado real do sistema (banco + edge functions + tela):
+## Diagnóstico
+O template `codigo_rastreio_v2` falha com erro Meta `(#131008) Required parameter is missing` porque o `order.tracking_code` no banco local (sincronizado da Yampi) está vazio na hora do envio. Hoje o `campaign-executor` resolve `order.tracking_code` apenas a partir da tabela `orders` local, e quando vem `"-"` o WhatsApp rejeita o template (que tem `{{3}}` no body e no botão URL).
 
-**O que está funcionando**
-- `send-email-ses` envia para o SES e o SES aceita (`MessageId` retornado).
-- 30 e-mails da campanha "Dia das mães - v1 (cópia)" foram registrados em `email_logs` com `status='sent'` e `aws_message_id` válido.
-- O backfill de ontem corrigiu `campaign_activities` — por isso o "Log de Atividades" agora aparece com 30 enviados.
+A integração Bling já é a fonte real do rastreio (NFe + transporte + logística) — a lógica completa já existe no `ai-copilot` (`lookupOrdersBling`). Precisamos reutilizar essa lógica também nas automações.
 
-**O que está quebrado (causa de "Entregues/Lidos/Cliques = 0")**
+## Mudanças
 
-1. A tabela `email_events` tem **apenas 1 evento `Delivery` em 7 dias**, mesmo com 30+ envios. Ou seja, o SES está enviando, mas os eventos pós-envio (Delivery, Open, Click, Bounce, Complaint) **não estão chegando** na função `ses-events-webhook`.
-2. Como consequência:
-   - `email_logs.status` fica eternamente em `sent` (nunca vira `delivered`).
-   - `email_logs.opens` / `clicks` ficam em `0`.
-   - `campaign_activities.delivered_at` / `read_at` / `clicked_at` ficam `NULL` → KPIs da campanha exibem 0.
-3. Causas prováveis (a confirmar na conta AWS):
-   - O **Configuration Set** usado no envio não tem um **Event Destination SNS** apontando pro tópico que dispara nosso webhook; **ou**
-   - O tópico SNS não tem assinatura HTTPS confirmada apontando para `…/functions/v1/ses-events-webhook`; **ou**
-   - O envio não está passando `ConfigurationSetName` (no banco, `email_logs.configuration_set` está vindo `null` — preciso confirmar) — sem isso o SES não publica eventos.
-   - O **engagement tracking (Open/Click)** do Configuration Set está desligado, então o SES nem injeta o pixel/redirect.
+### 1. `supabase/functions/campaign-executor/index.ts`
 
-**Gaps secundários encontrados**
-- `ses-events-webhook` atualiza `email_logs` por `aws_message_id`, mas **não está deduplicando** eventos repetidos de Open (incrementa `opens` toda vez que abre — ok), porém **não atualiza `last_event_at` em todos os caminhos** (ex.: Delivery atualiza, mas Open passa por um segundo update que sobrescreve).
-- A tela de detalhes da campanha lê `campaign_activities` direto, mas o "Funil de Entrega" parece somar só `sent` quando os outros campos estão NULL — precisa exibir 0 explicitamente em vez de barra vazia.
-- Não há tela administrativa para ver eventos brutos (`email_events`) — dificulta debug pelo usuário.
-- Não há reprocessamento em lote: se o webhook ficou fora do ar, eventos antigos do SES são perdidos (SES não reentrega depois de muitas tentativas).
+- Adicionar helper `fetchBlingTrackingForOrder(tenantId, document, orderNumber, adminClient)`:
+  - Carrega integração `provider='bling'` ativa do tenant.
+  - Refresca o access_token se expirado (mesma lógica do ai-copilot — extrair `refreshBlingToken`).
+  - Busca contato em `/contatos?pesquisa={cpf-formatado}`.
+  - Lista pedidos `/pedidos/vendas?idContato={id}&limit=10`.
+  - Tenta casar pelo `numero` igual ao `order_number` da Maxfem; se não casar, usa o mais recente.
+  - Para o pedido escolhido, tenta extrair `codigoRastreamento` em ordem:
+    1. `transporte.volumes[0].codigoRastreamento`
+    2. `/nfe/{notaFiscal.id}` → `transporte.volumes[0].codigoRastreamento`
+    3. `/pedidos/vendas/{id}/logistica` → `codigoRastreamento` ou `rastreamento.codigo`
+  - Retorna `{ tracking_code, carrier }` ou `null`.
 
----
+- No bloco `sendWhatsApp` do executor, **antes** de chamar `buildTemplateComponents`:
+  - Detectar se o template depende de `order.tracking_code` (procurar a string em `variableMappings` e em URLs de botões via `{{N}}` referenciando esse índice).
+  - Se sim e `orderRecord?.tracking_code` estiver vazio:
+    - Chamar `fetchBlingTrackingForOrder` usando `customer.document` e `orderRecord?.order_number || triggerData.order_number`.
+    - Se vier código: atualizar `orderRecord.tracking_code` em memória **e** persistir em `orders` (`update tracking_code, tracking_url='https://rastreio.maxfem.com.br/{code}', carrier`).
+    - Se ainda vier vazio: **não enviar**. Marcar a fila como `pending` com `scheduled_for = now + 1h` para tentar de novo depois (em vez de `failed`), e registrar `campaign_activity` com status `pending` + `error_message='Aguardando código de rastreio do Bling'`. Limitar a no máx. 6 reagendamentos (24h) verificando um campo no `trigger_data` (`bling_retries`).
 
-## Plano de correção (ponta a ponta)
+### 2. Sem mudanças de schema
+Reaproveita colunas existentes (`orders.tracking_code`, `orders.tracking_url`, `orders.carrier`, `automation_queue.scheduled_for`, `trigger_data` jsonb).
 
-### Etapa 1 — Diagnóstico AWS (confirmar antes de codar)
-1. Listar via `ses-identities` / chamada SES o **Configuration Set** que está sendo usado e seus Event Destinations.
-2. Verificar se há um destino SNS publicando os tipos: `Send`, `Delivery`, `Open`, `Click`, `Bounce`, `Complaint`, `Reject`.
-3. Verificar se o tópico SNS tem subscrição HTTPS para `https://poukhwsbskcvwroeqoct.functions.supabase.co/ses-events-webhook` em status **Confirmed**.
-4. Verificar se "Open and Click tracking" está habilitado no Configuration Set.
+### 3. Reprocessar fila travada (one-shot, opcional)
+Após deploy, opcionalmente reabrir as 136 entradas com `status='failed'` e `current_node_id='wa2'` da campanha `Pedido Aprovado + Rastreio + Entrega` voltando para `pending` para que o executor tente buscar no Bling. Posso fazer isso via insert tool depois do deploy se você confirmar.
 
-Se algum item faltar, executar o passo 2; senão, pular para 3.
+## Detalhes técnicos
+- O Bling tem rate limit (3 req/s); o executor processa pedidos sequencialmente, então o padrão "1 pedido por iteração" já respeita o limite. Se o Bling retornar 429, tratamos como "tracking ainda não disponível" e reagendamos.
+- O token é compartilhado entre `ai-copilot` e o executor — refresh atualiza `integrations.config` para ambos.
+- Mantemos a Yampi como fonte secundária: se Bling falhar (sem integração ou sem contato), continuamos olhando `orderRecord.tracking_code` da Yampi como fallback.
+- Templates que **não** usam `order.tracking_code` (ex.: `pedido_aprovado_v2`) seguem inalterados.
 
-### Etapa 2 — Provisionamento automático SES → SNS → Webhook
-- Adicionar uma função `ses-setup-tracking` que, dado o tenant/configuration set, cria/garante:
-  - O Configuration Set com tracking de open/click ativado.
-  - Um tópico SNS dedicado (`maxfem-ses-events-{tenant}`).
-  - Um Event Destination apontando para o tópico, com todos os tipos de evento.
-  - Subscrição HTTPS para `ses-events-webhook` (a confirmação automática já está implementada no webhook — confirmei).
-- Disparar essa função na tela `Settings → AWS` com um botão "Verificar/Reparar rastreamento".
-
-### Etapa 3 — Garantir que todo envio use o Configuration Set
-- No `send-email-ses`: quando `configurationSet` não vier no payload, **buscar de `integrations.config.configuration_set`** do tenant antes de cair no `null`.
-- No `campaign-executor` (linhas 453, 868): mesma lógica — se a campanha não trouxer, pegar do tenant.
-- Migration: adicionar coluna `configuration_set` em `integrations.config` se ainda não existir e preencher para o tenant Maxfem.
-
-### Etapa 4 — Robustez do webhook (`ses-events-webhook`)
-- Atualizar `last_event_at` em todos os ramos (Open/Click/Bounce/Complaint), não só em Delivery.
-- Tornar o upsert em `campaign_activities` idempotente quando o `Delivery` chega antes do `Send` (raro, mas acontece).
-- Logar `tenant_id` e `aws_message_id` em todos os erros pra rastreamento.
-- Retornar 200 sempre que o payload for SNS válido (já está, mas adicionar verificação de assinatura SNS opcional para segurança futura).
-
-### Etapa 5 — Reprocessamento e visibilidade
-- Nova página `Settings → E-mail → Diagnóstico` (admin) com:
-  - Status do Configuration Set (lendo via SES API).
-  - Status da subscrição SNS.
-  - Últimos 50 eventos de `email_events` (já temos a tabela).
-  - Botão "Reprocessar últimos N envios": consulta SES `GetMessageInsights` (quando disponível) ou simplesmente reconcilia `email_logs.status` baseado em `email_events`.
-- Função `email-reconcile`: roda a cada 15 min via cron, varre `email_logs` com `status='sent'` há mais de 1h e tenta cruzar com `email_events` pra atualizar `delivered/opened/clicked`.
-
-### Etapa 6 — Telas de visualização (frontend)
-- **Detalhes da campanha** (`CampaignDetails.tsx`):
-  - KPIs já existem; corrigir cálculo: `entregues = activities.filter(a => a.delivered_at).length`, idem para read/click. Hoje provavelmente está zerado por leitura errada.
-  - Funil: mostrar barras com 0 explícito quando não houver dados, e tooltip "aguardando eventos do provedor".
-  - Adicionar coluna **"Última atualização"** na tabela de atividades, lendo `last_event_at`.
-- **Atividades** (`Activities.tsx`):
-  - Adicionar filtro por status real (sent/delivered/opened/clicked/bounced) usando `campaign_activities`.
-  - Mostrar ícone diferente quando `delivered_at` existe.
-- **Indicadores** (`Dashboard.tsx`):
-  - Cards de "Entregue", "Aberto", "Clicado" devem somar de `email_logs.opens > 0` e `clicks > 0` em vez de só `status`.
-
-### Etapa 7 — Teste fim a fim
-1. Disparar campanha de teste para 2 e-mails reais (1 inbox + 1 que vai bounce).
-2. Aguardar ~30s → verificar `email_events` recebendo `Delivery`.
-3. Abrir o e-mail no inbox → verificar `Open` em `email_events` e `email_logs.opens=1`.
-4. Clicar num link → verificar `Click` e `clicks=1`.
-5. Conferir que `CampaignDetails` mostra os 4 estágios do funil populados.
-
----
-
-## Resumo do que vai mudar
-
-| Camada | Arquivo | Mudança |
-|---|---|---|
-| Backend | `supabase/functions/send-email-ses/index.ts` | Fallback para configuration set do tenant |
-| Backend | `supabase/functions/campaign-executor/index.ts` | Idem |
-| Backend | `supabase/functions/ses-events-webhook/index.ts` | last_event_at em todos os ramos, logs melhores |
-| Backend (novo) | `supabase/functions/ses-setup-tracking/index.ts` | Provisiona CS + SNS + subscrição |
-| Backend (novo) | `supabase/functions/email-reconcile/index.ts` | Cron 15min reconciliando logs com eventos |
-| DB | migration | índice em `email_events(message_id)`, garantia de coluna `configuration_set` no integrations |
-| Frontend | `SettingsAWS.tsx` | Botão "Verificar/Reparar rastreamento" + status |
-| Frontend | `CampaignDetails.tsx` | KPIs corrigidos, coluna "última atualização", funil tolerante a 0 |
-| Frontend | `Activities.tsx` | Filtros por status real |
-| Frontend (novo) | `SettingsEmailDiagnostics.tsx` | Página de diagnóstico e eventos brutos |
-
-**Resultado esperado:** ao agendar uma campanha de e-mail, ela dispara no horário, os 4 estágios do funil (Enviado → Entregue → Lido → Clicado) se preenchem em tempo quase real, e as mesmas métricas aparecem consistentes em Dashboard, Atividades e Detalhes da Campanha.
+## Resultado esperado
+- `codigo_rastreio_v2` passa a obter o código direto do Bling no momento do envio.
+- Envios que ainda não têm código não falham — ficam reagendados até o Bling ter o dado.
+- Reduz erro `131008` a zero para esse template.

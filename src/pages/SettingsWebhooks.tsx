@@ -80,16 +80,72 @@ const WEBHOOKS = [
 
 export default function SettingsWebhooks() {
   const { toast } = useToast();
+  const { currentTenant } = useAuth();
+  const queryClient = useQueryClient();
   const [baseUrl, setBaseUrl] = useState("");
   const [pixelKey, setPixelKey] = useState("");
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newWebhook, setNewWebhook] = useState({
+    url: "",
+    events: [] as string[],
+  });
+
+  const AVAILABLE_EVENTS = [
+    { id: "message.delivered", label: "Mensagem Entregue" },
+    { id: "message.read", label: "Mensagem Lida" },
+    { id: "campaign.completed", label: "Campanha Concluída" },
+    { id: "customer.converted", label: "Cliente Converteu" },
+    { id: "chat.assigned", label: "Chat Atribuído" },
+  ];
+
+  const { data: outboundWebhooks } = useQuery({
+    queryKey: ["outbound-webhooks", currentTenant?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("outbound_webhooks")
+        .select("*")
+        .eq("tenant_id", currentTenant?.id);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const createWebhookMutation = useMutation({
+    mutationFn: async (data: typeof newWebhook) => {
+      const { error } = await supabase.from("outbound_webhooks").insert({
+        tenant_id: currentTenant?.id,
+        url: data.url,
+        events: data.events,
+        secret_token: Math.random().toString(36).substring(7),
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Webhook criado!", description: "Seu sistema agora receberá eventos em tempo real." });
+      setIsModalOpen(false);
+      setNewWebhook({ url: "", events: [] });
+      queryClient.invalidateQueries({ queryKey: ["outbound-webhooks"] });
+    },
+  });
+
+  const deleteWebhookMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("outbound_webhooks").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Webhook removido" });
+      queryClient.invalidateQueries({ queryKey: ["outbound-webhooks"] });
+    },
+  });
 
   useEffect(() => {
     const fetchConfig = async () => {
       const { data: tenant } = await supabase.from("tenants").select("pixel_public_key").single();
       if (tenant) setPixelKey(tenant.pixel_public_key || "");
       
-      // Use the project's functions URL
       const { data: { publicUrl } } = supabase.storage.from('whatsapp-media').getPublicUrl('test');
       const urlMatch = publicUrl.match(/https:\/\/(.*?)\.supabase\.co/);
       if (urlMatch) {

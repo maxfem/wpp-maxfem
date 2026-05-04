@@ -99,6 +99,8 @@ interface FlowSidebarProps {
   onStoChange?: (enabled: boolean) => void;
   isAbTest?: boolean;
   onAbTestChange?: (enabled: boolean) => void;
+  isSandbox?: boolean;
+  onSandboxChange?: (enabled: boolean) => void;
 }
 
 export function FlowSidebar({

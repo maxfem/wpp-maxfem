@@ -68,6 +68,21 @@ export default function Chat() {
     refetchInterval: 30000,
   });
 
+  // Fetch SLA Config
+  const { data: slaConfig } = useQuery({
+    queryKey: ["chat-sla-config", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const { data } = await supabase
+        .from("chat_sla_configs")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!tenantId,
+  });
+
   // Fetch WhatsApp messages
   const { data: waMessages = [] } = useQuery({
     queryKey: ["whatsapp-messages", tenantId],

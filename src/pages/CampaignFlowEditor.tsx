@@ -80,7 +80,7 @@ function FlowEditorInner() {
     (async () => {
       const { data } = await supabase
         .from("campaigns")
-        .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test")
+        .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test, is_sandbox")
         .eq("id", id)
         .single();
       if (data) {

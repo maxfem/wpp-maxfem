@@ -194,6 +194,7 @@ function FlowEditorInner() {
       list_id: listId,
       sto_enabled: stoEnabled,
       is_ab_test: isAbTest,
+      is_sandbox: isSandbox,
     };
 
     if (isAutomation) {

@@ -435,7 +435,7 @@ async function processAutomationQueue(supabase: any) {
 
   const { data: queueItems, error: qErr } = await supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for, metadata")
     .eq("status", "pending")
     .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })

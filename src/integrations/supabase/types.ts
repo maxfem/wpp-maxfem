@@ -2302,6 +2302,16 @@ export type Database = {
     }
     Functions: {
       calculate_rfm_scores: { Args: { _tenant_id: string }; Returns: undefined }
+      check_send_allowed: {
+        Args: {
+          _category?: string
+          _channel: string
+          _customer_id: string
+          _identifier: string
+          _tenant_id: string
+        }
+        Returns: Json
+      }
       get_or_create_unsubscribe_token: {
         Args: { _customer_id: string; _tenant_id: string }
         Returns: string

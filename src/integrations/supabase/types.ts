@@ -62,6 +62,13 @@ export type Database = {
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "audit_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       automation_queue: {
@@ -2618,7 +2625,13 @@ export type Database = {
       sync_rfm_lists: { Args: { _tenant_id: string }; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "collaborator"
+      app_role:
+        | "admin"
+        | "collaborator"
+        | "owner"
+        | "manager"
+        | "agent"
+        | "viewer"
       job_status: "pending" | "processing" | "completed" | "failed"
     }
     CompositeTypes: {
@@ -2747,7 +2760,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "collaborator"],
+      app_role: [
+        "admin",
+        "collaborator",
+        "owner",
+        "manager",
+        "agent",
+        "viewer",
+      ],
       job_status: ["pending", "processing", "completed", "failed"],
     },
   },

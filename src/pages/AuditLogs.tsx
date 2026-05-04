@@ -25,7 +25,7 @@ export default function AuditLogs() {
         .from("audit_logs")
         .select(`
           *,
-          profiles:user_id (display_name)
+          profiles (display_name)
         `)
         .eq("tenant_id", currentTenant?.id)
         .order("created_at", { ascending: false })

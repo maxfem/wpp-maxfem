@@ -494,39 +494,39 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
 
             </TableBody>
           </Table>
-          
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 px-2">
-              <div className="text-sm text-muted-foreground">
-                Mostrando {page * pageSize + 1} a {Math.min((page + 1) * pageSize, totalCount)} de {totalCount} envios
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="text-sm font-medium">
-                  Página {page + 1} de {totalPages}
-                </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                  disabled={page >= totalPages - 1}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+          </>
         )}
       </CardContent>
+      {totalPages > 1 && (
+        <CardFooter className="flex items-center justify-between border-t py-4">
+          <div className="text-sm text-muted-foreground">
+            Mostrando {page * pageSize + 1} a {Math.min((page + 1) * pageSize, totalCount)} de {totalCount} envios
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-sm font-medium">
+              Página {page + 1} de {totalPages}
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardFooter>
+      )}
     </Card>
   );
 };

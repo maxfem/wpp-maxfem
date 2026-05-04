@@ -191,6 +191,8 @@ function FlowEditorInner() {
       status,
       flow_data: flowData as any,
       list_id: listId,
+      sto_enabled: stoEnabled,
+      is_ab_test: isAbTest,
     };
 
     if (isAutomation) {

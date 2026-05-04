@@ -1171,7 +1171,17 @@ async function processScheduledCampaigns(supabase: any) {
   for (const campaign of campaigns) {
     console.log(`Processing campaign: ${campaign.id} - ${campaign.name}`);
 
-    const { error: lockErr } = await supabase.from("campaigns").update({ status: "sending" }).eq("id", campaign.id).eq("status", "scheduled");
+    // Lock: only resume "sending" campaigns whose last update is >2min old
+    // (avoids two concurrent cron runs grabbing the same campaign).
+    if (campaign.status === "sending") {
+      const lastUpdate = new Date(campaign.updated_at).getTime();
+      if (Date.now() - lastUpdate < 120_000) {
+        console.log(`Skipping campaign ${campaign.id} (recently updated, likely still running)`);
+        continue;
+      }
+      console.log(`Resuming stuck campaign ${campaign.id}`);
+    }
+    const { error: lockErr } = await supabase.from("campaigns").update({ status: "sending", updated_at: new Date().toISOString() }).eq("id", campaign.id);
     if (lockErr) { console.error(`Failed to lock campaign ${campaign.id}:`, lockErr); continue; }
 
     let lastError = "";

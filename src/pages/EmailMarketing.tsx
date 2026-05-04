@@ -346,29 +346,33 @@ const KpiCard = ({ icon, label, value, hint, positive, negative, warn }: any) =>
 // ============== LOGS TAB ==============
 const LogsTab = ({ tenantId }: { tenantId?: string }) => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
-  const { data: logs, isLoading, refetch } = useQuery({
-    queryKey: ["email-logs", tenantId, statusFilter],
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["email-logs", tenantId, statusFilter, page, pageSize],
     queryFn: async () => {
-      if (!tenantId) return [];
+      if (!tenantId) return { rows: [], count: 0 };
+      
       let q = supabase
         .from("email_logs")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
       if (statusFilter !== "all") q = q.eq("status", statusFilter);
-      const { data, error } = await q;
+      
+      const { data, error, count } = await q;
       if (error) throw error;
       const rows = data || [];
 
-      // Buscar conversões de campaign_activities em paralelo (sem FK direto)
+      // Buscar conversões de campaign_activities em paralelo
       const pairs = rows
         .filter((r: any) => r.campaign_id && r.customer_id)
         .map((r: any) => ({ c: r.campaign_id, u: r.customer_id }));
 
-      if (pairs.length === 0) return rows.map((r: any) => ({ ...r, activity: null }));
+      if (pairs.length === 0) return { rows: rows.map((r: any) => ({ ...r, activity: null })), count: count || 0 };
 
       const campaignIds = Array.from(new Set(pairs.map(p => p.c)));
       const customerIds = Array.from(new Set(pairs.map(p => p.u)));
@@ -379,18 +383,25 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
         .in("campaign_id", campaignIds)
         .in("customer_id", customerIds);
 
-      const map = new Map<string, any>();
+      const actMap = new Map<string, any>();
       (acts || []).forEach((a: any) => {
-        map.set(`${a.campaign_id}:${a.customer_id}`, a);
+        actMap.set(`${a.campaign_id}:${a.customer_id}`, a);
       });
 
-      return rows.map((r: any) => ({
-        ...r,
-        activity: r.campaign_id && r.customer_id ? map.get(`${r.campaign_id}:${r.customer_id}`) || null : null,
-      }));
+      return {
+        rows: rows.map((r: any) => ({
+          ...r,
+          activity: r.campaign_id && r.customer_id ? actMap.get(`${r.campaign_id}:${r.customer_id}`) || null : null,
+        })),
+        count: count || 0
+      };
     },
     enabled: !!tenantId,
   });
+
+  const logs = data?.rows || [];
+  const totalCount = data?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
 
 
   const statusBadge = (s: string) => {

@@ -1156,9 +1156,13 @@ async function processAutomationQueue(supabase: any) {
 async function processScheduledCampaigns(supabase: any) {
   const results: any[] = [];
 
+  // Pick up freshly scheduled campaigns AND any that got stuck in "sending"
+  // (likely because a previous run hit the edge function timeout). The
+  // upsert on campaign_activities ensures we won't re-send to customers
+  // already processed.
   const { data: campaigns, error: campErr } = await supabase
     .from("campaigns").select("*")
-    .eq("kind", "campaign").eq("status", "scheduled")
+    .eq("kind", "campaign").in("status", ["scheduled", "sending"])
     .lte("scheduled_at", new Date().toISOString());
 
   if (campErr) { console.error("Error fetching campaigns:", campErr); return results; }
@@ -1167,7 +1171,17 @@ async function processScheduledCampaigns(supabase: any) {
   for (const campaign of campaigns) {
     console.log(`Processing campaign: ${campaign.id} - ${campaign.name}`);
 
-    const { error: lockErr } = await supabase.from("campaigns").update({ status: "sending" }).eq("id", campaign.id).eq("status", "scheduled");
+    // Lock: only resume "sending" campaigns whose last update is >2min old
+    // (avoids two concurrent cron runs grabbing the same campaign).
+    if (campaign.status === "sending") {
+      const lastUpdate = new Date(campaign.updated_at).getTime();
+      if (Date.now() - lastUpdate < 120_000) {
+        console.log(`Skipping campaign ${campaign.id} (recently updated, likely still running)`);
+        continue;
+      }
+      console.log(`Resuming stuck campaign ${campaign.id}`);
+    }
+    const { error: lockErr } = await supabase.from("campaigns").update({ status: "sending", updated_at: new Date().toISOString() }).eq("id", campaign.id);
     if (lockErr) { console.error(`Failed to lock campaign ${campaign.id}:`, lockErr); continue; }
 
     let lastError = "";
@@ -1320,10 +1334,28 @@ async function processScheduledCampaigns(supabase: any) {
         continue;
       }
 
+      // Skip customers already processed in a previous (timed-out) run
+      const { data: alreadyDone } = await supabase
+        .from("campaign_activities")
+        .select("customer_id")
+        .eq("campaign_id", campaign.id);
+      const doneSet = new Set((alreadyDone || []).map((r: any) => r.customer_id));
+      const totalCustomers = customers.length;
+      customers = customers.filter((c: any) => !doneSet.has(c.id));
+      console.log(`Campaign ${campaign.id}: ${totalCustomers} total, ${doneSet.size} already done, ${customers.length} remaining`);
+
       let sentCount = 0;
       let failedCount = 0;
+      const runStart = Date.now();
+      const TIME_BUDGET_MS = 110_000; // leave headroom before edge function timeout
+      let timedOut = false;
 
       for (const customer of customers) {
+        if (Date.now() - runStart > TIME_BUDGET_MS) {
+          console.log(`Time budget reached for campaign ${campaign.id}, will resume next cron`);
+          timedOut = true;
+          break;
+        }
         try {
           const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars, tenantId: campaign.tenant_id };
 
@@ -1422,10 +1454,15 @@ async function processScheduledCampaigns(supabase: any) {
         }
       }
 
-      const finalStatus = sentCount > 0 ? "sent" : "failed";
+      let finalStatus: string;
+      if (timedOut) {
+        finalStatus = "sending"; // keep as sending so next cron resumes
+      } else {
+        finalStatus = sentCount > 0 ? "sent" : "failed";
+      }
       const errorMsg = finalStatus === "failed" ? `Todos os ${failedCount} envios falharam. Último erro: ${lastError}` : null;
-      await supabase.from("campaigns").update({ status: finalStatus, last_error: errorMsg }).eq("id", campaign.id);
-      results.push({ campaign_id: campaign.id, sent: sentCount, failed: failedCount, total: customers.length, status: finalStatus });
+      await supabase.from("campaigns").update({ status: finalStatus, last_error: errorMsg, updated_at: new Date().toISOString() }).eq("id", campaign.id);
+      results.push({ campaign_id: campaign.id, sent: sentCount, failed: failedCount, total: customers.length, status: finalStatus, resumed: timedOut });
     } catch (err) {
       const errMsg = `Erro interno: ${String(err)}`;
       await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);

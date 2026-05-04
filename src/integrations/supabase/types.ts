@@ -230,6 +230,7 @@ export type Database = {
           scheduled_at: string | null
           start_date: string | null
           status: string
+          sto_enabled: boolean | null
           tenant_id: string
           trigger_type: string | null
           type: string
@@ -253,6 +254,7 @@ export type Database = {
           scheduled_at?: string | null
           start_date?: string | null
           status?: string
+          sto_enabled?: boolean | null
           tenant_id: string
           trigger_type?: string | null
           type?: string
@@ -276,6 +278,7 @@ export type Database = {
           scheduled_at?: string | null
           start_date?: string | null
           status?: string
+          sto_enabled?: boolean | null
           tenant_id?: string
           trigger_type?: string | null
           type?: string

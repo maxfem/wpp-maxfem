@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { fetchAll } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,11 +89,12 @@ export default function Campaigns() {
     queryKey: ["campaign-activities-raw", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const { data } = await supabase
-        .from("campaign_activities")
-        .select("campaign_id, status, clicked_at, conversion_value, created_at")
-        .eq("tenant_id", currentTenant.id);
-      return (data as CampaignActivity[]) || [];
+      return fetchAll<CampaignActivity>(
+        supabase
+          .from("campaign_activities")
+          .select("campaign_id, status, clicked_at, conversion_value, created_at")
+          .eq("tenant_id", currentTenant.id)
+      );
     },
     enabled: !!currentTenant,
   });

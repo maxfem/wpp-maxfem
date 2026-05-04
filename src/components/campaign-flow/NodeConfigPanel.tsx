@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X } from "lucide-react";
+import { X, UserCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +50,8 @@ const getNodeConfigs = (
       { key: "template", label: "Template", type: "select", options: whatsappOpts },
       { key: "delay", label: "Atraso antes de enviar", type: "select", options: ["Sem atraso", "5 minutos", "15 minutos", "1 hora", "1 dia"].map(o => ({ value: o, label: o })) },
       { key: "trackClicks", label: "Rastrear cliques", type: "toggle" },
-      { key: "fallbackMessage", label: "Mensagem alternativa", type: "textarea", placeholder: "Se o template falhar..." },
+      { key: "fallbackEnabled", label: "Habilitar Fallback (E-mail)", type: "toggle" },
+      { key: "fallbackEmailTemplate", label: "Template E-mail Fallback", type: "select", options: emailOpts },
     ],
   },
   sendEmail: {
@@ -370,6 +371,41 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
                     sandbox=""
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spam / Best Practices Check for Email */}
+          {nodeType === "sendEmail" && selectedEmail && (
+            <div className="pt-2 space-y-3">
+              <div className="h-px bg-border/40" />
+              <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 block px-0.5">Análise de Spam (Heurística)</Label>
+              <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                {(() => {
+                  const subject = (nodeData.subject as string) || selectedEmail.subject || "";
+                  const content = (nodeData.content as string) || selectedEmail.body_html || "";
+                  const issues = [];
+                  
+                  if (subject.length > 60) issues.push("Assunto muito longo (> 60 chars)");
+                  if (subject === subject.toUpperCase() && subject.length > 5) issues.push("Assunto todo em MAIÚSCULO");
+                  if (content.length < 100) issues.push("Conteúdo muito curto (pode ser spam)");
+                  if (!content.includes("unsubscribe") && !content.includes("descadastro")) issues.push("Link de descadastro não detectado");
+                  if (/\$|grátis|free|promoção|ganhe/i.test(subject)) issues.push("Palavras 'gatilho' no assunto");
+
+                  if (issues.length === 0) {
+                    return <p className="text-[11px] text-success flex items-center gap-1.5 font-medium"><UserCheck className="h-3 w-3" /> E-mail saudável!</p>;
+                  }
+                  return (
+                    <div className="space-y-1.5">
+                      {issues.map((issue, idx) => (
+                        <p key={idx} className="text-[10px] text-warning flex items-center gap-1.5 font-medium">
+                          <AlertTriangle className="h-2.5 w-2.5" />
+                          {issue}
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}

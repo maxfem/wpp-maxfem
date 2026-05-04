@@ -359,12 +359,25 @@ export function ChatSidebar({
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <span className={cn(
-                    "text-sm truncate",
-                    conv.unread > 0 ? "font-semibold text-foreground" : "font-medium text-foreground"
-                  )}>
-                    {conv.customerName}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={cn(
+                      "text-sm truncate",
+                      conv.unread > 0 ? "font-semibold text-foreground" : "font-medium text-foreground"
+                    )}>
+                      {conv.customerName}
+                    </span>
+                    {conv.slaStatus && conv.slaStatus !== "ok" && (
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "h-3.5 px-1 text-[8px] font-bold uppercase",
+                          conv.slaStatus === "overdue" ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+                        )}
+                      >
+                        {conv.slaStatus === "overdue" ? "Atrasado" : "SLA"}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <p className={cn(

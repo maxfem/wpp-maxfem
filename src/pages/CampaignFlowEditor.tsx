@@ -273,6 +273,10 @@ function FlowEditorInner() {
           onTriggerChange={handleTriggerChange}
           selectedWhatsAppAccountId={selectedWhatsAppAccountId}
           onWhatsAppAccountChange={setSelectedWhatsAppAccountId}
+          stoEnabled={stoEnabled}
+          onStoChange={setStoEnabled}
+          isAbTest={isAbTest}
+          onAbTestChange={setIsAbTest}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

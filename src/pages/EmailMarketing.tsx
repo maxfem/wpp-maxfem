@@ -491,10 +491,8 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
               }) : (
                 <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
               )}
-
             </TableBody>
           </Table>
-          </>
         )}
       </CardContent>
       {totalPages > 1 && (

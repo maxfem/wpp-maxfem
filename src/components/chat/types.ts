@@ -34,6 +34,9 @@ export interface Conversation {
   isMuted?: boolean;
   isArchived?: boolean;
   conversationStatus?: "open" | "resolved" | "pending";
+  slaStatus?: "ok" | "warning" | "overdue";
+  slaDeadline?: string;
+  assignedTo?: string;
   channel: Channel;
   igAccountId?: string | null;
   igUserId?: string | null;

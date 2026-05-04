@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          entity: string
+          entity_id: string | null
+          id: string
+          ip_address: string | null
+          new_data: Json | null
+          old_data: Json | null
+          tenant_id: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          entity: string
+          entity_id?: string | null
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          tenant_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          entity?: string
+          entity_id?: string | null
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          tenant_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_queue: {
         Row: {
           campaign_id: string | null
@@ -228,6 +278,7 @@ export type Database = {
           has_survey: boolean | null
           id: string
           is_ab_test: boolean | null
+          is_sandbox: boolean | null
           kind: string
           last_error: string | null
           list_id: string | null
@@ -254,6 +305,7 @@ export type Database = {
           has_survey?: boolean | null
           id?: string
           is_ab_test?: boolean | null
+          is_sandbox?: boolean | null
           kind?: string
           last_error?: string | null
           list_id?: string | null
@@ -280,6 +332,7 @@ export type Database = {
           has_survey?: boolean | null
           id?: string
           is_ab_test?: boolean | null
+          is_sandbox?: boolean | null
           kind?: string
           last_error?: string | null
           list_id?: string | null
@@ -1659,6 +1712,47 @@ export type Database = {
           },
         ]
       }
+      outbound_webhooks: {
+        Row: {
+          created_at: string | null
+          events: string[] | null
+          id: string
+          is_active: boolean | null
+          secret_token: string | null
+          tenant_id: string | null
+          updated_at: string | null
+          url: string
+        }
+        Insert: {
+          created_at?: string | null
+          events?: string[] | null
+          id?: string
+          is_active?: boolean | null
+          secret_token?: string | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          url: string
+        }
+        Update: {
+          created_at?: string | null
+          events?: string[] | null
+          id?: string
+          is_active?: boolean | null
+          secret_token?: string | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outbound_webhooks_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pixel_events: {
         Row: {
           cart_value: number | null
@@ -2010,6 +2104,27 @@ export type Database = {
           status?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      role_permissions: {
+        Row: {
+          created_at: string | null
+          id: string
+          permission: string
+          role: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          permission: string
+          role: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          permission?: string
+          role?: string
         }
         Relationships: []
       }

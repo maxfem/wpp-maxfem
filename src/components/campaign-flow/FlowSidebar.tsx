@@ -3,8 +3,10 @@ import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
   Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap,
-  Lock, CalendarIcon,
+  Lock, CalendarIcon, BrainCircuit, Split
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

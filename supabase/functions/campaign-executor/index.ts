@@ -342,6 +342,37 @@ async function evaluateCondition(supabase: any, node: FlowNode, item: any): Prom
   }
 }
 
+// ===== STO (Send Time Optimization) =====
+
+async function getBestHourForCustomer(supabase: any, tenantId: string, customerId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("customer_engagement_hours")
+    .select("hour_of_day, weight")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .order("weight", { ascending: false })
+    .limit(1);
+  
+  if (error || !data || data.length === 0) return null;
+  return data[0].hour_of_day;
+}
+
+// ===== A/B TEST VARIANT PICKER =====
+
+function pickAbVariant(config: any): string | null {
+  const variants = config?.variants || [];
+  if (variants.length === 0) return null;
+  
+  // Weights should sum to 100
+  const random = Math.random() * 100;
+  let cumulative = 0;
+  for (const v of variants) {
+    cumulative += v.weight || (100 / variants.length);
+    if (random <= cumulative) return v.id;
+  }
+  return variants[0].id;
+}
+
 // ===== CREDENTIAL RESOLVER =====
 
 async function resolveWhatsAppCredentials(supabase: any, tenantId: string): Promise<{ phoneNumberId: string; accessToken: string }> {

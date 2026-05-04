@@ -5,7 +5,101 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// ===== VARIABLE RESOLUTION =====
+// ===== BLING TRACKING LOOKUP =====
+
+async function refreshBlingToken(integrationId: string, cfg: any, supabase: any): Promise<string | null> {
+  try {
+    const clientId = Deno.env.get("BLING_CLIENT_ID");
+    const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
+    if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
+    const basic = btoa(`${clientId}:${clientSecret}`);
+    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${basic}`, Accept: "application/json" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
+    });
+    const data = await res.json();
+    if (!res.ok) { console.error("[executor] Bling refresh failed:", data); return null; }
+    const now = new Date();
+    const newConfig = {
+      ...cfg,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      access_expires_at: new Date(now.getTime() + (data.expires_in || 21600) * 1000).toISOString(),
+      refresh_expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    await supabase.from("integrations").update({ config: newConfig, sync_error: null, updated_at: now.toISOString() }).eq("id", integrationId);
+    return data.access_token;
+  } catch (e) { console.error("[executor] Bling refresh error:", e); return null; }
+}
+
+async function fetchBlingTracking(tenantId: string, document: string | null, orderNumber: string | null, supabase: any): Promise<{ tracking_code: string; carrier: string | null } | null> {
+  if (!document) return null;
+  const cleanCpf = document.replace(/\D/g, "");
+  if (cleanCpf.length < 11) return null;
+  try {
+    const { data: integ } = await supabase.from("integrations")
+      .select("id, config").eq("tenant_id", tenantId).eq("provider", "bling").eq("is_active", true).maybeSingle();
+    if (!integ) return null;
+    const cfg = integ.config as any;
+    let token = cfg?.access_token;
+    if (!token) return null;
+    const expiresAt = cfg.access_expires_at ? new Date(cfg.access_expires_at).getTime() : 0;
+    if (expiresAt < Date.now() + 5 * 60 * 1000) {
+      const nt = await refreshBlingToken(integ.id, cfg, supabase);
+      if (nt) token = nt;
+    }
+    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+    const auth = () => ({ Authorization: `Bearer ${token}`, Accept: "application/json" });
+    let cRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() });
+    if (cRes.status === 401) {
+      const nt = await refreshBlingToken(integ.id, cfg, supabase);
+      if (nt) { token = nt; cRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() }); }
+    }
+    if (!cRes.ok) return null;
+    const cData = await cRes.json();
+    const contact = cData?.data?.[0];
+    if (!contact) return null;
+    const oRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contact.id}&limit=10`, { headers: auth() });
+    if (!oRes.ok) return null;
+    const oData = await oRes.json();
+    const orders = oData?.data || [];
+    if (orders.length === 0) return null;
+    const matched = orderNumber ? orders.find((o: any) => String(o.numero) === String(orderNumber)) : null;
+    const candidates = matched ? [matched] : orders.slice(0, 3);
+    for (const ord of candidates) {
+      const dRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${ord.id}`, { headers: auth() });
+      if (!dRes.ok) continue;
+      const d = (await dRes.json())?.data;
+      if (!d) continue;
+      let code = d.transporte?.volumes?.[0]?.codigoRastreamento || null;
+      let carrier = d.transporte?.contato?.nome || null;
+      if (!code && d.notaFiscal?.id) {
+        try {
+          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, { headers: auth() });
+          if (nfeRes.ok) {
+            const nfe = (await nfeRes.json())?.data;
+            code = nfe?.transporte?.volumes?.[0]?.codigoRastreamento || code;
+            if (!carrier) carrier = nfe?.transporte?.transportador?.nome || null;
+          }
+        } catch (_e) {}
+      }
+      if (!code) {
+        try {
+          const lRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${ord.id}/logistica`, { headers: auth() });
+          if (lRes.ok) {
+            const li = ((await lRes.json())?.data || [])[0];
+            code = li?.codigoRastreamento || li?.rastreamento?.codigo || code;
+          }
+        } catch (_e) {}
+      }
+      if (code) return { tracking_code: code, carrier };
+    }
+    return null;
+  } catch (e) { console.error("[executor] fetchBlingTracking error:", e); return null; }
+}
+
+
 
 function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
   const { customer, order, campaign, tenantId } = ctx;

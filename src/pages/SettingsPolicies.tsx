@@ -287,6 +287,42 @@ export default function SettingsPolicies() {
                 <Button onClick={addBlock}><Plus className="w-4 h-4 mr-1" />Adicionar</Button>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Canal</TableHead>
+                      <TableHead>Identificador</TableHead>
+                      <TableHead>Motivo</TableHead>
+                      <TableHead>Adicionado em</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(blocklist || []).map(b => (
+                      <TableRow key={b.id}>
+                        <TableCell><Badge variant="outline">{b.channel}</Badge></TableCell>
+                        <TableCell className="font-mono text-xs">{b.identifier}</TableCell>
+                        <TableCell><Badge variant="secondary">{b.reason}</Badge></TableCell>
+                        <TableCell className="text-xs">{localeSP(new Date(b.created_at))}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => removeBlock(b.id)}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(blocklist || []).length === 0 && (
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum contato bloqueado</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="sla" className="space-y-4">
             <Card>
               <CardHeader>
@@ -342,40 +378,6 @@ export default function SettingsPolicies() {
                 {saveSlaMutation.isPending ? "Salvando..." : "Salvar SLA"}
               </Button>
             </div>
-          </TabsContent>
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Canal</TableHead>
-                      <TableHead>Identificador</TableHead>
-                      <TableHead>Motivo</TableHead>
-                      <TableHead>Adicionado em</TableHead>
-                      <TableHead className="w-12"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(blocklist || []).map(b => (
-                      <TableRow key={b.id}>
-                        <TableCell><Badge variant="outline">{b.channel}</Badge></TableCell>
-                        <TableCell className="font-mono text-xs">{b.identifier}</TableCell>
-                        <TableCell><Badge variant="secondary">{b.reason}</Badge></TableCell>
-                        <TableCell className="text-xs">{localeSP(new Date(b.created_at))}</TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="icon" onClick={() => removeBlock(b.id)}>
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {(blocklist || []).length === 0 && (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum contato bloqueado</TableCell></TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
       </div>

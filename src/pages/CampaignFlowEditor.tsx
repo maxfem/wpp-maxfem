@@ -279,6 +279,8 @@ function FlowEditorInner() {
           onStoChange={setStoEnabled}
           isAbTest={isAbTest}
           onAbTestChange={setIsAbTest}
+          isSandbox={isSandbox}
+          onSandboxChange={setIsSandbox}
         />
 
         <div className="flex-1" ref={reactFlowWrapper}>

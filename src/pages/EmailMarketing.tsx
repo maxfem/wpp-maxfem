@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus, TrendingUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Mail, Send, RefreshCw, Activity, Inbox, ShieldCheck, Ban, AlertTriangle, CheckCircle2, Trash2, Plus, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
@@ -346,29 +347,33 @@ const KpiCard = ({ icon, label, value, hint, positive, negative, warn }: any) =>
 // ============== LOGS TAB ==============
 const LogsTab = ({ tenantId }: { tenantId?: string }) => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
-  const { data: logs, isLoading, refetch } = useQuery({
-    queryKey: ["email-logs", tenantId, statusFilter],
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["email-logs", tenantId, statusFilter, page, pageSize],
     queryFn: async () => {
-      if (!tenantId) return [];
+      if (!tenantId) return { rows: [], count: 0 };
+      
       let q = supabase
         .from("email_logs")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
-        .limit(100);
+        .range(page * pageSize, (page + 1) * pageSize - 1);
 
       if (statusFilter !== "all") q = q.eq("status", statusFilter);
-      const { data, error } = await q;
+      
+      const { data, error, count } = await q;
       if (error) throw error;
       const rows = data || [];
 
-      // Buscar conversões de campaign_activities em paralelo (sem FK direto)
+      // Buscar conversões de campaign_activities em paralelo
       const pairs = rows
         .filter((r: any) => r.campaign_id && r.customer_id)
         .map((r: any) => ({ c: r.campaign_id, u: r.customer_id }));
 
-      if (pairs.length === 0) return rows.map((r: any) => ({ ...r, activity: null }));
+      if (pairs.length === 0) return { rows: rows.map((r: any) => ({ ...r, activity: null })), count: count || 0 };
 
       const campaignIds = Array.from(new Set(pairs.map(p => p.c)));
       const customerIds = Array.from(new Set(pairs.map(p => p.u)));
@@ -379,18 +384,25 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
         .in("campaign_id", campaignIds)
         .in("customer_id", customerIds);
 
-      const map = new Map<string, any>();
+      const actMap = new Map<string, any>();
       (acts || []).forEach((a: any) => {
-        map.set(`${a.campaign_id}:${a.customer_id}`, a);
+        actMap.set(`${a.campaign_id}:${a.customer_id}`, a);
       });
 
-      return rows.map((r: any) => ({
-        ...r,
-        activity: r.campaign_id && r.customer_id ? map.get(`${r.campaign_id}:${r.customer_id}`) || null : null,
-      }));
+      return {
+        rows: rows.map((r: any) => ({
+          ...r,
+          activity: r.campaign_id && r.customer_id ? actMap.get(`${r.campaign_id}:${r.customer_id}`) || null : null,
+        })),
+        count: count || 0
+      };
     },
     enabled: !!tenantId,
   });
+
+  const logs = data?.rows || [];
+  const totalCount = data?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
 
 
   const statusBadge = (s: string) => {
@@ -415,9 +427,20 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
             <CardTitle>Histórico de Envios</CardTitle>
             <CardDescription>Todos os e-mails enviados via SES com status atual</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setPage(0); }}>
+              <SelectTrigger className="h-8 w-20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 20, 30, 40, 50].map(v => (
+                  <SelectItem key={v} value={v.toString()}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {["all", "sent", "delivered", "bounced", "complained", "rejected"].map(s => (
-              <Button key={s} size="sm" variant={statusFilter === s ? "default" : "outline"} onClick={() => setStatusFilter(s)}>
+              <Button key={s} size="sm" variant={statusFilter === s ? "default" : "outline"} onClick={() => { setStatusFilter(s); setPage(0); }}>
                 {s === "all" ? "Todos" : s}
               </Button>
             ))}
@@ -468,11 +491,40 @@ const LogsTab = ({ tenantId }: { tenantId?: string }) => {
               }) : (
                 <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum envio encontrado.</TableCell></TableRow>
               )}
-
             </TableBody>
           </Table>
         )}
       </CardContent>
+      {totalPages > 1 && (
+        <CardFooter className="flex items-center justify-between border-t py-4">
+          <div className="text-sm text-muted-foreground">
+            Mostrando {page * pageSize + 1} a {Math.min((page + 1) * pageSize, totalCount)} de {totalCount} envios
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-sm font-medium">
+              Página {page + 1} de {totalPages}
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardFooter>
+      )}
     </Card>
   );
 };

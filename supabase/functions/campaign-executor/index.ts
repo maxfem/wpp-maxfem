@@ -630,6 +630,27 @@ async function processAutomationQueue(supabase: any) {
             const { data: customer } = await supabase.from("customers")
               .select("id, name, email, custom_attributes").eq("id", item.customer_id).single();
 
+            // --- A/B Content Overrides ---
+            if (abVariantId) {
+              const variant = (campaign.ab_test_config as any)?.variants?.find((v: any) => v.id === abVariantId);
+              if (variant?.content_overrides) {
+                if (variant.content_overrides.subject) subject = variant.content_overrides.subject;
+                if (variant.content_overrides.body) bodyHtml = variant.content_overrides.body;
+                if (variant.content_overrides.template) {
+                   // If variant defines a different template
+                   const { data: vTpl } = await supabase.from("email_templates")
+                    .select("subject, body_html")
+                    .eq("name", variant.content_overrides.template)
+                    .eq("tenant_id", campaign.tenant_id)
+                    .maybeSingle();
+                  if (vTpl) {
+                    subject = vTpl.subject;
+                    bodyHtml = vTpl.body_html;
+                  }
+                }
+              }
+            }
+
             if (!customer?.email || !bodyHtml) {
               const reason = !customer?.email ? "missing email" : "missing content";
               console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);

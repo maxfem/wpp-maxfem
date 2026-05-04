@@ -19,6 +19,9 @@ export interface Message {
   ig_account_id?: string | null;
   ig_user_id?: string | null;
   username?: string | null;
+  assigned_to?: string | null;
+  ticket_status?: string | null;
+  ab_variant_id?: string | null;
 }
 
 export interface Conversation {

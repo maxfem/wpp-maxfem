@@ -1034,6 +1034,7 @@ async function processAutomationQueue(supabase: any) {
                 tenant_id: campaign.tenant_id, customer_id: customer.id, phone,
                 direction: "outbound", message_type: "template", template_name: templateName,
                 wamid: waData.messages[0].id, status: "sent", content: `[Automação: ${templateName}]`,
+                ab_variant_id: abVariantId
               });
               await supabase.from("campaign_activities").insert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,

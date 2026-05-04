@@ -175,6 +175,7 @@ export default function SettingsPolicies() {
           <TabsList>
             <TabsTrigger value="frequency"><Clock className="w-4 h-4 mr-2" />Frequência & Horário</TabsTrigger>
             <TabsTrigger value="blocklist"><Ban className="w-4 h-4 mr-2" />Lista de Bloqueio ({blocklist?.length || 0})</TabsTrigger>
+            <TabsTrigger value="sla"><MessageSquareMore className="w-4 h-4 mr-2" />SLA de Atendimento</TabsTrigger>
           </TabsList>
 
           <TabsContent value="frequency" className="space-y-4">

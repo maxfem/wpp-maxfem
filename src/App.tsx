@@ -42,6 +42,7 @@ const PixelDashboard = lazy(() => import("./pages/PixelDashboard"));
 const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
 const Popups = lazy(() => import("./pages/Popups"));
 const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
+const PredictiveAnalytics = lazy(() => import("./pages/PredictiveAnalytics"));
 
 const queryClient = new QueryClient();
 

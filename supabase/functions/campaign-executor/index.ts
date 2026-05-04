@@ -1156,9 +1156,13 @@ async function processAutomationQueue(supabase: any) {
 async function processScheduledCampaigns(supabase: any) {
   const results: any[] = [];
 
+  // Pick up freshly scheduled campaigns AND any that got stuck in "sending"
+  // (likely because a previous run hit the edge function timeout). The
+  // upsert on campaign_activities ensures we won't re-send to customers
+  // already processed.
   const { data: campaigns, error: campErr } = await supabase
     .from("campaigns").select("*")
-    .eq("kind", "campaign").eq("status", "scheduled")
+    .eq("kind", "campaign").in("status", ["scheduled", "sending"])
     .lte("scheduled_at", new Date().toISOString());
 
   if (campErr) { console.error("Error fetching campaigns:", campErr); return results; }

@@ -3,9 +3,8 @@ import { supabaseAdmin } from "../lib/audit.ts";
 import { checkScope } from "../auth.ts";
 
 export function registerTemplateTools(server: McpServer) {
-  server.tool({
-    name: "list_message_templates",
-    description: "List all WhatsApp or Email templates.",
+  server.tool("list_message_templates", {
+        description: "List all WhatsApp or Email templates.",
     inputSchema: {
       type: "object",
       properties: {
@@ -32,9 +31,8 @@ export function registerTemplateTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "create_whatsapp_template",
-    description: "Create a new WhatsApp template and submit to Meta for approval.",
+  server.tool("create_whatsapp_template", {
+        description: "Create a new WhatsApp template and submit to Meta for approval.",
     inputSchema: {
       type: "object",
       properties: {

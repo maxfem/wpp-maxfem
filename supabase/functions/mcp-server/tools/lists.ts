@@ -3,9 +3,8 @@ import { supabaseAdmin } from "../lib/audit.ts";
 import { checkScope } from "../auth.ts";
 
 export function registerListTools(server: McpServer) {
-  server.tool({
-    name: "list_contact_lists",
-    description: "Get all contact lists for the tenant.",
+  server.tool("list_contact_lists", {
+        description: "Get all contact lists for the tenant.",
     inputSchema: {
       type: "object",
       properties: {
@@ -25,9 +24,8 @@ export function registerListTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "create_contact_list",
-    description: "Create a new contact list (manual or dynamic).",
+  server.tool("create_contact_list", {
+        description: "Create a new contact list (manual or dynamic).",
     inputSchema: {
       type: "object",
       properties: {

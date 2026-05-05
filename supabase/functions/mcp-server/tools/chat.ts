@@ -3,9 +3,8 @@ import { supabaseAdmin } from "../lib/audit.ts";
 import { checkScope } from "../auth.ts";
 
 export function registerChatTools(server: McpServer) {
-  server.tool({
-    name: "list_conversations",
-    description: "List recent chat conversations from WhatsApp/Instagram.",
+  server.tool("list_conversations", {
+        description: "List recent chat conversations from WhatsApp/Instagram.",
     inputSchema: {
       type: "object",
       properties: {
@@ -25,9 +24,8 @@ export function registerChatTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "send_whatsapp_message",
-    description: "Send a WhatsApp message to a customer. Respects 24h window.",
+  server.tool("send_whatsapp_message", {
+        description: "Send a WhatsApp message to a customer. Respects 24h window.",
     inputSchema: {
       type: "object",
       properties: {

@@ -111,6 +111,8 @@ export default function SettingsMCP() {
           </Card>
         </div>
 
+        <EndpointTester />
+
         <Tabs defaultValue="keys" className="w-full">
           <TabsList>
             <TabsTrigger value="keys">API Keys</TabsTrigger>

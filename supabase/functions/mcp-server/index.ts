@@ -43,35 +43,41 @@ mcpServer.tool("whoami", {
 });
 
 const transport = new StreamableHttpTransport();
+const handleMcp = transport.bind(mcpServer);
 
 app.all("/*", mcpAuthMiddleware, async (c) => {
   const startTime = Date.now();
-  
-  // Custom context for mcp-lite handlers
+
   const mcpContext = {
     tenant_id: c.get("tenant_id"),
     api_key_id: c.get("api_key_id"),
-    scopes: c.get("scopes")
+    scopes: c.get("scopes"),
   };
 
-  // We need to intercept tool calls for logging
-  // mcp-lite doesn't have a direct middleware for tool calls, 
-  // so we'll log based on the request body if it's a call
-  const body = await c.req.json();
-  
-  const response = await transport.handleRequest(c.req.raw, mcpServer, mcpContext);
-  
-  // Post-call logging (non-blocking)
-  if (body?.method === "tools/call") {
+  // Clone so we can both forward the raw request and inspect body for logging
+  let bodyForLog: any = null;
+  let forwardedReq = c.req.raw;
+  if (c.req.method === "POST") {
+    const text = await c.req.raw.clone().text();
+    try { bodyForLog = JSON.parse(text); } catch { /* ignore */ }
+    forwardedReq = new Request(c.req.raw.url, {
+      method: c.req.raw.method,
+      headers: c.req.raw.headers,
+      body: text,
+    });
+  }
+
+  const response = await handleMcp(forwardedReq, { context: mcpContext });
+
+  if (bodyForLog?.method === "tools/call") {
     const duration = Date.now() - startTime;
-    // Log asynchronously
     logMcpCall({
       tenant_id: mcpContext.tenant_id,
       api_key_id: mcpContext.api_key_id,
-      tool_name: body.params.name,
-      arguments: body.params.arguments,
+      tool_name: bodyForLog.params?.name,
+      arguments: bodyForLog.params?.arguments,
       status: response.status === 200 ? "success" : "error",
-      duration_ms: duration
+      duration_ms: duration,
     }).catch(console.error);
   }
 

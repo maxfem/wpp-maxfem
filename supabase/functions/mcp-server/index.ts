@@ -20,6 +20,9 @@ const mcpServer = new McpServer({
 // Register all tools
 registerCustomerTools(mcpServer);
 registerCampaignTools(mcpServer);
+registerListTools(mcpServer);
+registerTemplateTools(mcpServer);
+registerChatTools(mcpServer);
 
 // Define basic system tools directly
 mcpServer.tool({

@@ -44,6 +44,7 @@ const Popups = lazy(() => import("./pages/Popups"));
 const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
 const PredictiveAnalytics = lazy(() => import("./pages/PredictiveAnalytics"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
+const SettingsMCP = lazy(() => import("./pages/SettingsMCP"));
 
 const queryClient = new QueryClient();
 

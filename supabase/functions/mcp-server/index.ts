@@ -68,7 +68,13 @@ app.all("/*", mcpAuthMiddleware, async (c) => {
     });
   }
 
-  const response = await handleMcp(forwardedReq, { context: mcpContext });
+  const response = await handleMcp(forwardedReq, {
+    authInfo: {
+      token: c.req.header("X-MCP-Key") ?? "",
+      scopes: Array.isArray(mcpContext.scopes) ? mcpContext.scopes : [],
+      extra: mcpContext,
+    },
+  });
 
   if (bodyForLog?.method === "tools/call") {
     const duration = Date.now() - startTime;

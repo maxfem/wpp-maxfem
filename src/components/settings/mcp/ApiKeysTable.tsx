@@ -72,9 +72,9 @@ export function ApiKeysTable({ keys, onRefresh }: { keys: any[], onRefresh: () =
                   )}
                 </div>
               </TableCell>
-              <TableCell className="text-xs">{formatSP(new Date(key.created_at))}</TableCell>
+              <TableCell className="text-xs">{formatSP(new Date(key.created_at), "dd/MM/yyyy HH:mm")}</TableCell>
               <TableCell className="text-xs">
-                {key.last_used_at ? formatSP(new Date(key.last_used_at)) : "-"}
+                {key.last_used_at ? formatSP(new Date(key.last_used_at), "dd/MM/yyyy HH:mm") : "-"}
               </TableCell>
               <TableCell>
                 {key.revoked_at ? (

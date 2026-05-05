@@ -16,6 +16,7 @@ import {
   Radar,
   Layout,
   ShieldCheck,
+  Terminal,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
@@ -61,6 +62,7 @@ const executeItems = [
   { title: "E-mail Marketing", url: "/email-marketing", icon: Mail },
   { title: "Pixel", url: "/pixel", icon: Radar },
   { title: "Auditoria", url: "/settings/audit", icon: ShieldCheck },
+  { title: "Conexões MCP", url: "/settings/mcp", icon: Terminal },
 ];
 
 const manageItems = [

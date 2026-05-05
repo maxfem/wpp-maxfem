@@ -1517,6 +1517,107 @@ export type Database = {
           },
         ]
       }
+      mcp_api_keys: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          key_hash: string
+          key_prefix: string
+          last_used_at: string | null
+          name: string
+          revoked_at: string | null
+          scopes: Json | null
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          key_hash: string
+          key_prefix: string
+          last_used_at?: string | null
+          name: string
+          revoked_at?: string | null
+          scopes?: Json | null
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          key_hash?: string
+          key_prefix?: string
+          last_used_at?: string | null
+          name?: string
+          revoked_at?: string | null
+          scopes?: Json | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mcp_api_keys_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mcp_call_logs: {
+        Row: {
+          api_key_id: string | null
+          arguments: Json | null
+          created_at: string | null
+          duration_ms: number | null
+          id: string
+          result_summary: string | null
+          status: string | null
+          tenant_id: string
+          tool_name: string
+        }
+        Insert: {
+          api_key_id?: string | null
+          arguments?: Json | null
+          created_at?: string | null
+          duration_ms?: number | null
+          id?: string
+          result_summary?: string | null
+          status?: string | null
+          tenant_id: string
+          tool_name: string
+        }
+        Update: {
+          api_key_id?: string | null
+          arguments?: Json | null
+          created_at?: string | null
+          duration_ms?: number | null
+          id?: string
+          result_summary?: string | null
+          status?: string | null
+          tenant_id?: string
+          tool_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mcp_call_logs_api_key_id_fkey"
+            columns: ["api_key_id"]
+            isOneToOne: false
+            referencedRelation: "mcp_api_keys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mcp_call_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           body: string
@@ -2623,6 +2724,15 @@ export type Database = {
         Returns: undefined
       }
       sync_rfm_lists: { Args: { _tenant_id: string }; Returns: undefined }
+      verify_mcp_key: {
+        Args: { p_key_hash: string }
+        Returns: {
+          api_key_id: string
+          is_valid: boolean
+          scopes: Json
+          tenant_id: string
+        }[]
+      }
     }
     Enums: {
       app_role:

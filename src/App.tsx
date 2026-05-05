@@ -116,6 +116,7 @@ const App = () => (
                    <Route path="/settings/collaborators" element={<ProtectedRoute><SettingsCollaborators /></ProtectedRoute>} />
                    <Route path="/settings/policies" element={<ProtectedRoute><SettingsPolicies /></ProtectedRoute>} />
                    <Route path="/settings/audit" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
+                   <Route path="/settings/mcp" element={<ProtectedRoute><SettingsMCP /></ProtectedRoute>} />
                    <Route path="/settings/auditoria" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
                    <Route path="/auditoria" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
                    <Route path="/preferences/:token" element={<PreferenceCenter />} />

@@ -28,15 +28,16 @@ registerChatTools(mcpServer);
 mcpServer.tool("whoami", {
     description: "Identity check for the current MCP session.",
   inputSchema: { type: "object", properties: {} },
-  handler: async (_, context: any) => {
+  handler: async (_args: any, ctx: any) => {
+    const extra = ctx?.authInfo?.extra ?? {};
     return {
-      content: [{ 
-        type: "text", 
-        text: JSON.stringify({ 
-          tenant_id: context.tenant_id, 
-          scopes: context.scopes,
-          api_key_id: context.api_key_id
-        }, null, 2) 
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          tenant_id: extra.tenant_id ?? null,
+          scopes: extra.scopes ?? [],
+          api_key_id: extra.api_key_id ?? null,
+        }, null, 2)
       }]
     };
   }

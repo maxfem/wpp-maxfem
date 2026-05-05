@@ -6,6 +6,9 @@ import { logMcpCall } from "./lib/audit.ts";
 // Import tool registers
 import { registerCustomerTools } from "./tools/customers.ts";
 import { registerCampaignTools } from "./tools/campaigns.ts";
+import { registerListTools } from "./tools/lists.ts";
+import { registerTemplateTools } from "./tools/templates.ts";
+import { registerChatTools } from "./tools/chat.ts";
 
 const app = new Hono();
 

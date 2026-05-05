@@ -12,7 +12,7 @@ export function registerListTools(server: McpServer) {
       }
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("lists:read", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       let query = supabaseAdmin.from("contact_lists").select("*").eq("tenant_id", tenant_id);
@@ -37,7 +37,7 @@ export function registerListTools(server: McpServer) {
       required: ["name"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("lists:write", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       const { data, error } = await supabaseAdmin.from("contact_lists").insert({

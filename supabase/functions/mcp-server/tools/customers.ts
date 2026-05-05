@@ -16,7 +16,7 @@ export function registerCustomerTools(server: McpServer) {
       }
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("customers:read", scopes)) {
         return { content: [{ type: "text", text: "Error: Forbidden. Missing 'customers:read' scope." }], isError: true };
       }
@@ -58,7 +58,7 @@ export function registerCustomerTools(server: McpServer) {
       required: ["customer_id"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("customers:read", scopes)) {
         return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
       }

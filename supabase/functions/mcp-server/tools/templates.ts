@@ -13,7 +13,7 @@ export function registerTemplateTools(server: McpServer) {
       }
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("templates:read", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       if (args.channel === "whatsapp") {
@@ -44,7 +44,7 @@ export function registerTemplateTools(server: McpServer) {
       required: ["name", "category", "body"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("templates:write", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       // In a real app, we'd call the whatsapp-template Edge Function here

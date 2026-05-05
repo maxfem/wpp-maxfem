@@ -13,7 +13,7 @@ export function registerChatTools(server: McpServer) {
       }
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("chat:read", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       let query = supabaseAdmin.from("customers").select("id, name, phone, email, last_interaction_at").eq("tenant_id", tenant_id).not("last_interaction_at", "is", null);
@@ -36,7 +36,7 @@ export function registerChatTools(server: McpServer) {
       required: ["phone"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("chat:write", scopes)) return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
 
       // Reusing whatsapp-send logic via internal call or DB queue

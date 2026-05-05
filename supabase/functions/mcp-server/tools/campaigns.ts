@@ -14,7 +14,7 @@ export function registerCampaignTools(server: McpServer) {
       }
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("campaigns:read", scopes)) {
         return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
       }
@@ -48,7 +48,7 @@ export function registerCampaignTools(server: McpServer) {
       required: ["name", "type"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("campaigns:write", scopes)) {
         return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
       }
@@ -82,7 +82,7 @@ export function registerCampaignTools(server: McpServer) {
       required: ["campaign_id"]
     },
     handler: async (args, context: any) => {
-      const { tenant_id, scopes } = context;
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
       if (!checkScope("campaigns:read", scopes)) {
         return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
       }

@@ -16,6 +16,7 @@ import {
   Radar,
   Layout,
   ShieldCheck,
+  Terminal,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";

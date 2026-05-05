@@ -167,7 +167,6 @@ async function wrapHtmlLinks(
   let match;
   let newHtml = html;
   
-  // To avoid issues with multiple replacements changing indices, we'll collect matches first
   const replacements: { original: string; wrapped: string }[] = [];
   
   while ((match = urlRegex.exec(html)) !== null) {
@@ -179,13 +178,21 @@ async function wrapHtmlLinks(
     if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!) && !isResource) {
       const code = generateCode(10);
       
+      // Append UTM parameters to the original URL
+      const utmUrl = new URL(originalUrl);
+      utmUrl.searchParams.set("utm_source", "email");
+      utmUrl.searchParams.set("utm_medium", "automation");
+      utmUrl.searchParams.set("utm_campaign", ctx.campaignName.replace(/\s+/g, "_").toLowerCase());
+      
+      const finalOriginalUrl = utmUrl.toString();
+
       // Store in tracked_links
       await supabase.from("tracked_links").insert({
         tenant_id: ctx.tenantId,
         campaign_id: ctx.campaignId,
         customer_id: ctx.customerId,
         code,
-        original_url: originalUrl,
+        original_url: finalOriginalUrl,
         utm_source: "email",
         utm_medium: "automation",
         utm_campaign: ctx.campaignName,
@@ -1373,9 +1380,15 @@ async function processScheduledCampaigns(supabase: any) {
               const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
               if (dynamicUrl) {
                 const code = generateCode(10);
+                const utmUrl = new URL(dynamicUrl);
+                utmUrl.searchParams.set("utm_source", "whatsapp");
+                utmUrl.searchParams.set("utm_medium", "campaign");
+                utmUrl.searchParams.set("utm_campaign", campaign.name.replace(/\s+/g, "_").toLowerCase());
+                const finalDynamicUrl = utmUrl.toString();
+
                 await supabase.from("tracked_links").insert({
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
+                  original_url: finalDynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
                 });
                 buttonUrlCode = code;
               }

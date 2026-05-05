@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateKeyDialog } from "@/components/settings/mcp/CreateKeyDialog";
 import { ApiKeysTable } from "@/components/settings/mcp/ApiKeysTable";
 import { CallLogsTable } from "@/components/settings/mcp/CallLogsTable";
+import { EndpointTester } from "@/components/settings/mcp/EndpointTester";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bot, Info, Terminal, Code } from "lucide-react";

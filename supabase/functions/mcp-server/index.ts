@@ -25,9 +25,8 @@ registerTemplateTools(mcpServer);
 registerChatTools(mcpServer);
 
 // Define basic system tools directly
-mcpServer.tool({
-  name: "whoami",
-  description: "Identity check for the current MCP session.",
+mcpServer.tool("whoami", {
+    description: "Identity check for the current MCP session.",
   inputSchema: { type: "object", properties: {} },
   handler: async (_, context: any) => {
     return {

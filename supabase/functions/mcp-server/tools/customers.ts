@@ -3,9 +3,8 @@ import { supabaseAdmin } from "../lib/audit.ts";
 import { checkScope } from "../auth.ts";
 
 export function registerCustomerTools(server: McpServer) {
-  server.tool({
-    name: "search_customers",
-    description: "Search for customers in the CRM using various filters.",
+  server.tool("search_customers", {
+        description: "Search for customers in the CRM using various filters.",
     inputSchema: {
       type: "object",
       properties: {
@@ -49,9 +48,8 @@ export function registerCustomerTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "get_customer_360",
-    description: "Get full 360 view of a customer including orders and chat activities.",
+  server.tool("get_customer_360", {
+        description: "Get full 360 view of a customer including orders and chat activities.",
     inputSchema: {
       type: "object",
       properties: {

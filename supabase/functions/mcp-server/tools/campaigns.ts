@@ -3,9 +3,8 @@ import { supabaseAdmin } from "../lib/audit.ts";
 import { checkScope } from "../auth.ts";
 
 export function registerCampaignTools(server: McpServer) {
-  server.tool({
-    name: "list_campaigns",
-    description: "List marketing campaigns with status and basic metrics.",
+  server.tool("list_campaigns", {
+        description: "List marketing campaigns with status and basic metrics.",
     inputSchema: {
       type: "object",
       properties: {
@@ -35,9 +34,8 @@ export function registerCampaignTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "create_campaign",
-    description: "Create a new draft campaign.",
+  server.tool("create_campaign", {
+        description: "Create a new draft campaign.",
     inputSchema: {
       type: "object",
       properties: {
@@ -74,9 +72,8 @@ export function registerCampaignTools(server: McpServer) {
     }
   });
 
-  server.tool({
-    name: "get_campaign_report",
-    description: "Get detailed analytics and performance metrics for a specific campaign.",
+  server.tool("get_campaign_report", {
+        description: "Get detailed analytics and performance metrics for a specific campaign.",
     inputSchema: {
       type: "object",
       properties: {

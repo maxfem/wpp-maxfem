@@ -1,0 +1,1 @@
+UPDATE public.mcp_api_keys SET revoked_at = now() WHERE id = '310f6b4c-8a83-4dea-acfd-d86881a4d445'

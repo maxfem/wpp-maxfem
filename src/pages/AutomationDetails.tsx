@@ -247,6 +247,16 @@ export default function AutomationDetails() {
               Criada em {formatSP(campaign.created_at, "dd/MM/yyyy 'às' HH:mm")}
             </p>
           </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => triggerNow.mutate()}
+            disabled={triggerNow.isPending || campaign.status !== "running"}
+            title={campaign.status !== "running" ? "Ative a automação para processar" : "Processa imediatamente os itens pendentes"}
+          >
+            <Play className="h-4 w-4 mr-2" />
+            {triggerNow.isPending ? "Processando..." : `Processar fila${pendingCount ? ` (${pendingCount})` : ""}`}
+          </Button>
           {pendingCount > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>

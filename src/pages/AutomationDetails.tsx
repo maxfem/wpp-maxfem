@@ -25,7 +25,7 @@ import {
 import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
-  ChevronLeft, ChevronRight, Trash2,
+  ChevronLeft, ChevronRight, Trash2, Play,
 } from "lucide-react";
 import { formatSP, toSaoPaulo } from "@/lib/utils";
 import { toast } from "sonner";

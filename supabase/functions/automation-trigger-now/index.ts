@@ -102,28 +102,33 @@ Deno.serve(async (req) => {
     if (campaignId) updateQuery = updateQuery.eq("campaign_id", campaignId);
     await updateQuery;
 
-    // Invoke campaign-executor with service-role JWT
-    const execRes = await fetch(`${SUPABASE_URL}/functions/v1/campaign-executor`, {
+    // Invoke campaign-executor asynchronously so this trigger returns 200 quickly.
+    const executorPayload = campaignId
+      ? { trigger: "manual", campaign_id: campaignId }
+      : { trigger: "manual", tenant_id: tenantId };
+    const execPromise = fetch(`${SUPABASE_URL}/functions/v1/campaign-executor`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(campaignId
-        ? { trigger: "manual", campaign_id: campaignId }
-        : { trigger: "manual", tenant_id: tenantId }),
+      body: JSON.stringify(executorPayload),
+    }).then(async (execRes) => {
+      const execText = await execRes.text();
+      console.log("[automation-trigger-now] campaign-executor finished", execRes.status, execText.slice(0, 1000));
+    }).catch((execErr) => {
+      console.error("[automation-trigger-now] campaign-executor failed", execErr);
     });
-    const execText = await execRes.text();
-    let execJson: unknown = execText;
-    try { execJson = JSON.parse(execText); } catch { /* keep as text */ }
+
+    (globalThis as any).EdgeRuntime?.waitUntil?.(execPromise);
 
     return new Response(JSON.stringify({
-      success: execRes.ok,
+      success: true,
       pending_before: pendingCount || 0,
-      executor_status: execRes.status,
-      executor_result: execJson,
+      executor_status: "started",
+      executor_payload: executorPayload,
     }), {
-      status: execRes.ok ? 200 : 502,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

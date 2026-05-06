@@ -440,17 +440,22 @@ function matchesFilters(node: FlowNode, triggerData: any, customer: any): boolea
 
 // ===== AUTOMATION QUEUE PROCESSOR (GRAPH WALKER) =====
 
-async function processAutomationQueue(supabase: any) {
+async function processAutomationQueue(supabase: any, filters: { campaignId?: string; tenantId?: string } = {}) {
   const results: any[] = [];
   const now = new Date().toISOString();
 
-  const { data: queueItems, error: qErr } = await supabase
+  let queueQuery = supabase
     .from("automation_queue")
     .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for, metadata")
     .eq("status", "pending")
     .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })
     .limit(100);
+
+  if (filters.campaignId) queueQuery = queueQuery.eq("campaign_id", filters.campaignId);
+  if (filters.tenantId) queueQuery = queueQuery.eq("tenant_id", filters.tenantId);
+
+  const { data: queueItems, error: qErr } = await queueQuery;
 
   if (qErr || !queueItems || queueItems.length === 0) return results;
 
@@ -1560,8 +1565,12 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    const body = await req.json().catch(() => ({}));
     const campaignResults = await processScheduledCampaigns(supabase);
-    const automationResults = await processAutomationQueue(supabase);
+    const automationResults = await processAutomationQueue(supabase, {
+      campaignId: typeof body?.campaign_id === "string" ? body.campaign_id : undefined,
+      tenantId: typeof body?.tenant_id === "string" ? body.tenant_id : undefined,
+    });
 
     if (campaignResults.length === 0 && automationResults.length === 0) {
       return new Response(JSON.stringify({ message: "No campaigns or automations to process" }), {

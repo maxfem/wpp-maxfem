@@ -1509,19 +1509,25 @@ function isRateLimited(ip: string): boolean {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Authenticate cron requests: accept service_role JWT only
+  // Authenticate: accept service_role JWT or direct match with SERVICE_ROLE_KEY env (supports new sb_secret_ format)
   const authBearer = req.headers.get("authorization")?.replace("Bearer ", "");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   if (!authBearer) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
-  // Verify it's a service_role JWT by decoding payload
-  try {
-    const payload = JSON.parse(atob(authBearer.split(".")[1]));
-    if (payload.role !== "service_role") {
-      console.log(`[auth] Rejected: role=${payload.role}, expected service_role`);
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  let authorized = false;
+  if (serviceKey && authBearer === serviceKey) {
+    authorized = true;
+  } else {
+    try {
+      const payload = JSON.parse(atob(authBearer.split(".")[1]));
+      if (payload.role === "service_role") authorized = true;
+      else console.log(`[auth] Rejected: role=${payload.role}, expected service_role`);
+    } catch {
+      // not a JWT and not equal to service key
     }
-  } catch {
+  }
+  if (!authorized) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 

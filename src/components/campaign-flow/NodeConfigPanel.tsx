@@ -325,6 +325,15 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
               placeholder="Ex: Enviar Cupom"
             />
           </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/80 mb-1.5 block px-0.5">Subtítulo (texto exibido no card)</Label>
+            <Input
+              value={(nodeData.subtitle as string) || ""}
+              onChange={(e) => handleFieldChange("subtitle", e.target.value)}
+              className="h-7 text-xs bg-muted/20 border-border/40 hover:bg-muted/30 focus:bg-background transition-colors"
+              placeholder="Deixe vazio para usar o padrão"
+            />
+          </div>
           
           <div className="h-px bg-gradient-to-r from-border/10 via-border to-border/10 my-1" />
 

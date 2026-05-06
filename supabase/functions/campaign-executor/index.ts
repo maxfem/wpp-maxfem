@@ -816,7 +816,7 @@ async function processAutomationQueue(supabase: any) {
 
             if (!templateCache.has(templateName)) {
               const { data: tpl } = await supabase.from("message_templates")
-                .select("body, header_type, header_content, sample_values, buttons")
+                .select("body, header_type, header_content, sample_values, buttons, status")
                 .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
               templateCache.set(templateName, tpl);
             }
@@ -825,7 +825,20 @@ async function processAutomationQueue(supabase: any) {
             if (!templateRecord) {
               const errMsg = `Template "${templateName}" não encontrado no banco de dados local. Sincronize os templates.`;
               console.error(`[automation] ${errMsg}`);
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
+                sent_at: new Date().toISOString(), error_message: errMsg,
+              });
+              break;
+            }
+
+            // --- Pre-flight Check: Template Status ---
+            if (templateRecord.status && templateRecord.status !== 'approved') {
+              const errMsg = `Template "${templateName}" está com status "${templateRecord.status}". Ele precisa estar "approved" na Meta para ser enviado.`;
+              console.warn(`[automation] ${errMsg}`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
@@ -1008,6 +1021,12 @@ async function processAutomationQueue(supabase: any) {
                 value: value,
               };
             });
+
+            // --- Pre-flight Check: Variable count matching ---
+            const variablesNeeded = bodyVarCount + (hasHeaderVar ? 1 : 0);
+            // variableMappings usually has all possible vars, we should check if we have enough resolved values
+            // In buildTemplateComponents, it uses resolveVariable which defaults to "-"
+            // The risk is Meta rejecting if we miss a required {{N}} index.
 
             const templatePayload = {
               messaging_product: "whatsapp", to: phone, type: "template",

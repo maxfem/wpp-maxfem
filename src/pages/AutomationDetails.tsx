@@ -25,7 +25,7 @@ import {
 import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
-  ChevronLeft, ChevronRight, Trash2,
+  ChevronLeft, ChevronRight, Trash2, Play,
 } from "lucide-react";
 import { formatSP, toSaoPaulo } from "@/lib/utils";
 import { toast } from "sonner";
@@ -80,6 +80,32 @@ export default function AutomationDetails() {
     },
     onError: () => {
       toast.error("Erro ao limpar a fila");
+    },
+  });
+
+  // Trigger queue processing now
+  const triggerNow = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("automation-trigger-now", {
+        body: { campaign_id: id! },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).message || (data as any).error);
+      return data as { pending_before?: number };
+    },
+    onSuccess: (data) => {
+      const n = data?.pending_before ?? 0;
+      toast.success(
+        n > 0
+          ? `Processamento iniciado para ${n} item(ns) da fila.`
+          : "Processamento disparado. Não havia itens pendentes."
+      );
+      queryClient.invalidateQueries({ queryKey: ["automation-queue-count", id] });
+      queryClient.invalidateQueries({ queryKey: ["automation-activities", id] });
+      queryClient.invalidateQueries({ queryKey: ["automation-metrics", id] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.message || "Erro ao iniciar processamento");
     },
   });
 
@@ -221,6 +247,16 @@ export default function AutomationDetails() {
               Criada em {formatSP(campaign.created_at, "dd/MM/yyyy 'às' HH:mm")}
             </p>
           </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => triggerNow.mutate()}
+            disabled={triggerNow.isPending || campaign.status !== "running"}
+            title={campaign.status !== "running" ? "Ative a automação para processar" : "Processa imediatamente os itens pendentes"}
+          >
+            <Play className="h-4 w-4 mr-2" />
+            {triggerNow.isPending ? "Processando..." : `Processar fila${pendingCount ? ` (${pendingCount})` : ""}`}
+          </Button>
           {pendingCount > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>

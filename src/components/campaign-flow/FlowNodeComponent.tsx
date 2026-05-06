@@ -37,7 +37,9 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
 
   // Build body text based on node type
   let bodyText = "Configurar...";
-  if (isWhatsApp && (data.template || data.templateName)) {
+  if (data.subtitle) {
+    bodyText = String(data.subtitle);
+  } else if (isWhatsApp && (data.template || data.templateName)) {
     bodyText = String(data.templateName || data.template);
   } else if (isEmail && data.emailTemplate) {
     bodyText = String(data.emailTemplate);

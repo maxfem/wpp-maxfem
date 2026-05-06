@@ -161,271 +161,254 @@ export default function SettingsWhatsApp() {
           </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Phone className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Número de telefone</CardTitle>
-                  <CardDescription>+55 21 92367-3174</CardDescription>
-                </div>
-              </div>
-              {getStatusBadge()}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {hasBlockingStatusError ? (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-                <div className="flex items-start gap-3">
-                  <TriangleAlert className="mt-0.5 h-4 w-4 text-destructive" />
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Não foi possível consultar o status do número</p>
-                      <p className="text-sm text-muted-foreground">{statusErrorMessage}</p>
+        <Tabs defaultValue="diagnostico" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="diagnostico" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Diagnóstico
+            </TabsTrigger>
+            <TabsTrigger value="configuracao" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Configuração
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="diagnostico">
+            <WhatsAppHealthDashboard />
+          </TabsContent>
+
+          <TabsContent value="configuracao" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Phone className="h-5 w-5" />
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => void refetchStatus()}>
-                      Tentar novamente
-                    </Button>
+                    <div>
+                      <CardTitle className="text-base">Número de telefone</CardTitle>
+                      <CardDescription>Status atual da conexão com Meta Cloud API</CardDescription>
+                    </div>
                   </div>
+                  {getStatusBadge()}
                 </div>
-              </div>
-            ) : phoneStatus && !statusLoading ? (
-              <div className="grid gap-4 text-sm md:grid-cols-2">
-                {phoneStatus.verified_name && (
-                  <div>
-                    <p className="text-muted-foreground">Nome verificado</p>
-                    <p className="font-medium text-foreground">{phoneStatus.verified_name}</p>
-                  </div>
-                )}
-                {phoneStatus.display_phone_number && (
-                  <div>
-                    <p className="text-muted-foreground">Número exibido</p>
-                    <p className="font-medium text-foreground">{phoneStatus.display_phone_number}</p>
-                  </div>
-                )}
-                {phoneStatus.quality_rating && (
-                  <div>
-                    <p className="text-muted-foreground">Qualidade</p>
-                    {getQualityBadge(phoneStatus.quality_rating)}
-                  </div>
-                )}
-                {phoneStatus.name_status && (
-                  <div>
-                    <p className="text-muted-foreground">Status do nome</p>
-                    <p className="font-medium text-foreground">{phoneStatus.name_status}</p>
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        {!hasBlockingStatusError && !isRegistered && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Shield className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">Registro do número</CardTitle>
-                  <CardDescription>
-                    Inscreva o número na Cloud API para habilitar envio e recebimento de mensagens.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-2 text-xs">
-                {[
-                  { key: "request_code", label: "1. Solicitar código" },
-                  { key: "verify_code", label: "2. Verificar código" },
-                  { key: "register", label: "3. Registrar" },
-                ].map((item, index) => {
-                  const isActive = step === item.key;
-                  const isDone =
-                    (item.key === "request_code" && ["verify_code", "register", "done"].includes(step)) ||
-                    (item.key === "verify_code" && ["register", "done"].includes(step)) ||
-                    (item.key === "register" && step === "done");
-
-                  return (
-                    <div key={item.key} className="flex items-center gap-2">
-                      {index > 0 && <div className="h-px w-8 bg-border" />}
-                      <div
-                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 ${
-                          isDone
-                            ? "border-primary/20 bg-primary/10 text-primary"
-                            : isActive
-                              ? "border-primary/20 bg-primary/10 text-primary"
-                              : "border-border bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {isDone ? <CheckCircle2 className="h-3 w-3" /> : null}
-                        <span>{item.label}</span>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {hasBlockingStatusError ? (
+                  <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                    <div className="flex items-start gap-3">
+                      <TriangleAlert className="mt-0.5 h-4 w-4 text-destructive" />
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Não foi possível consultar o status do número</p>
+                          <p className="text-sm text-muted-foreground">{statusErrorMessage}</p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => void refetchStatus()}>
+                          Tentar novamente
+                        </Button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-
-              {(step === "status" || step === "request_code") && (
-                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-                  <div>
-                    <h3 className="mb-1 text-sm font-medium text-foreground">Solicitar código de verificação</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Enviaremos um código para o número +55 21 92367-3174 via SMS ou ligação.
-                    </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Select value={codeMethod} onValueChange={setCodeMethod}>
-                      <SelectTrigger className="w-36">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SMS">SMS</SelectItem>
-                        <SelectItem value="VOICE">Ligação</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button onClick={() => requestCodeMutation.mutate()} disabled={requestCodeMutation.isPending}>
-                      {requestCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Solicitar código
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {step === "verify_code" && (
-                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-                  <div>
-                    <h3 className="mb-1 text-sm font-medium text-foreground">Inserir código de verificação</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Digite o código de 6 dígitos recebido via {codeMethod === "SMS" ? "SMS" : "ligação"}.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      placeholder="000000"
-                      value={verificationCode}
-                      onChange={(event) =>
-                        setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-                      }
-                      className="w-36 text-center font-mono text-lg tracking-widest"
-                      maxLength={6}
-                    />
-                    <Button
-                      onClick={() => verifyCodeMutation.mutate()}
-                      disabled={verifyCodeMutation.isPending || verificationCode.length !== 6}
-                    >
-                      {verifyCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Verificar
-                    </Button>
-                  </div>
-                  <Button variant="link" className="h-auto p-0 text-xs" onClick={() => setStep("request_code")}>
-                    Reenviar código
-                  </Button>
-                </div>
-              )}
-
-              {step === "register" && (
-                <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-                  <div>
-                    <h3 className="mb-1 text-sm font-medium text-foreground">Registrar número</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Defina um PIN de 6 dígitos para a conta; ele será usado na verificação em duas etapas.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      placeholder="PIN de 6 dígitos"
-                      value={pin}
-                      onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                      className="w-36 text-center font-mono text-lg tracking-widest"
-                      maxLength={6}
-                    />
-                    <Button onClick={() => registerMutation.mutate()} disabled={registerMutation.isPending || pin.length !== 6}>
-                      {registerMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Registrar
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {step === "done" && (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">Número registrado com sucesso</p>
-                      <p className="text-xs text-muted-foreground">
-                        O número está pronto para enviar e receber mensagens.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {!hasBlockingStatusError && isRegistered && (
-          <Card>
-            <CardContent className="py-6">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Número registrado e ativo</p>
-                  <p className="text-xs text-muted-foreground">
-                    O número está conectado à Cloud API e pronto para uso.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Connected accounts */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Smartphone className="h-5 w-5" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Números conectados</CardTitle>
-                <CardDescription>Números de WhatsApp vinculados a esta conta</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {waAccounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum número vinculado ainda.</p>
-            ) : (
-              <div className="space-y-3">
-                {waAccounts.map((account) => (
-                  <div key={account.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                    <div className="flex items-center gap-3">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
+                ) : phoneStatus && !statusLoading ? (
+                  <div className="grid gap-4 text-sm md:grid-cols-2">
+                    {phoneStatus.verified_name && (
                       <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {account.display_phone || account.phone_number_id}
+                        <p className="text-muted-foreground">Nome verificado</p>
+                        <p className="font-medium text-foreground">{phoneStatus.verified_name}</p>
+                      </div>
+                    )}
+                    {phoneStatus.display_phone_number && (
+                      <div>
+                        <p className="text-muted-foreground">Número exibido</p>
+                        <p className="font-medium text-foreground">{phoneStatus.display_phone_number}</p>
+                      </div>
+                    )}
+                    {phoneStatus.quality_rating && (
+                      <div>
+                        <p className="text-muted-foreground">Qualidade</p>
+                        {getQualityBadge(phoneStatus.quality_rating)}
+                      </div>
+                    )}
+                    {phoneStatus.name_status && (
+                      <div>
+                        <p className="text-muted-foreground">Status do nome</p>
+                        <p className="font-medium text-foreground">{phoneStatus.name_status}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {!hasBlockingStatusError && !isRegistered && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Shield className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Registro do número</CardTitle>
+                      <CardDescription>
+                        Inscreva o número na Cloud API para habilitar envio e recebimento de mensagens.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex items-center gap-2 text-xs">
+                    {[
+                      { key: "request_code", label: "1. Solicitar código" },
+                      { key: "verify_code", label: "2. Verificar código" },
+                      { key: "register", label: "3. Registrar" },
+                    ].map((item, index) => {
+                      const isActive = step === item.key;
+                      const isDone =
+                        (item.key === "request_code" && ["verify_code", "register", "done"].includes(step)) ||
+                        (item.key === "verify_code" && ["register", "done"].includes(step)) ||
+                        (item.key === "register" && step === "done");
+
+                      return (
+                        <div key={item.key} className="flex items-center gap-2">
+                          {index > 0 && <div className="h-px w-8 bg-border" />}
+                          <div
+                            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 ${
+                              isDone
+                                ? "border-primary/20 bg-primary/10 text-primary"
+                                : isActive
+                                  ? "border-primary/20 bg-primary/10 text-primary"
+                                  : "border-border bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {isDone ? <CheckCircle2 className="h-3 w-3" /> : null}
+                            <span>{item.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {(step === "status" || step === "request_code") && (
+                    <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+                      <div>
+                        <h3 className="mb-1 text-sm font-medium text-foreground">Solicitar código de verificação</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Seu número deve estar configurado na Meta Business Suite.
                         </p>
-                        {account.verified_name && (
-                          <p className="text-xs text-muted-foreground">{account.verified_name}</p>
-                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Select value={codeMethod} onValueChange={setCodeMethod}>
+                          <SelectTrigger className="w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="SMS">SMS</SelectItem>
+                            <SelectItem value="VOICE">Ligação</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button onClick={() => requestCodeMutation.mutate()} disabled={requestCodeMutation.isPending}>
+                          {requestCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Solicitar código
+                        </Button>
                       </div>
                     </div>
-                    <Badge variant={account.is_active ? "secondary" : "outline"}>
-                      {account.is_active ? "Ativo" : "Inativo"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
+                  )}
+
+                  {step === "verify_code" && (
+                    <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+                      <div>
+                        <h3 className="mb-1 text-sm font-medium text-foreground">Inserir código de verificação</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Digite o código de 6 dígitos recebido.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          placeholder="000000"
+                          value={verificationCode}
+                          onChange={(event) =>
+                            setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          className="w-36 text-center font-mono text-lg tracking-widest"
+                          maxLength={6}
+                        />
+                        <Button
+                          onClick={() => verifyCodeMutation.mutate()}
+                          disabled={verifyCodeMutation.isPending || verificationCode.length !== 6}
+                        >
+                          {verifyCodeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Verificar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === "register" && (
+                    <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+                      <div>
+                        <h3 className="mb-1 text-sm font-medium text-foreground">Registrar número</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Defina um PIN de 6 dígitos.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          placeholder="PIN de 6 dígitos"
+                          value={pin}
+                          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                          className="w-36 text-center font-mono text-lg tracking-widest"
+                          maxLength={6}
+                        />
+                        <Button onClick={() => registerMutation.mutate()} disabled={registerMutation.isPending || pin.length !== 6}>
+                          {registerMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Registrar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === "done" && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-primary" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Número registrado com sucesso</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
+
+            {waAccounts.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Smartphone className="h-5 w-5" />
+                    Números Conectados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {waAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                        <div className="flex items-center gap-3">
+                          <Phone className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm font-medium">{account.display_phone || account.phone_number_id}</p>
+                            <p className="text-xs text-muted-foreground">{account.verified_name}</p>
+                          </div>
+                        </div>
+                        {account.is_active && <Badge variant="secondary">Ativo</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

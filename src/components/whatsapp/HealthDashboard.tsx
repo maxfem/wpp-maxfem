@@ -1,55 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Activity, AlertTriangle, CheckCircle, Clock, Info, RefreshCw, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, Info, Loader2, RefreshCw, Send, XCircle, Zap } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useEffect, useRef, useState } from "react";
 
 type HealthData = {
-  account: {
-    active: boolean;
-    display_phone: string;
-    quality: string;
-    tier: string;
-    name_status: string;
-  };
-  token: {
-    valid: boolean;
-    error?: string;
-    source: string;
-  };
-  webhooks: {
-    healthy: boolean;
-  };
-  queue: {
-    pending: number;
-    oldest_pending_hours: number;
-  };
-  templates: {
-    approved: number;
-    draft: number;
-    rejected: number;
-  };
-  errors: Array<{
-    error_message: string;
-    created_at: string;
-    customer_id: string;
-  }>;
-  recommendations: Array<{
-    code: string;
-    level: "info" | "warning" | "error" | "critical";
-    message: string;
-    action: string;
-  }>;
+  account: { active: boolean; display_phone: string; quality: string; tier: string; name_status: string; };
+  token: { valid: boolean; error?: string; source: string; };
+  webhooks: { healthy: boolean; };
+  queue: { pending: number; oldest_pending_hours: number; };
+  templates: { approved: number; draft: number; rejected: number; };
+  errors: Array<{ error_message: string; created_at: string; customer_id: string; }>;
+  recommendations: Array<{ code: string; level: "info" | "warning" | "error" | "critical"; message: string; action: string; }>;
 };
 
 export function WhatsAppHealthDashboard() {
   const { currentTenant } = useAuth();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processStartedAt, setProcessStartedAt] = useState<Date | null>(null);
+  const [initialPending, setInitialPending] = useState<number | null>(null);
+  const [sentCount, setSentCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
+  const stopTimerRef = useRef<number | null>(null);
 
   const { data: health, isLoading, refetch, isRefetching } = useQuery<HealthData>({
     queryKey: ["whatsapp-health", currentTenant?.id],
@@ -61,28 +40,72 @@ export function WhatsAppHealthDashboard() {
       return data;
     },
     enabled: !!currentTenant?.id,
-    refetchInterval: 60000, // Refresh every minute
+    refetchInterval: isProcessing ? 3000 : 60000,
   });
 
-  const triggerProcessQueue = async () => {
-    toast.promise(
-      supabase.functions.invoke("automation-trigger-now", {
-        body: { tenant_id: currentTenant?.id }
-      }),
-      {
-        loading: "Disparando processamento da fila...",
-        success: "Processamento iniciado com sucesso!",
-        error: "Erro ao disparar fila."
+  // Live count of recently sent/failed during processing
+  useEffect(() => {
+    if (!isProcessing || !currentTenant?.id || !processStartedAt) return;
+    let cancelled = false;
+    const tick = async () => {
+      const sinceIso = processStartedAt.toISOString();
+      const [{ count: sent }, { count: failed }] = await Promise.all([
+        supabase.from("campaign_activities")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", currentTenant.id)
+          .eq("channel", "whatsapp")
+          .eq("status", "sent")
+          .gte("sent_at", sinceIso),
+        supabase.from("campaign_activities")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", currentTenant.id)
+          .eq("channel", "whatsapp")
+          .eq("status", "failed")
+          .gte("created_at", sinceIso),
+      ]);
+      if (!cancelled) {
+        setSentCount(sent || 0);
+        setFailedCount(failed || 0);
       }
-    );
+    };
+    tick();
+    const id = window.setInterval(tick, 3000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [isProcessing, currentTenant?.id, processStartedAt]);
+
+  // Auto-stop processing view when queue drains or after 3 minutes idle
+  useEffect(() => {
+    if (!isProcessing) return;
+    if (health?.queue.pending === 0) {
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = window.setTimeout(() => setIsProcessing(false), 5000);
+    }
+    return () => { if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current); };
+  }, [isProcessing, health?.queue.pending]);
+
+  const triggerProcessQueue = async () => {
+    if (!currentTenant?.id) return;
+    setProcessStartedAt(new Date());
+    setInitialPending(health?.queue.pending ?? 0);
+    setSentCount(0);
+    setFailedCount(0);
+    setIsProcessing(true);
+    const { error } = await supabase.functions.invoke("automation-trigger-now", {
+      body: { tenant_id: currentTenant.id }
+    });
+    if (error) {
+      toast.error("Erro ao disparar fila");
+      setIsProcessing(false);
+    } else {
+      toast.success("Processamento iniciado — acompanhe o progresso abaixo");
+      setTimeout(() => refetch(), 1500);
+    }
   };
 
   if (isLoading) {
     return (
       <Card className="animate-pulse">
-        <CardHeader>
-          <div className="h-6 w-32 bg-muted rounded" />
-        </CardHeader>
+        <CardHeader><div className="h-6 w-32 bg-muted rounded" /></CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="h-10 bg-muted rounded" />
@@ -95,6 +118,14 @@ export function WhatsAppHealthDashboard() {
 
   if (!health) return null;
 
+  const pending = health.queue.pending;
+  const processed = initialPending !== null ? Math.max(0, initialPending - pending) : 0;
+  const progressPct = initialPending && initialPending > 0
+    ? Math.min(100, (processed / initialPending) * 100)
+    : 0;
+  const elapsedSec = processStartedAt ? Math.max(1, Math.floor((Date.now() - processStartedAt.getTime()) / 1000)) : 1;
+  const ratePerMin = sentCount > 0 ? Math.round((sentCount / elapsedSec) * 60) : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -102,19 +133,77 @@ export function WhatsAppHealthDashboard() {
           <Activity className="h-5 w-5 text-primary" />
           Diagnóstico de Integração
         </h2>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => refetch()} 
-          disabled={isRefetching}
-        >
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
           Atualizar
         </Button>
       </div>
 
+      {/* Live Send Progress */}
+      {isProcessing && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Processando fila em tempo real
+              {pending === 0 && (
+                <Badge className="ml-2 bg-green-500/15 text-green-600 border-green-500/20">
+                  <CheckCircle2 className="h-3 w-3 mr-1" /> Concluído
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  {processed} de {initialPending ?? 0} processadas
+                </span>
+                <span className="font-mono font-medium">{progressPct.toFixed(0)}%</span>
+              </div>
+              <Progress value={progressPct} className="h-2" />
+            </div>
+
+            <div className="grid grid-cols-4 gap-3">
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground mb-1">
+                  <Clock className="h-3 w-3" /> Pendentes
+                </div>
+                <div className="text-xl font-bold tabular-nums">{pending}</div>
+              </div>
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground mb-1">
+                  <Send className="h-3 w-3" /> Enviadas
+                </div>
+                <div className="text-xl font-bold tabular-nums text-green-600">{sentCount}</div>
+              </div>
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground mb-1">
+                  <XCircle className="h-3 w-3" /> Falhas
+                </div>
+                <div className="text-xl font-bold tabular-nums text-red-500">{failedCount}</div>
+              </div>
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase text-muted-foreground mb-1">
+                  <Zap className="h-3 w-3" /> Taxa
+                </div>
+                <div className="text-xl font-bold tabular-nums">{ratePerMin}<span className="text-xs font-normal text-muted-foreground">/min</span></div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-muted-foreground">
+                Iniciado há {elapsedSec}s · atualiza a cada 3s
+              </span>
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setIsProcessing(false)}>
+                Ocultar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
-        {/* Status da Conta */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Status da Conta</CardTitle>
@@ -123,11 +212,9 @@ export function WhatsAppHealthDashboard() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs">Meta Token</span>
-                {health.token.valid ? (
-                  <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Válido</Badge>
-                ) : (
-                  <Badge variant="destructive">Inválido</Badge>
-                )}
+                {health.token.valid
+                  ? <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Válido</Badge>
+                  : <Badge variant="destructive">Inválido</Badge>}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs">Qualidade</span>
@@ -147,7 +234,6 @@ export function WhatsAppHealthDashboard() {
           </CardContent>
         </Card>
 
-        {/* Fila de Automação */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Fila Pendente</CardTitle>
@@ -155,10 +241,10 @@ export function WhatsAppHealthDashboard() {
           <CardContent>
             <div className="flex flex-col gap-2">
               <div className="flex items-end justify-between">
-                <span className="text-2xl font-bold">{health.queue.pending}</span>
+                <span className="text-2xl font-bold tabular-nums">{pending}</span>
                 <span className="text-xs text-muted-foreground">mensagens</span>
               </div>
-              <Progress value={Math.min(100, (health.queue.pending / 500) * 100)} className="h-1.5" />
+              <Progress value={Math.min(100, (pending / 500) * 100)} className="h-1.5" />
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Clock className="h-3 w-3" />
                 Mais antiga há {health.queue.oldest_pending_hours}h
@@ -167,7 +253,6 @@ export function WhatsAppHealthDashboard() {
           </CardContent>
         </Card>
 
-        {/* Templates HSM */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Templates HSM</CardTitle>
@@ -191,7 +276,20 @@ export function WhatsAppHealthDashboard() {
         </Card>
       </div>
 
-      {/* Recomendações Críticas */}
+      {/* Manual trigger always available when there's a pending queue */}
+      {pending > 0 && !isProcessing && (
+        <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+          <div className="flex items-center gap-2 text-sm">
+            <Send className="h-4 w-4 text-primary" />
+            <span>{pending} mensagens aguardando envio</span>
+          </div>
+          <Button size="sm" onClick={triggerProcessQueue}>
+            <Zap className="h-4 w-4 mr-2" />
+            Processar agora
+          </Button>
+        </div>
+      )}
+
       {health.recommendations.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-medium flex items-center gap-2">
@@ -210,13 +308,11 @@ export function WhatsAppHealthDashboard() {
                   <span className="text-sm">{rec.message}</span>
                 </div>
                 {rec.code === 'QUEUE_STUCK' ? (
-                  <Button size="sm" variant="outline" onClick={triggerProcessQueue}>
+                  <Button size="sm" variant="outline" onClick={triggerProcessQueue} disabled={isProcessing}>
                     {rec.action}
                   </Button>
                 ) : (
-                  <Button size="sm" variant="ghost" className="text-xs h-8">
-                    {rec.action}
-                  </Button>
+                  <Button size="sm" variant="ghost" className="text-xs h-8">{rec.action}</Button>
                 )}
               </div>
             ))}
@@ -224,7 +320,6 @@ export function WhatsAppHealthDashboard() {
         </div>
       )}
 
-      {/* Últimos Erros */}
       {health.errors.length > 0 && (
         <Card className="border-red-500/10">
           <CardHeader className="py-3">

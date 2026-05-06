@@ -77,6 +77,7 @@ export type Database = {
           created_at: string
           current_node_id: string | null
           customer_id: string | null
+          error_message: string | null
           id: string
           metadata: Json | null
           processed_at: string | null
@@ -91,6 +92,7 @@ export type Database = {
           created_at?: string
           current_node_id?: string | null
           customer_id?: string | null
+          error_message?: string | null
           id?: string
           metadata?: Json | null
           processed_at?: string | null
@@ -105,6 +107,7 @@ export type Database = {
           created_at?: string
           current_node_id?: string | null
           customer_id?: string | null
+          error_message?: string | null
           id?: string
           metadata?: Json | null
           processed_at?: string | null
@@ -2558,6 +2561,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "whatsapp_groups_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_health_events: {
+        Row: {
+          code: string
+          created_at: string | null
+          details: Json | null
+          id: string
+          level: string
+          message: string
+          resolved_at: string | null
+          tenant_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          level: string
+          message: string
+          resolved_at?: string | null
+          tenant_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          level?: string
+          message?: string
+          resolved_at?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_health_events_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

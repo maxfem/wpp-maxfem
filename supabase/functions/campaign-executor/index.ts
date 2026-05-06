@@ -1022,6 +1022,12 @@ async function processAutomationQueue(supabase: any) {
               };
             });
 
+            // --- Pre-flight Check: Variable count matching ---
+            const variablesNeeded = bodyVarCount + (hasHeaderVar ? 1 : 0);
+            // variableMappings usually has all possible vars, we should check if we have enough resolved values
+            // In buildTemplateComponents, it uses resolveVariable which defaults to "-"
+            // The risk is Meta rejecting if we miss a required {{N}} index.
+
             const templatePayload = {
               messaging_product: "whatsapp", to: phone, type: "template",
               template: {

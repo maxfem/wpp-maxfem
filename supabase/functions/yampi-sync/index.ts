@@ -470,6 +470,12 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const txStatus = tx?.status || "";
       const paymentAlias = tx?.payment?.data?.alias || "";
 
+      const itemsSummary = (o.items?.data || []).slice(0, 10).map((i: any) => ({
+        name: i.name || i.sku?.data?.title || "Produto",
+        quantity: i.quantity,
+        price: i.price,
+      }));
+
       const matchedTriggers: string[] = [];
       const isAwaitingPixOrBoleto = (isPix || isBillet) && txStatus !== "captured" && orderStatus !== "paid" && orderStatus !== "cancelled" && !["approved", "invoiced", "shipped", "on_carriage", "in_transit", "delivered"].includes(orderStatus);
       

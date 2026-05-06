@@ -825,7 +825,20 @@ async function processAutomationQueue(supabase: any) {
             if (!templateRecord) {
               const errMsg = `Template "${templateName}" não encontrado no banco de dados local. Sincronize os templates.`;
               console.error(`[automation] ${errMsg}`);
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
+                sent_at: new Date().toISOString(), error_message: errMsg,
+              });
+              break;
+            }
+
+            // --- Pre-flight Check: Template Status ---
+            if (templateRecord.status && templateRecord.status !== 'approved') {
+              const errMsg = `Template "${templateName}" está com status "${templateRecord.status}". Ele precisa estar "approved" na Meta para ser enviado.`;
+              console.warn(`[automation] ${errMsg}`);
+              await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: item.customer_id, status: "failed", channel: "whatsapp", 

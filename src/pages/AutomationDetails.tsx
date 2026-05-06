@@ -83,6 +83,32 @@ export default function AutomationDetails() {
     },
   });
 
+  // Trigger queue processing now
+  const triggerNow = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("automation-trigger-now", {
+        body: { campaign_id: id! },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).message || (data as any).error);
+      return data as { pending_before?: number };
+    },
+    onSuccess: (data) => {
+      const n = data?.pending_before ?? 0;
+      toast.success(
+        n > 0
+          ? `Processamento iniciado para ${n} item(ns) da fila.`
+          : "Processamento disparado. Não havia itens pendentes."
+      );
+      queryClient.invalidateQueries({ queryKey: ["automation-queue-count", id] });
+      queryClient.invalidateQueries({ queryKey: ["automation-activities", id] });
+      queryClient.invalidateQueries({ queryKey: ["automation-metrics", id] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.message || "Erro ao iniciar processamento");
+    },
+  });
+
   const { data: campaign, isLoading: loadingCampaign } = useQuery({
     queryKey: ["automation", id],
     queryFn: async () => {

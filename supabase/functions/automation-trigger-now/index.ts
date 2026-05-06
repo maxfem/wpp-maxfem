@@ -35,28 +35,47 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const campaignId = body?.campaign_id as string | undefined;
-    if (!campaignId) {
-      return new Response(JSON.stringify({ error: "campaign_id is required" }), {
+    const tenantIdInput = body?.tenant_id as string | undefined;
+
+    if (!campaignId && !tenantIdInput) {
+      return new Response(JSON.stringify({ error: "campaign_id or tenant_id is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: campaign, error: cErr } = await admin
-      .from("campaigns")
-      .select("id, tenant_id, status")
-      .eq("id", campaignId)
-      .single();
+    let tenantId: string;
+    let campaignIds: string[] = [];
 
-    if (cErr || !campaign) {
-      return new Response(JSON.stringify({ error: "Campaign not found" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (campaignId) {
+      const { data: campaign, error: cErr } = await admin
+        .from("campaigns")
+        .select("id, tenant_id, status")
+        .eq("id", campaignId)
+        .single();
+
+      if (cErr || !campaign) {
+        return new Response(JSON.stringify({ error: "Campaign not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (campaign.status !== "running") {
+        return new Response(JSON.stringify({
+          error: "campaign_not_running",
+          message: "A automação precisa estar Ativa para processar a fila.",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      tenantId = campaign.tenant_id;
+      campaignIds = [campaign.id];
+    } else {
+      tenantId = tenantIdInput!;
     }
 
     const { data: isMember } = await admin.rpc("is_tenant_member", {
-      _user_id: user.id, _tenant_id: campaign.tenant_id,
+      _user_id: user.id, _tenant_id: tenantId,
     });
     if (!isMember) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -64,27 +83,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (campaign.status !== "running") {
-      return new Response(JSON.stringify({
-        error: "campaign_not_running",
-        message: "A automação precisa estar Ativa para processar a fila.",
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    // Set scheduled_for=now so any future-scheduled pending items are picked up immediately
+    // Reschedule pending items to now
     const nowIso = new Date().toISOString();
-    const { count: pendingCount } = await admin
+    let pendingQuery = admin
       .from("automation_queue")
       .select("id", { count: "exact", head: true })
-      .eq("campaign_id", campaignId)
+      .eq("tenant_id", tenantId)
       .eq("status", "pending");
+    if (campaignId) pendingQuery = pendingQuery.eq("campaign_id", campaignId);
+    const { count: pendingCount } = await pendingQuery;
 
-    await admin
+    let updateQuery = admin
       .from("automation_queue")
       .update({ scheduled_for: nowIso })
-      .eq("campaign_id", campaignId)
+      .eq("tenant_id", tenantId)
       .eq("status", "pending")
       .or(`scheduled_for.is.null,scheduled_for.gt.${nowIso}`);
+    if (campaignId) updateQuery = updateQuery.eq("campaign_id", campaignId);
+    await updateQuery;
 
     // Invoke campaign-executor with service-role JWT
     const execRes = await fetch(`${SUPABASE_URL}/functions/v1/campaign-executor`, {
@@ -93,7 +109,9 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ trigger: "manual", campaign_id: campaignId }),
+      body: JSON.stringify(campaignId
+        ? { trigger: "manual", campaign_id: campaignId }
+        : { trigger: "manual", tenant_id: tenantId }),
     });
     const execText = await execRes.text();
     let execJson: unknown = execText;
@@ -108,7 +126,7 @@ Deno.serve(async (req) => {
       status: execRes.ok ? 200 : 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
+
     console.error("[automation-trigger-now] error:", err);
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },

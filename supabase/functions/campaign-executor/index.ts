@@ -816,7 +816,7 @@ async function processAutomationQueue(supabase: any) {
 
             if (!templateCache.has(templateName)) {
               const { data: tpl } = await supabase.from("message_templates")
-                .select("body, header_type, header_content, sample_values, buttons")
+                .select("body, header_type, header_content, sample_values, buttons, status")
                 .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
               templateCache.set(templateName, tpl);
             }

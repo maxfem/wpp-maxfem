@@ -37,6 +37,67 @@ registerListTools(mcpServer);
 registerTemplateTools(mcpServer);
 registerChatTools(mcpServer);
 
+mcpServer.tool("create_popup", {
+  description: "Create a website popup configuration.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      trigger: { type: "string", enum: ["page_load", "exit_intent", "scroll", "time_on_page"] },
+      trigger_value: { type: "number" },
+      pages: { type: "array", items: { type: "string" }, default: ["/*"] },
+      display_max_per_visitor: { type: "number", default: 1 },
+      content: {
+        type: "object",
+        properties: {
+          headline: { type: "string" },
+          subheadline: { type: "string" },
+          cta_text: { type: "string" },
+          cta_url: { type: "string" },
+          image_url: { type: "string" },
+          coupon_code: { type: "string" },
+          fields: { type: "array", items: { type: "string" } }
+        },
+        required: ["headline", "cta_text", "cta_url"]
+      },
+      style: { type: "object" },
+      status: { type: "string", enum: ["draft", "active"], default: "draft" },
+      starts_at: { type: "string" },
+      ends_at: { type: "string" }
+    },
+    required: ["name", "trigger", "content"]
+  },
+  handler: async (args, context: any) => {
+    const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
+    if (!checkScope("popups:write", scopes)) {
+      return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("popups")
+      .insert({
+        tenant_id,
+        name: args.name,
+        trigger: args.trigger,
+        trigger_value: args.trigger_value,
+        pages: args.pages,
+        display_max_per_visitor: args.display_max_per_visitor,
+        content: args.content,
+        style: args.style,
+        status: args.status,
+        starts_at: args.starts_at,
+        ends_at: args.ends_at
+      })
+      .select()
+      .single();
+
+    if (error) return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+
+    const embed_snippet = `<script src="https://mcp-lite.maxfem.com/pixel.js?id=${data.id}"></script>`;
+    return { content: [{ type: "text", text: JSON.stringify({ id: data.id, embed_snippet }, null, 2) }] };
+  }
+});
+
 mcpServer.tool("whoami", {
   description: "Identity check for the current MCP session.",
   inputSchema: { type: "object", properties: {} },
@@ -51,6 +112,7 @@ mcpServer.tool("whoami", {
           api_key_id: extra.api_key_id ?? null,
           server: "maxfem-crm",
           version: "1.0.0",
+          tools_count: 16,
         }, null, 2),
       }],
     };

@@ -4,7 +4,7 @@ import { checkScope } from "../auth.ts";
 
 export function registerCampaignTools(server: McpServer) {
   server.tool("list_campaigns", {
-        description: "List marketing campaigns with status and basic metrics.",
+    description: "List marketing campaigns with status and basic metrics.",
     inputSchema: {
       type: "object",
       properties: {
@@ -35,7 +35,7 @@ export function registerCampaignTools(server: McpServer) {
   });
 
   server.tool("create_campaign", {
-        description: "Create a new draft campaign.",
+    description: "Create a new draft campaign.",
     inputSchema: {
       type: "object",
       properties: {
@@ -72,8 +72,88 @@ export function registerCampaignTools(server: McpServer) {
     }
   });
 
+  server.tool("create_automation", {
+    description: "Create a new automation flow (trigger + steps).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        trigger: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["event", "schedule", "list_join", "date_field"] },
+            event_name: { type: "string" },
+            schedule_cron: { type: "string" },
+            list_id: { type: "string" },
+            date_field: { type: "string" },
+            delay_days: { type: "number" }
+          },
+          required: ["type"]
+        },
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["send_email", "send_whatsapp", "wait", "condition", "tag"] },
+              template_id: { type: "string" },
+              wait_seconds: { type: "number" },
+              condition: { type: "object" },
+              tag: { type: "string" }
+            },
+            required: ["type"]
+          }
+        },
+        status: { type: "string", enum: ["draft", "active"], default: "draft" }
+      },
+      required: ["name", "trigger", "steps"]
+    },
+    handler: async (args, context: any) => {
+      const { tenant_id, scopes } = (context?.authInfo?.extra ?? {}) as any;
+      if (!checkScope("automations:write", scopes)) {
+        return { content: [{ type: "text", text: "Error: Forbidden." }], isError: true };
+      }
+
+      // Validate template_ids in steps
+      const templateIds = args.steps
+        .filter((s: any) => s.template_id)
+        .map((s: any) => s.template_id);
+
+      if (templateIds.length > 0) {
+        const { data: templates, error: tError } = await supabaseAdmin
+          .from("message_templates")
+          .select("id")
+          .in("id", templateIds)
+          .eq("tenant_id", tenant_id);
+
+        if (tError) return { content: [{ type: "text", text: `Error validating templates: ${tError.message}` }], isError: true };
+        if ((templates?.length || 0) < templateIds.length) {
+          return { content: [{ type: "text", text: "Error: One or more template_ids are invalid or belong to another tenant." }], isError: true };
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("automations")
+        .insert({
+          tenant_id,
+          name: args.name,
+          trigger: args.trigger,
+          steps: args.steps,
+          status: args.status
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === "23505") return { content: [{ type: "text", text: `Error: Automation "${args.name}" already exists` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+      }
+      return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    }
+  });
+
   server.tool("get_campaign_report", {
-        description: "Get detailed analytics and performance metrics for a specific campaign.",
+    description: "Get detailed analytics and performance metrics for a specific campaign.",
     inputSchema: {
       type: "object",
       properties: {

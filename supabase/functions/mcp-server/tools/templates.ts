@@ -106,3 +106,4 @@ export function registerTemplateTools(server: McpServer) {
       return { content: [{ type: "text", text: `WhatsApp template created with ID: ${data.id}. Please go to the dashboard to submit to Meta.` }] };
     }
   });
+}

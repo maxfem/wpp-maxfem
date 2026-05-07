@@ -141,6 +141,42 @@ export type Database = {
           },
         ]
       }
+      automations: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          stats_total_runs: number | null
+          status: string
+          steps: Json
+          tenant_id: string
+          trigger: Json
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          stats_total_runs?: number | null
+          status?: string
+          steps: Json
+          tenant_id: string
+          trigger: Json
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          stats_total_runs?: number | null
+          status?: string
+          steps?: Json
+          tenant_id?: string
+          trigger?: Json
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       background_jobs: {
         Row: {
           created_at: string
@@ -2086,44 +2122,71 @@ export type Database = {
       popups: {
         Row: {
           contact_list_id: string | null
+          content: Json | null
           created_at: string
           design: Json | null
           design_mobile: Json | null
+          display_max_per_visitor: number | null
+          ends_at: string | null
           html: string | null
           html_mobile: string | null
           id: string
           is_active: boolean
           name: string
+          pages: string[] | null
           settings: Json | null
+          starts_at: string | null
+          status: string
+          style: Json | null
           tenant_id: string
+          trigger: string | null
+          trigger_value: number | null
           updated_at: string
         }
         Insert: {
           contact_list_id?: string | null
+          content?: Json | null
           created_at?: string
           design?: Json | null
           design_mobile?: Json | null
+          display_max_per_visitor?: number | null
+          ends_at?: string | null
           html?: string | null
           html_mobile?: string | null
           id?: string
           is_active?: boolean
           name: string
+          pages?: string[] | null
           settings?: Json | null
+          starts_at?: string | null
+          status?: string
+          style?: Json | null
           tenant_id: string
+          trigger?: string | null
+          trigger_value?: number | null
           updated_at?: string
         }
         Update: {
           contact_list_id?: string | null
+          content?: Json | null
           created_at?: string
           design?: Json | null
           design_mobile?: Json | null
+          display_max_per_visitor?: number | null
+          ends_at?: string | null
           html?: string | null
           html_mobile?: string | null
           id?: string
           is_active?: boolean
           name?: string
+          pages?: string[] | null
           settings?: Json | null
+          starts_at?: string | null
+          status?: string
+          style?: Json | null
           tenant_id?: string
+          trigger?: string | null
+          trigger_value?: number | null
           updated_at?: string
         }
         Relationships: [

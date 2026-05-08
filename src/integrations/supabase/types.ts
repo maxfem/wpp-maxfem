@@ -1664,6 +1664,7 @@ export type Database = {
           body_text: string | null
           buttons: Json | null
           category: string
+          channel: string | null
           created_at: string
           footer: string | null
           header_content: string | null
@@ -1684,6 +1685,7 @@ export type Database = {
           body_text?: string | null
           buttons?: Json | null
           category?: string
+          channel?: string | null
           created_at?: string
           footer?: string | null
           header_content?: string | null
@@ -1704,6 +1706,7 @@ export type Database = {
           body_text?: string | null
           buttons?: Json | null
           category?: string
+          channel?: string | null
           created_at?: string
           footer?: string | null
           header_content?: string | null

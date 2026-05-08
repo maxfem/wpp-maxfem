@@ -321,10 +321,15 @@ export default function MessageTemplates() {
 
   const deleteEmailMutation = useMutation({
     mutationFn: async ({ id, source }: Pick<UnifiedEmailTemplate, "id" | "source">) => {
-      const { error } = await supabase
-        .from(source)
-        .delete()
-        .eq("id", id);
+      const { error } = source === "email_templates"
+        ? await supabase
+            .from("email_templates")
+            .delete()
+            .eq("id", id)
+        : await supabase
+            .from("message_templates")
+            .delete()
+            .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {

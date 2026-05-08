@@ -300,7 +300,7 @@ export default function MessageTemplates() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success("Template excluído!");
     },
     onError: (err: Error) => {

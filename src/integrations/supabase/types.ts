@@ -1666,6 +1666,7 @@ export type Database = {
           category: string
           channel: string | null
           created_at: string
+          design: Json | null
           footer: string | null
           header_content: string | null
           header_type: string | null
@@ -1676,6 +1677,7 @@ export type Database = {
           preview_text: string | null
           sample_values: Json | null
           status: string
+          subject: string | null
           tenant_id: string
           updated_at: string
         }
@@ -1687,6 +1689,7 @@ export type Database = {
           category?: string
           channel?: string | null
           created_at?: string
+          design?: Json | null
           footer?: string | null
           header_content?: string | null
           header_type?: string | null
@@ -1697,6 +1700,7 @@ export type Database = {
           preview_text?: string | null
           sample_values?: Json | null
           status?: string
+          subject?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -1708,6 +1712,7 @@ export type Database = {
           category?: string
           channel?: string | null
           created_at?: string
+          design?: Json | null
           footer?: string | null
           header_content?: string | null
           header_type?: string | null
@@ -1718,6 +1723,7 @@ export type Database = {
           preview_text?: string | null
           sample_values?: Json | null
           status?: string
+          subject?: string | null
           tenant_id?: string
           updated_at?: string
         }

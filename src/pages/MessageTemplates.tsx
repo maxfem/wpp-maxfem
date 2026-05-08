@@ -244,23 +244,25 @@ export default function MessageTemplates() {
         body_html: values.body_html,
         category: values.category,
         design: values.design ?? null,
+        channel: 'email',
+        status: 'active'
       };
 
       if (editingEmailId) {
         const { error } = await supabase
-          .from("email_templates")
+          .from("message_templates")
           .update(payload)
           .eq("id", editingEmailId);
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from("email_templates")
+          .from("message_templates")
           .insert(payload);
         if (error) throw error;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
       setEmailDialogOpen(false);
       setEditingEmailId(null);
@@ -274,13 +276,13 @@ export default function MessageTemplates() {
   const deleteEmailMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
-        .from("email_templates")
+        .from("message_templates")
         .delete()
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success("Template de e-mail excluído!");
     },
     onError: (err: Error) => {

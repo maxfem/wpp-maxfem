@@ -225,7 +225,7 @@ export default function MessageTemplates() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success(editingId ? "Template atualizado!" : "Template criado!");
       closeDialog();
     },

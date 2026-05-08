@@ -88,6 +88,17 @@ interface TemplateForm {
   buttons: TemplateButton[];
 }
 
+type UnifiedEmailTemplate = {
+  id: string;
+  name: string;
+  subject: string | null;
+  body_html: string | null;
+  category: string | null;
+  design: Json | null;
+  created_at: string;
+  source: "message_templates" | "email_templates";
+};
+
 const emptyForm: TemplateForm = {
   name: "",
   category: "marketing",
@@ -149,6 +160,7 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editingEmailSource, setEditingEmailSource] = useState<"message_templates" | "email_templates">("message_templates");
   const [emailPreview, setEmailPreview] = useState<any | null>(null);
   const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [emailEditorMode, setEmailEditorMode] = useState<"builder" | "html" | "preview">("builder");
@@ -169,15 +181,15 @@ export default function MessageTemplates() {
   const tenantId = currentTenant?.id;
 
   // WhatsApp Queries
-  // WhatsApp & Email Queries (Merged from message_templates)
-  const { data: allTemplates = [], isLoading } = useQuery({
-    queryKey: ["all-message-templates", tenantId],
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: ["message-templates", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
       const { data, error } = await supabase
         .from("message_templates")
         .select("*")
         .eq("tenant_id", tenantId)
+        .or("channel.is.null,channel.eq.,channel.eq.whatsapp")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -185,15 +197,36 @@ export default function MessageTemplates() {
     enabled: !!tenantId,
   });
 
-  const templates = useMemo(() => 
-    allTemplates.filter(t => t.channel === "whatsapp" || !t.channel || t.channel === ""), 
-  [allTemplates]);
+  // Email Queries (new MCP templates live in message_templates; legacy UI templates live in email_templates)
+  const { data: emailTemplates = [], isLoading: isLoadingEmail } = useQuery<UnifiedEmailTemplate[]>({
+    queryKey: ["email-templates", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
 
-  const emailTemplates = useMemo(() => 
-    allTemplates.filter(t => t.channel === "email"), 
-  [allTemplates]);
+      const [messageTemplatesRes, legacyEmailTemplatesRes] = await Promise.all([
+        supabase
+          .from("message_templates")
+          .select("id, name, subject, body_html, category, design, created_at")
+          .eq("tenant_id", tenantId)
+          .eq("channel", "email")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("email_templates")
+          .select("id, name, subject, body_html, category, design, created_at")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false }),
+      ]);
 
-  const isLoadingEmail = isLoading;
+      if (messageTemplatesRes.error) throw messageTemplatesRes.error;
+      if (legacyEmailTemplatesRes.error) throw legacyEmailTemplatesRes.error;
+
+      return [
+        ...(messageTemplatesRes.data || []).map((template) => ({ ...template, source: "message_templates" as const })),
+        ...(legacyEmailTemplatesRes.data || []).map((template) => ({ ...template, source: "email_templates" as const })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+    enabled: !!tenantId,
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (values: TemplateForm) => {
@@ -225,7 +258,7 @@ export default function MessageTemplates() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(editingId ? "Template atualizado!" : "Template criado!");
       closeDialog();
     },
@@ -249,10 +282,22 @@ export default function MessageTemplates() {
       };
 
       if (editingEmailId) {
-        const { error } = await supabase
-          .from("message_templates")
-          .update(payload)
-          .eq("id", editingEmailId);
+        const { error } = editingEmailSource === "email_templates"
+          ? await supabase
+              .from("email_templates")
+              .update({
+                tenant_id: payload.tenant_id,
+                name: payload.name,
+                subject: payload.subject,
+                body_html: payload.body_html,
+                category: payload.category,
+                design: payload.design,
+              })
+              .eq("id", editingEmailId)
+          : await supabase
+              .from("message_templates")
+              .update(payload)
+              .eq("id", editingEmailId);
         if (error) throw error;
       } else {
         const { error } = await supabase
@@ -262,10 +307,11 @@ export default function MessageTemplates() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
       toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
       setEmailDialogOpen(false);
       setEditingEmailId(null);
+      setEditingEmailSource("message_templates");
       setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null });
     },
     onError: (err: Error) => {
@@ -274,15 +320,20 @@ export default function MessageTemplates() {
   });
 
   const deleteEmailMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("message_templates")
-        .delete()
-        .eq("id", id);
+    mutationFn: async ({ id, source }: Pick<UnifiedEmailTemplate, "id" | "source">) => {
+      const { error } = source === "email_templates"
+        ? await supabase
+            .from("email_templates")
+            .delete()
+            .eq("id", id)
+        : await supabase
+            .from("message_templates")
+            .delete()
+            .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
       toast.success("Template de e-mail excluído!");
     },
     onError: (err: Error) => {
@@ -300,7 +351,7 @@ export default function MessageTemplates() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success("Template excluído!");
     },
     onError: (err: Error) => {
@@ -333,7 +384,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(`Sincronização concluída! ${result.updated} template(s) atualizado(s) de ${result.matched} encontrado(s) na Meta.`);
     },
     onError: (err: Error) => {
@@ -444,7 +495,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
     },
     onError: (err: Error) => {
@@ -1187,7 +1238,7 @@ export default function MessageTemplates() {
               </div>
               <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); }}>
+                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); setEditingEmailSource("message_templates"); }}>
                     <Plus className="h-4 w-4 mr-2" />
                     Novo Template
                   </Button>
@@ -1339,7 +1390,7 @@ export default function MessageTemplates() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {emailTemplates.map((t: any) => {
+                {emailTemplates.map((t) => {
                   const openEditor = () => {
                     setEmailForm({
                       name: t.name,
@@ -1349,10 +1400,11 @@ export default function MessageTemplates() {
                       design: t.design || null,
                     });
                     setEditingEmailId(t.id);
+                    setEditingEmailSource(t.source);
                     setEmailDialogOpen(true);
                   };
                   return (
-                    <Card key={t.id} className="overflow-hidden group hover:shadow-md transition-shadow flex flex-col">
+                    <Card key={`${t.source}:${t.id}`} className="overflow-hidden group hover:shadow-md transition-shadow flex flex-col">
                       <button
                         type="button"
                         onClick={() => setEmailPreview(t)}
@@ -1413,7 +1465,7 @@ export default function MessageTemplates() {
                                   <Pencil className="h-4 w-4 mr-2" /> Editar
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="text-destructive" onClick={() => {
-                                  if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                                  if (confirm("Excluir este template?")) deleteEmailMutation.mutate({ id: t.id, source: t.source });
                                 }}>
                                   <Trash2 className="h-4 w-4 mr-2" /> Excluir
                                 </DropdownMenuItem>
@@ -1488,6 +1540,7 @@ export default function MessageTemplates() {
                         design: t.design || null,
                       });
                       setEditingEmailId(t.id);
+                      setEditingEmailSource(t.source || "message_templates");
                       setEmailPreview(null);
                       setEmailDialogOpen(true);
                     }}>

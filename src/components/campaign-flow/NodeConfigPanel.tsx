@@ -248,10 +248,16 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
   useEffect(() => {
     const fetchTemplates = async () => {
       if (!currentTenant) return;
-      const [waRes, emRes] = await Promise.all([
+      const [waRes, messageEmailRes, legacyEmailRes] = await Promise.all([
         supabase.from("message_templates")
           .select("id, name, header_type, header_content, body, footer, buttons, sample_values")
           .eq("tenant_id", currentTenant.id)
+          .or("channel.is.null,channel.eq.,channel.eq.whatsapp")
+          .order("name"),
+        supabase.from("message_templates")
+          .select("id, name, subject, body_html")
+          .eq("tenant_id", currentTenant.id)
+          .eq("channel", "email")
           .order("name"),
         supabase.from("email_templates")
           .select("id, name, subject, body_html")
@@ -259,7 +265,10 @@ export function NodeConfigPanel({ node, onClose, onUpdate }: NodeConfigPanelProp
           .order("name"),
       ]);
       if (waRes.data) setWhatsappTemplates(waRes.data as WhatsAppTpl[]);
-      if (emRes.data) setEmailTemplates(emRes.data as EmailTpl[]);
+      setEmailTemplates([
+        ...((messageEmailRes.data || []) as EmailTpl[]),
+        ...((legacyEmailRes.data || []) as EmailTpl[]),
+      ]);
     };
     fetchTemplates();
   }, [currentTenant]);

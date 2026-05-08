@@ -333,7 +333,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success(`Sincronização concluída! ${result.updated} template(s) atualizado(s) de ${result.matched} encontrado(s) na Meta.`);
     },
     onError: (err: Error) => {

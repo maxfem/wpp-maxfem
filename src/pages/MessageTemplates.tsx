@@ -1535,6 +1535,7 @@ export default function MessageTemplates() {
                         design: t.design || null,
                       });
                       setEditingEmailId(t.id);
+                      setEditingEmailSource(t.source || "message_templates");
                       setEmailPreview(null);
                       setEmailDialogOpen(true);
                     }}>

@@ -1660,6 +1660,8 @@ export type Database = {
       message_templates: {
         Row: {
           body: string
+          body_html: string | null
+          body_text: string | null
           buttons: Json | null
           category: string
           created_at: string
@@ -1670,6 +1672,7 @@ export type Database = {
           language: string
           meta_template_id: string | null
           name: string
+          preview_text: string | null
           sample_values: Json | null
           status: string
           tenant_id: string
@@ -1677,6 +1680,8 @@ export type Database = {
         }
         Insert: {
           body: string
+          body_html?: string | null
+          body_text?: string | null
           buttons?: Json | null
           category?: string
           created_at?: string
@@ -1687,6 +1692,7 @@ export type Database = {
           language?: string
           meta_template_id?: string | null
           name: string
+          preview_text?: string | null
           sample_values?: Json | null
           status?: string
           tenant_id: string
@@ -1694,6 +1700,8 @@ export type Database = {
         }
         Update: {
           body?: string
+          body_html?: string | null
+          body_text?: string | null
           buttons?: Json | null
           category?: string
           created_at?: string
@@ -1704,6 +1712,7 @@ export type Database = {
           language?: string
           meta_template_id?: string | null
           name?: string
+          preview_text?: string | null
           sample_values?: Json | null
           status?: string
           tenant_id?: string

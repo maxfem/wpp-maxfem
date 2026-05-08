@@ -1233,7 +1233,7 @@ export default function MessageTemplates() {
               </div>
               <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); }}>
+                  <Button onClick={() => { setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null }); setEditingEmailId(null); setEditingEmailSource("message_templates"); }}>
                     <Plus className="h-4 w-4 mr-2" />
                     Novo Template
                   </Button>
@@ -1385,7 +1385,7 @@ export default function MessageTemplates() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {emailTemplates.map((t: any) => {
+                {emailTemplates.map((t) => {
                   const openEditor = () => {
                     setEmailForm({
                       name: t.name,
@@ -1395,10 +1395,11 @@ export default function MessageTemplates() {
                       design: t.design || null,
                     });
                     setEditingEmailId(t.id);
+                    setEditingEmailSource(t.source);
                     setEmailDialogOpen(true);
                   };
                   return (
-                    <Card key={t.id} className="overflow-hidden group hover:shadow-md transition-shadow flex flex-col">
+                    <Card key={`${t.source}:${t.id}`} className="overflow-hidden group hover:shadow-md transition-shadow flex flex-col">
                       <button
                         type="button"
                         onClick={() => setEmailPreview(t)}
@@ -1459,7 +1460,7 @@ export default function MessageTemplates() {
                                   <Pencil className="h-4 w-4 mr-2" /> Editar
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="text-destructive" onClick={() => {
-                                  if (confirm("Excluir este template?")) deleteEmailMutation.mutate(t.id);
+                                  if (confirm("Excluir este template?")) deleteEmailMutation.mutate({ id: t.id, source: t.source });
                                 }}>
                                   <Trash2 className="h-4 w-4 mr-2" /> Excluir
                                 </DropdownMenuItem>

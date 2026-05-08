@@ -169,8 +169,9 @@ export default function MessageTemplates() {
   const tenantId = currentTenant?.id;
 
   // WhatsApp Queries
-  const { data: templates = [], isLoading } = useQuery({
-    queryKey: ["message-templates", tenantId],
+  // WhatsApp & Email Queries (Merged from message_templates)
+  const { data: allTemplates = [], isLoading } = useQuery({
+    queryKey: ["all-message-templates", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
       const { data, error } = await supabase
@@ -184,21 +185,15 @@ export default function MessageTemplates() {
     enabled: !!tenantId,
   });
 
-  // Email Queries
-  const { data: emailTemplates = [], isLoading: isLoadingEmail } = useQuery({
-    queryKey: ["email-templates", tenantId],
-    queryFn: async () => {
-      if (!tenantId) return [];
-      const { data, error } = await supabase
-        .from("email_templates")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!tenantId,
-  });
+  const templates = useMemo(() => 
+    allTemplates.filter(t => t.channel === "whatsapp" || !t.channel || t.channel === ""), 
+  [allTemplates]);
+
+  const emailTemplates = useMemo(() => 
+    allTemplates.filter(t => t.channel === "email"), 
+  [allTemplates]);
+
+  const isLoadingEmail = isLoading;
 
   const saveMutation = useMutation({
     mutationFn: async (values: TemplateForm) => {

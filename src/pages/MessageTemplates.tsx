@@ -88,6 +88,17 @@ interface TemplateForm {
   buttons: TemplateButton[];
 }
 
+type UnifiedEmailTemplate = {
+  id: string;
+  name: string;
+  subject: string | null;
+  body_html: string | null;
+  category: string | null;
+  design: Json | null;
+  created_at: string;
+  source: "message_templates" | "email_templates";
+};
+
 const emptyForm: TemplateForm = {
   name: "",
   category: "marketing",

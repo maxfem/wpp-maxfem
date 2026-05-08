@@ -320,15 +320,15 @@ export default function MessageTemplates() {
   });
 
   const deleteEmailMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, source }: Pick<UnifiedEmailTemplate, "id" | "source">) => {
       const { error } = await supabase
-        .from("message_templates")
+        .from(source)
         .delete()
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
       toast.success("Template de e-mail excluído!");
     },
     onError: (err: Error) => {

@@ -258,7 +258,7 @@ export default function MessageTemplates() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(editingId ? "Template atualizado!" : "Template criado!");
       closeDialog();
     },
@@ -282,10 +282,22 @@ export default function MessageTemplates() {
       };
 
       if (editingEmailId) {
-        const { error } = await supabase
-          .from("message_templates")
-          .update(payload)
-          .eq("id", editingEmailId);
+        const { error } = editingEmailSource === "email_templates"
+          ? await supabase
+              .from("email_templates")
+              .update({
+                tenant_id: payload.tenant_id,
+                name: payload.name,
+                subject: payload.subject,
+                body_html: payload.body_html,
+                category: payload.category,
+                design: payload.design,
+              })
+              .eq("id", editingEmailId)
+          : await supabase
+              .from("message_templates")
+              .update(payload)
+              .eq("id", editingEmailId);
         if (error) throw error;
       } else {
         const { error } = await supabase
@@ -295,10 +307,11 @@ export default function MessageTemplates() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["email-templates"] });
       toast.success(editingEmailId ? "Template de e-mail atualizado!" : "Template de e-mail criado!");
       setEmailDialogOpen(false);
       setEditingEmailId(null);
+      setEditingEmailSource("message_templates");
       setEmailForm({ name: "", subject: "", body_html: "", category: "marketing", design: null });
     },
     onError: (err: Error) => {

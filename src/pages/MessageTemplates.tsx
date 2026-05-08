@@ -160,6 +160,7 @@ export default function MessageTemplates() {
   // Email States
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editingEmailSource, setEditingEmailSource] = useState<"message_templates" | "email_templates">("message_templates");
   const [emailPreview, setEmailPreview] = useState<any | null>(null);
   const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [emailEditorMode, setEmailEditorMode] = useState<"builder" | "html" | "preview">("builder");

@@ -1659,7 +1659,7 @@ export type Database = {
       }
       message_templates: {
         Row: {
-          body: string
+          body: string | null
           body_html: string | null
           body_text: string | null
           buttons: Json | null
@@ -1682,7 +1682,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          body: string
+          body?: string | null
           body_html?: string | null
           body_text?: string | null
           buttons?: Json | null
@@ -1705,7 +1705,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          body?: string
+          body?: string | null
           body_html?: string | null
           body_text?: string | null
           buttons?: Json | null

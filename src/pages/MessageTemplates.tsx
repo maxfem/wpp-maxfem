@@ -346,7 +346,7 @@ export default function MessageTemplates() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success("Template excluído!");
     },
     onError: (err: Error) => {
@@ -379,7 +379,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(`Sincronização concluída! ${result.updated} template(s) atualizado(s) de ${result.matched} encontrado(s) na Meta.`);
     },
     onError: (err: Error) => {
@@ -490,7 +490,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
       toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
     },
     onError: (err: Error) => {

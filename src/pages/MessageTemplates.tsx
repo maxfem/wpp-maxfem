@@ -444,7 +444,7 @@ export default function MessageTemplates() {
       return result;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["message-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["all-message-templates"] });
       toast.success(`Template enviado à Meta! Status: ${result.status || "PENDING"}`);
     },
     onError: (err: Error) => {

@@ -180,15 +180,15 @@ export default function MessageTemplates() {
   const tenantId = currentTenant?.id;
 
   // WhatsApp Queries
-  // WhatsApp & Email Queries (Merged from message_templates)
-  const { data: allTemplates = [], isLoading } = useQuery({
-    queryKey: ["all-message-templates", tenantId],
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: ["message-templates", tenantId],
     queryFn: async () => {
       if (!tenantId) return [];
       const { data, error } = await supabase
         .from("message_templates")
         .select("*")
         .eq("tenant_id", tenantId)
+        .or("channel.is.null,channel.eq.,channel.eq.whatsapp")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -196,15 +196,36 @@ export default function MessageTemplates() {
     enabled: !!tenantId,
   });
 
-  const templates = useMemo(() => 
-    allTemplates.filter(t => t.channel === "whatsapp" || !t.channel || t.channel === ""), 
-  [allTemplates]);
+  // Email Queries (new MCP templates live in message_templates; legacy UI templates live in email_templates)
+  const { data: emailTemplates = [], isLoading: isLoadingEmail } = useQuery<UnifiedEmailTemplate[]>({
+    queryKey: ["email-templates", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
 
-  const emailTemplates = useMemo(() => 
-    allTemplates.filter(t => t.channel === "email"), 
-  [allTemplates]);
+      const [messageTemplatesRes, legacyEmailTemplatesRes] = await Promise.all([
+        supabase
+          .from("message_templates")
+          .select("id, name, subject, body_html, category, design, created_at")
+          .eq("tenant_id", tenantId)
+          .eq("channel", "email")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("email_templates")
+          .select("id, name, subject, body_html, category, design, created_at")
+          .eq("tenant_id", tenantId)
+          .order("created_at", { ascending: false }),
+      ]);
 
-  const isLoadingEmail = isLoading;
+      if (messageTemplatesRes.error) throw messageTemplatesRes.error;
+      if (legacyEmailTemplatesRes.error) throw legacyEmailTemplatesRes.error;
+
+      return [
+        ...(messageTemplatesRes.data || []).map((template) => ({ ...template, source: "message_templates" as const })),
+        ...(legacyEmailTemplatesRes.data || []).map((template) => ({ ...template, source: "email_templates" as const })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+    enabled: !!tenantId,
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (values: TemplateForm) => {

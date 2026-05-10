@@ -412,7 +412,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       utm_campaign: o.utm_campaign || null,
       utm_content: o.utm_content || null,
       utm_term: o.utm_term || null,
-      coupon_code: o.promocode || null,
+      coupon_code: (o.promocode?.data?.code) || (typeof o.promocode === "string" ? o.promocode : null) || null,
     };
 
     const existingId = existingOrderMap.get(`yampi_${o.id}`);

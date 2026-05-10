@@ -58,6 +58,21 @@ function normalizeCpf(cpf: string | null | undefined): string | null {
   return clean.length >= 11 ? clean : null;
 }
 
+// Yampi devolve datas como { date: "2026-05-10 17:32:12.000000", timezone: "America/Sao_Paulo", ... } (UTC-3) ou string ISO.
+// Converte pra ISO UTC. Importante: sem isso o orders.created_at vira a hora do SYNC, não a do pedido → dashboards por data ficam errados.
+function parseYampiDate(d: any): string | null {
+  if (!d) return null;
+  const raw = typeof d === "string" ? d : (d?.date || null);
+  if (!raw) return null;
+  const m = String(raw).match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+  if (m) {
+    const dt = new Date(`${m[1]}T${m[2]}-03:00`);
+    return isNaN(dt.getTime()) ? null : dt.toISOString();
+  }
+  const dt = new Date(raw);
+  return isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
 // ===== PHASE: CUSTOMERS =====
 async function syncCustomers(supabase: any, tenant_id: string, config: any, startPage: number) {
   const { alias, user_token, user_secret_key } = config;
@@ -414,6 +429,9 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       utm_term: o.utm_term || null,
       coupon_code: (o.promocode?.data?.code) || (typeof o.promocode === "string" ? o.promocode : null) || null,
     };
+    // created_at = data REAL do pedido na Yampi (não a hora do sync) — senão os dashboards por data quebram
+    const yampiCreatedAt = parseYampiDate(o.created_at);
+    if (yampiCreatedAt) orderData.created_at = yampiCreatedAt;
 
     const existingId = existingOrderMap.get(`yampi_${o.id}`);
     if (existingId) {

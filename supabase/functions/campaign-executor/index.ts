@@ -1,4 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js";
+import { SESClient, SendEmailCommand } from "npm:@aws-sdk/client-ses@3.645.0";
+import { getAwsCredentials } from "../_shared/aws-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,7 +15,7 @@ async function refreshBlingToken(integrationId: string, cfg: any, supabase: any)
     const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
     if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
     const basic = btoa(`${clientId}:${clientSecret}`);
-    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+    const res = await fetch("https://api.bling.com.br/Api/v3/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${basic}`, Accept: "application/json" },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
@@ -51,16 +53,16 @@ async function fetchBlingTracking(tenantId: string, document: string | null, ord
     }
     const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
     const auth = () => ({ Authorization: `Bearer ${token}`, Accept: "application/json" });
-    let cRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() });
+    let cRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() });
     if (cRes.status === 401) {
       const nt = await refreshBlingToken(integ.id, cfg, supabase);
-      if (nt) { token = nt; cRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() }); }
+      if (nt) { token = nt; cRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, { headers: auth() }); }
     }
     if (!cRes.ok) return null;
     const cData = await cRes.json();
     const contact = cData?.data?.[0];
     if (!contact) return null;
-    const oRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contact.id}&limit=10`, { headers: auth() });
+    const oRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${contact.id}&limit=10`, { headers: auth() });
     if (!oRes.ok) return null;
     const oData = await oRes.json();
     const orders = oData?.data || [];
@@ -68,7 +70,7 @@ async function fetchBlingTracking(tenantId: string, document: string | null, ord
     const matched = orderNumber ? orders.find((o: any) => String(o.numero) === String(orderNumber)) : null;
     const candidates = matched ? [matched] : orders.slice(0, 3);
     for (const ord of candidates) {
-      const dRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${ord.id}`, { headers: auth() });
+      const dRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${ord.id}`, { headers: auth() });
       if (!dRes.ok) continue;
       const d = (await dRes.json())?.data;
       if (!d) continue;
@@ -76,7 +78,7 @@ async function fetchBlingTracking(tenantId: string, document: string | null, ord
       let carrier = d.transporte?.contato?.nome || null;
       if (!code && d.notaFiscal?.id) {
         try {
-          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, { headers: auth() });
+          const nfeRes = await fetch(`https://api.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, { headers: auth() });
           if (nfeRes.ok) {
             const nfe = (await nfeRes.json())?.data;
             code = nfe?.transporte?.volumes?.[0]?.codigoRastreamento || code;
@@ -86,7 +88,7 @@ async function fetchBlingTracking(tenantId: string, document: string | null, ord
       }
       if (!code) {
         try {
-          const lRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${ord.id}/logistica`, { headers: auth() });
+          const lRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${ord.id}/logistica`, { headers: auth() });
           if (lRes.ok) {
             const li = ((await lRes.json())?.data || [])[0];
             code = li?.codigoRastreamento || li?.rastreamento?.codigo || code;
@@ -158,33 +160,53 @@ function generateCode(len = 8): string {
   return result;
 }
 
+// Slug estável e ASCII-safe para utm_campaign / utm_content (sem acento, lowercase, _ )
+function slugify(s: string | null | undefined): string {
+  return (s || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase()
+    .slice(0, 64) || "campanha";
+}
+
+// Aplica o padrão de UTM do projeto + cmp (código de atribuição) numa URL de destino
+function applyTracking(rawUrl: string, opts: { source: string; medium: string; campaign: string; content?: string | null; code?: string | null }): string {
+  const u = new URL(rawUrl);
+  u.searchParams.set("utm_source", opts.source);
+  u.searchParams.set("utm_medium", opts.medium);
+  u.searchParams.set("utm_campaign", opts.campaign);
+  if (opts.content) u.searchParams.set("utm_content", opts.content);
+  if (opts.code) u.searchParams.set("cmp", opts.code);
+  return u.toString();
+}
+
 async function wrapHtmlLinks(
   supabase: any,
   html: string,
-  ctx: { tenantId: string; campaignId: string; customerId: string; campaignName: string }
+  ctx: { tenantId: string; campaignId: string; customerId: string; campaignName: string; medium?: string; campaignSlug?: string; content?: string }
 ): Promise<string> {
+  const medium = ctx.medium || "campaign";
+  const utmCampaign = slugify(ctx.campaignSlug || ctx.campaignName);
+  const utmContent = ctx.content ? slugify(ctx.content) : null;
   const urlRegex = /href="([^"]+)"/g;
   let match;
   let newHtml = html;
-  
+
   const replacements: { original: string; wrapped: string }[] = [];
-  
+
   while ((match = urlRegex.exec(html)) !== null) {
     const originalUrl = match[1];
-    const isResource = originalUrl.includes("fonts.googleapis.com") || 
-                      originalUrl.includes("fonts.gstatic.com") || 
+    const isResource = originalUrl.includes("fonts.googleapis.com") ||
+                      originalUrl.includes("fonts.gstatic.com") ||
                       originalUrl.match(/\.(png|jpg|jpeg|gif|webp|svg|css)$/i);
-    
-    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!) && !isResource) {
+
+    if (originalUrl.startsWith("http") && !originalUrl.includes(Deno.env.get("SUPABASE_URL")!) && !originalUrl.includes("/lk/") && !isResource) {
       const code = generateCode(10);
-      
-      // Append UTM parameters to the original URL
-      const utmUrl = new URL(originalUrl);
-      utmUrl.searchParams.set("utm_source", "email");
-      utmUrl.searchParams.set("utm_medium", "automation");
-      utmUrl.searchParams.set("utm_campaign", ctx.campaignName.replace(/\s+/g, "_").toLowerCase());
-      
-      const finalOriginalUrl = utmUrl.toString();
+      let finalOriginalUrl: string;
+      try {
+        finalOriginalUrl = applyTracking(originalUrl, { source: "email", medium, campaign: utmCampaign, content: utmContent, code });
+      } catch { continue; } // URL inválida → não reescreve
 
       // Store in tracked_links
       await supabase.from("tracked_links").insert({
@@ -194,19 +216,20 @@ async function wrapHtmlLinks(
         code,
         original_url: finalOriginalUrl,
         utm_source: "email",
-        utm_medium: "automation",
-        utm_campaign: ctx.campaignName,
+        utm_medium: medium,
+        utm_campaign: utmCampaign,
+        utm_content: utmContent,
       });
-      
-      const wrappedUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/link-redirect?c=${code}`;
+
+      const wrappedUrl = `${Deno.env.get("LINK_REDIRECT_BASE") || "https://maxfem.tech/lk"}/${code}`;
       replacements.push({ original: originalUrl, wrapped: wrappedUrl });
     }
   }
-  
+
   for (const r of replacements) {
     newHtml = newHtml.replace(`href="${r.original}"`, `href="${r.wrapped}"`);
   }
-  
+
   return newHtml;
 }
 
@@ -225,11 +248,20 @@ function buildTemplateComponents(
   bodyVarCount: number, hasHeaderVar: boolean,
   buttonUrlCode?: string, buttonUrlIndex?: number,
   copyCodeButtons?: { index: number; value: string }[],
+  headerMediaType?: "image" | "video" | "document" | null,
+  headerMediaUrl?: string | null,
 ) {
   const components: any[] = [];
   if (hasHeaderVar) {
     const value = resolveVariable("customer.first_name", ctx);
     components.push({ type: "header", parameters: [{ type: "text", text: value && value !== "-" ? value : "Cliente" }] });
+  } else if (headerMediaType && headerMediaUrl) {
+    // Templates aprovados com header IMAGE/VIDEO/DOCUMENT precisam de parameter no SEND mesmo se estático.
+    // Meta error #132012 = "parameter format does not match" quando não enviamos esse component.
+    components.push({
+      type: "header",
+      parameters: [{ type: headerMediaType, [headerMediaType]: { link: headerMediaUrl } }],
+    });
   }
   if (bodyVarCount > 0) {
     const params: any[] = [];
@@ -707,7 +739,8 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               tenantId: campaign.tenant_id,
               campaignId: campaign.id,
               customerId: customer.id,
-              campaignName: campaign.name
+              campaignName: campaign.name,
+              medium: "automation",
             });
 
             // === Onda 1: Policy check email ===
@@ -821,7 +854,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
 
             if (!templateCache.has(templateName)) {
               const { data: tpl } = await supabase.from("message_templates")
-                .select("body, header_type, header_content, sample_values, buttons, status")
+                .select("body, header_type, header_content, header_media_url, sample_values, buttons, status, category")
                 .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
               templateCache.set(templateName, tpl);
             }
@@ -985,7 +1018,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 const code = generateCode(10);
                 await supabase.from("tracked_links").insert({
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation", utm_campaign: campaign.name,
+                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation", utm_campaign: slugify(campaign.name),
                 });
                 buttonUrlCode = code;
               } else {
@@ -1005,7 +1038,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                       await supabase.from("tracked_links").insert({
                         tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                         original_url: btnUrl.replace(varMatch[0], resolvedValue), code,
-                        utm_source: "whatsapp", utm_medium: "automation", utm_campaign: campaign.name,
+                        utm_source: "whatsapp", utm_medium: "automation", utm_campaign: slugify(campaign.name),
                       });
                       buttonUrlCode = code;
                     } else {
@@ -1037,7 +1070,13 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               messaging_product: "whatsapp", to: phone, type: "template",
               template: {
                 name: templateName, language: { code: templateLanguage },
-                components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined, resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined),
+                components: buildTemplateComponents(
+                  variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                  buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                  resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined,
+                  ["image","video","document"].includes(templateRecord?.header_type || "") ? templateRecord.header_type : null,
+                  templateRecord?.header_media_url || null,
+                ),
               },
             };
             
@@ -1068,7 +1107,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                   const resolvedSubject = (tpl.subject || "Fallback Email").replace(/\{\{([^}]+)\}\}/g, (match: string, key: string) => resolveVariable(key.trim(), ctx));
                   const resolvedBody = (tpl.body_html || "").replace(/\{\{([^}]+)\}\}/g, (match: string, key: string) => resolveVariable(key.trim(), ctx));
                   const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
-                    tenantId: campaign.tenant_id, campaignId: campaign.id, customer_id: customer.id, campaignName: campaign.name
+                    tenantId: campaign.tenant_id, campaignId: campaign.id, customerId: customer.id, campaignName: campaign.name, medium: "automation",
                   });
 
                   await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
@@ -1266,7 +1305,8 @@ async function processScheduledCampaigns(supabase: any) {
               subject: emSubject,
               bodyHtml: emBody,
               fromName: emNode.data.fromName || "",
-              configurationSet: (emNode.data.configurationSet || "").trim() || null
+              configurationSet: (emNode.data.configurationSet || "").trim() || null,
+              name: emTemplateName || null,
             };
           }
         }
@@ -1289,7 +1329,7 @@ async function processScheduledCampaigns(supabase: any) {
 
       if (templateName) {
         const { data: tRecord } = await supabase.from("message_templates")
-          .select("body, header_type, header_content, sample_values, buttons")
+          .select("body, header_type, header_content, header_media_url, sample_values, buttons")
           .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
         
         templateRecord = tRecord;
@@ -1311,6 +1351,9 @@ async function processScheduledCampaigns(supabase: any) {
           if (node.data?.product_name) campaignVars.product_name = node.data.product_name;
           if (node.data?.product_desc) campaignVars.product_desc = node.data.product_desc;
           if (node.data?.return_days) campaignVars.return_days = node.data.return_days;
+          // destino do botão de URL dinâmico do WhatsApp (template com .../{{1}})
+          const ln = node.data?.linkUrl || node.data?.url || node.data?.link;
+          if (ln && typeof ln === "string" && ln.startsWith("http")) campaignVars.link = ln;
         }
       }
 
@@ -1382,15 +1425,50 @@ async function processScheduledCampaigns(supabase: any) {
       let sentCount = 0;
       let failedCount = 0;
       const runStart = Date.now();
-      const TIME_BUDGET_MS = 110_000; // leave headroom before edge function timeout
+      const TIME_BUDGET_MS = 110_000;
       let timedOut = false;
 
-      for (const customer of customers) {
-        if (Date.now() - runStart > TIME_BUDGET_MS) {
-          console.log(`Time budget reached for campaign ${campaign.id}, will resume next cron`);
-          timedOut = true;
-          break;
+      // CONCURRENCY: 4 em paralelo (com SES SDK direto). Tested: 14 e 7 quebraram
+      // WORKER_RESOURCE_LIMIT (AWS SDK pesa). 4 é estável e dá ~240/min.
+      const BATCH_SIZE = 4;
+
+      // Inicializa SES client UMA vez (reutilizado em todos os sends)
+      let sesClient: SESClient | null = null;
+      let senderEmail = "";
+      let senderFromName = emailTemplate?.fromName || "";
+      let configurationSetName: string | null = emailTemplate?.configurationSet || null;
+
+      if (emailTemplate) {
+        try {
+          const awsCreds = await getAwsCredentials(supabase, { tenantId: campaign.tenant_id });
+          if (awsCreds.accessKeyId && awsCreds.secretAccessKey) {
+            sesClient = new SESClient({
+              region: awsCreds.region,
+              credentials: {
+                accessKeyId: awsCreds.accessKeyId,
+                secretAccessKey: awsCreds.secretAccessKey,
+              },
+            });
+            senderEmail = awsCreds.senderEmail || "";
+            if (!configurationSetName) configurationSetName = awsCreds.configurationSet || null;
+          } else {
+            const errMsg = "AWS credenciais ausentes — configure em /settings/integrations/aws";
+            await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
+            results.push({ campaign_id: campaign.id, error: errMsg });
+            continue;
+          }
+          if (!senderEmail) {
+            const errMsg = "Sender email não configurado na integração AWS";
+            await supabase.from("campaigns").update({ status: "failed", last_error: errMsg }).eq("id", campaign.id);
+            results.push({ campaign_id: campaign.id, error: errMsg });
+            continue;
+          }
+        } catch (e) {
+          console.error("[campaign-executor] Failed to init SES:", e);
+          continue;
         }
+      }
+      const processCustomer = async (customer: any) => {
         try {
           const ctx = { customer, order: ordersByCustomer.get(customer.id) || null, campaign: campaignVars, tenantId: campaign.tenant_id };
 
@@ -1401,21 +1479,21 @@ async function processScheduledCampaigns(supabase: any) {
 
             let buttonUrlCode: string | undefined;
             if (hasDynamicUrlButton) {
-              const dynamicUrl = getCustomerDynamicUrl(customer, templateName!);
-              if (dynamicUrl) {
-                const code = generateCode(10);
-                const utmUrl = new URL(dynamicUrl);
-                utmUrl.searchParams.set("utm_source", "whatsapp");
-                utmUrl.searchParams.set("utm_medium", "campaign");
-                utmUrl.searchParams.set("utm_campaign", campaign.name.replace(/\s+/g, "_").toLowerCase());
-                const finalDynamicUrl = utmUrl.toString();
-
-                await supabase.from("tracked_links").insert({
-                  tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                  original_url: finalDynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: campaign.name,
-                });
-                buttonUrlCode = code;
+              // destino: URL dinâmica do cliente (carrinho/pix) > link do nó WhatsApp > fallback
+              const destUrl = getCustomerDynamicUrl(customer, templateName!) || campaignVars.link || "https://maxfem.tech";
+              const code = generateCode(10);
+              const utmCampaignWA = slugify(campaign.name);
+              let finalDynamicUrl: string;
+              try {
+                finalDynamicUrl = applyTracking(destUrl, { source: "whatsapp", medium: "campaign", campaign: utmCampaignWA, code });
+              } catch {
+                finalDynamicUrl = applyTracking("https://maxfem.tech", { source: "whatsapp", medium: "campaign", campaign: utmCampaignWA, code });
               }
+              await supabase.from("tracked_links").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
+                original_url: finalDynamicUrl, code, utm_source: "whatsapp", utm_medium: "campaign", utm_campaign: utmCampaignWA,
+              });
+              buttonUrlCode = code;
             }
 
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
@@ -1425,7 +1503,13 @@ async function processScheduledCampaigns(supabase: any) {
                 messaging_product: "whatsapp", to: phone, type: "template",
                 template: {
                   name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(variableMappings, ctx, bodyVarCount, hasHeaderVar, buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined),
+                  components: buildTemplateComponents(
+                    variableMappings, ctx, bodyVarCount, hasHeaderVar,
+                    buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
+                    undefined,
+                    ["image","video","document"].includes(templateRecord?.header_type || "") ? templateRecord.header_type : null,
+                    templateRecord?.header_media_url || null,
+                  ),
                 },
               }),
             });
@@ -1448,51 +1532,90 @@ async function processScheduledCampaigns(supabase: any) {
             }
           }
 
-          // 2. Email send
-          if (emailTemplate && customer.email) {
+          // 2. Email send — DIRETO via SES SDK (sem ir via send-email-ses HTTP, evita rate limit interno do Functions)
+          if (emailTemplate && customer.email && sesClient) {
             const varRegex = /\{\{([^}]+)\}\}/g;
             const resolvedSubject = emailTemplate.subject.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
             const resolvedBody = emailTemplate.bodyHtml.replace(varRegex, (match: string, key: string) => resolveVariable(key.trim(), ctx));
-            
+
             const finalBody = await wrapHtmlLinks(supabase, resolvedBody, {
               tenantId: campaign.tenant_id,
               campaignId: campaign.id,
               customerId: customer.id,
-              campaignName: campaign.name
+              campaignName: campaign.name,
+              medium: "campaign",
             });
 
-            const sendRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email-ses`, {
-              method: "POST",
-              headers: { 
-                "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-                "Content-Type": "application/json" 
+            const sendParams: any = {
+              Source: senderFromName ? `${senderFromName} <${senderEmail}>` : senderEmail,
+              Destination: { ToAddresses: [customer.email] },
+              Message: {
+                Subject: { Data: resolvedSubject, Charset: "UTF-8" },
+                Body: { Html: { Data: finalBody, Charset: "UTF-8" } },
               },
-              body: JSON.stringify({
-                to: customer.email,
-                subject: resolvedSubject,
-                html: finalBody,
-                fromName: emailTemplate.fromName,
-                ...(emailTemplate.configurationSet ? { configurationSet: emailTemplate.configurationSet } : {}),
-                tenantId: campaign.tenant_id,
-                campaignId: campaign.id,
-                customerId: customer.id
-              }),
-            });
+              Tags: [
+                { Name: "tenant_id", Value: campaign.tenant_id },
+                { Name: "campaign_id", Value: campaign.id },
+                { Name: "customer_id", Value: customer.id },
+              ],
+            };
+            if (configurationSetName) sendParams.ConfigurationSetName = configurationSetName;
 
-            if (sendRes.ok) {
+            try {
+              await sesClient.send(new SendEmailCommand(sendParams));
               sentCount++;
-            } else {
-              const errTxt = await sendRes.text();
-              lastError = `Email error: ${errTxt}`;
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id,
+                campaign_id: campaign.id,
+                customer_id: customer.id,
+                status: "sent",
+                channel: "email",
+                sent_at: new Date().toISOString(),
+              });
+            } catch (sesErr: any) {
+              const errMsg = sesErr?.name === "Throttling" || sesErr?.name === "TooManyRequestsException"
+                ? `SES throttled: ${sesErr.message?.slice(0, 200)}`
+                : `SES error: ${sesErr?.message?.slice(0, 300) || String(sesErr).slice(0, 300)}`;
+              lastError = errMsg;
               failedCount++;
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id,
+                campaign_id: campaign.id,
+                customer_id: customer.id,
+                status: "failed",
+                channel: "email",
+                error_message: errMsg,
+              });
             }
           }
 
-          await new Promise((r) => setTimeout(r, 50));
         } catch (err) {
           console.error(`Error sending to customer ${customer.id}:`, err);
           failedCount++;
+          lastError = `Exception: ${(err as Error).message}`;
+          try {
+            await supabase.from("campaign_activities").insert({
+              tenant_id: campaign.tenant_id,
+              campaign_id: campaign.id,
+              customer_id: customer.id,
+              status: "failed",
+              channel: "email",
+              error_message: lastError,
+            });
+          } catch (_logErr) { /* swallow */ }
         }
+      };
+
+      // Processar em batches paralelos
+      for (let i = 0; i < customers.length; i += BATCH_SIZE) {
+        if (Date.now() - runStart > TIME_BUDGET_MS) {
+          console.log(`Time budget reached for campaign ${campaign.id} at batch ${i}, will resume next cron`);
+          timedOut = true;
+          break;
+        }
+        const batch = customers.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(processCustomer));
+        // Sem delay artificial — SES tem rate limit interno; se exceder retorna 429 e captura como failed
       }
 
       let finalStatus: string;

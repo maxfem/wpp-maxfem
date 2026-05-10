@@ -131,34 +131,87 @@ async function syncCustomers(supabase: any, tenant_id: string, config: any, star
   return { synced, nextPage };
 }
 
+// Slug ASCII-safe (igual ao do campaign-executor) — pra casar utm_campaign do pedido com o nome da campanha
+function slugify(s: string | null | undefined): string {
+  return (s || "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase()
+    .slice(0, 64);
+}
+
+const CHANNEL_UTM_SOURCES = new Set(["email", "whatsapp"]);
+
 // ===== ATTRIBUTION: Link new orders to campaign activities =====
-async function attributeConversions(supabase: any, tenant_id: string, orders: { id: string; customer_id: string; total: number }[]) {
-  const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+// Estratégia (last-touch):
+//  1. Se o pedido veio com utm_source=email|whatsapp + utm_campaign → casa com a activity daquele canal cujo nome de campanha bate (janela 14d).
+//  2. Se o pedido veio com utm_source de OUTRO canal (meta, google, etc.) → não atribui a campanha do CRM (outro sistema cuida).
+//  3. Se o pedido não tem utm_source útil (direto/orgânico) → atribui à activity mais recente do cliente que ele CLICOU, na janela de 72h.
+async function attributeConversions(
+  supabase: any,
+  tenant_id: string,
+  orders: { id: string; customer_id: string; total: number; utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_content?: string | null }[],
+) {
+  const cutoff72 = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+  const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
   for (const order of orders) {
-    const { data: activity } = await supabase
-      .from("campaign_activities")
-      .select("id")
-      .eq("customer_id", order.customer_id)
-      .eq("tenant_id", tenant_id)
-      .is("converted_at", null)
-      .gte("sent_at", cutoff)
-      .order("clicked_at", { ascending: false, nullsFirst: false })
-      .order("sent_at", { ascending: false })
-      .limit(1)
-      .single();
+    const src = (order.utm_source || "").trim().toLowerCase();
+    let activityId: string | null = null;
+    let method = "";
 
-    if (activity) {
+    // --- Caminho 1: pedido com UTM de canal próprio (email/whatsapp) ---
+    if (CHANNEL_UTM_SOURCES.has(src) && order.utm_campaign) {
+      const wantSlug = slugify(order.utm_campaign);
+      const { data: candidates } = await supabase
+        .from("campaign_activities")
+        .select("id, sent_at, campaigns(name)")
+        .eq("customer_id", order.customer_id)
+        .eq("tenant_id", tenant_id)
+        .eq("channel", src)
+        .is("converted_at", null)
+        .gte("sent_at", cutoff14d)
+        .order("sent_at", { ascending: false })
+        .limit(25);
+      const match = (candidates || []).find((c: any) => slugify(c.campaigns?.name) === wantSlug);
+      if (match) { activityId = match.id; method = "utm"; }
+    }
+
+    // --- Caminho 2: pedido veio de OUTRO canal externo → não atribui a campanha do CRM ---
+    else if (src && !CHANNEL_UTM_SOURCES.has(src)) {
+      continue;
+    }
+
+    // --- Caminho 3: sem UTM útil → activity mais recente que o cliente CLICOU, janela 72h ---
+    if (!activityId) {
+      const { data: clicked } = await supabase
+        .from("campaign_activities")
+        .select("id")
+        .eq("customer_id", order.customer_id)
+        .eq("tenant_id", tenant_id)
+        .is("converted_at", null)
+        .not("clicked_at", "is", null)
+        .gte("sent_at", cutoff72)
+        .order("clicked_at", { ascending: false })
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (clicked) { activityId = clicked.id; method = "click_window"; }
+    }
+
+    if (activityId) {
       await supabase
         .from("campaign_activities")
         .update({
           converted_at: now,
           conversion_value: order.total,
           attribution_order_id: order.id,
+          attribution_method: method,
         })
-        .eq("id", activity.id);
-      console.log(`Attribution: order ${order.id} -> activity ${activity.id} (R$${order.total})`);
+        .eq("id", activityId);
+      console.log(`Attribution[${method}]: order ${order.id} -> activity ${activityId} (R$${order.total})`);
     }
   }
 }
@@ -353,6 +406,13 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       delivery_estimate: deliveryEstimate,
       payment_summary: paymentSummary,
       items_summary: itemsSummary,
+      // UTMs nativos capturados pela Yampi no checkout (atribuição de campanha)
+      utm_source: o.utm_source || null,
+      utm_medium: o.utm_medium || null,
+      utm_campaign: o.utm_campaign || null,
+      utm_content: o.utm_content || null,
+      utm_term: o.utm_term || null,
+      coupon_code: o.promocode || null,
     };
 
     const existingId = existingOrderMap.get(`yampi_${o.id}`);
@@ -429,7 +489,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
   if (toInsertOrders.length > 0) {
     for (let i = 0; i < toInsertOrders.length; i += 50) {
       const batch = toInsertOrders.slice(i, i + 50);
-      const { data: inserted, error } = await supabase.from("orders").insert(batch).select("id, customer_id, total");
+      const { data: inserted, error } = await supabase.from("orders").insert(batch).select("id, customer_id, total, utm_source, utm_medium, utm_campaign, utm_content");
       if (error) {
         console.error("Order batch insert error:", error.message);
       } else if (inserted) {

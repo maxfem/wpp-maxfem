@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/chart";
 import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
-  DollarSign, Clock, Users, TrendingUp,
+  DollarSign, Clock, Users, TrendingUp, MessageCircle, Mail,
 } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 import { formatSP } from "@/lib/utils";
@@ -83,19 +83,90 @@ export default function CampaignDetails() {
       return data;
     },
     enabled: !!id,
+    // Auto-refresh enquanto a campanha estiver enviando
+    refetchInterval: campaign?.status === "sending" || campaign?.status === "scheduled" ? 8000 : false,
   });
 
-  const metrics = {
-    total: activities.length,
-    sent: activities.filter((a) => a.sent_at).length,
-    delivered: activities.filter((a) => a.delivered_at).length,
-    read: activities.filter((a) => a.read_at).length,
-    clicked: activities.filter((a) => a.clicked_at).length,
-    failed: activities.filter((a) => a.error_message || ["failed", "bounced", "complained", "rejected"].includes(a.status)).length,
-    replied: activities.filter((a) => a.replied_at).length,
-    converted: activities.filter((a) => a.converted_at).length,
-    revenue: activities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
-  };
+  // Total target = qtd de customers válidos (com email/phone) na audiência
+  const { data: totalTarget = 0 } = useQuery<number>({
+    queryKey: ["campaign-target", id, campaign?.list_id, campaign?.tenant_id],
+    queryFn: async () => {
+      if (!campaign) return 0;
+      const flow = (campaign.flow_data as any) || {};
+      const hasEmail = flow.nodes?.some((n: any) => n.data?.nodeType === "sendEmail");
+      const hasWA = flow.nodes?.some((n: any) => n.data?.nodeType === "sendWhatsApp");
+      const validField = hasEmail ? "email" : (hasWA ? "phone" : "email");
+
+      if (campaign.list_id) {
+        const { data } = await supabase
+          .from("contact_list_members")
+          .select("customers!inner(id)", { count: "exact", head: false })
+          .eq("list_id", campaign.list_id)
+          .not(`customers.${validField}`, "is", null);
+        return data?.length ?? 0;
+      }
+      const { count } = await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", campaign.tenant_id)
+        .not(validField, "is", null);
+      return count ?? 0;
+    },
+    enabled: !!campaign?.id,
+    staleTime: 60000,
+  });
+
+  // Auto-refresh do campaign também enquanto sending
+  const { data: campaignLive } = useQuery({
+    queryKey: ["campaign-live", id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("campaigns")
+        .select("status, last_error, updated_at")
+        .eq("id", id!)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!id && (campaign?.status === "sending" || campaign?.status === "scheduled"),
+    refetchInterval: 8000,
+  });
+
+  const computeMetrics = (acts: any[]) => ({
+    total: acts.length,
+    sent: acts.filter((a) => a.sent_at).length,
+    delivered: acts.filter((a) => a.delivered_at).length,
+    read: acts.filter((a) => a.read_at).length,
+    clicked: acts.filter((a) => a.clicked_at).length,
+    failed: acts.filter((a) => a.error_message || ["failed", "bounced", "complained", "rejected"].includes(a.status)).length,
+    replied: acts.filter((a) => a.replied_at).length,
+    converted: acts.filter((a) => a.converted_at).length,
+    revenue: acts.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
+  });
+
+  const metrics = computeMetrics(activities);
+
+  // --- Breakdown por canal (e-mail / whatsapp / sms) ---
+  const channelOf = (a: any): string =>
+    a.channel === "whatsapp" ? "whatsapp" : a.channel === "sms" ? "sms" : "email";
+  const channelLabel: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", sms: "SMS" };
+
+  const flowChannels: string[] = (() => {
+    const flow = (campaign?.flow_data as any) || {};
+    const set = new Set<string>();
+    (flow.nodes || []).forEach((n: any) => {
+      const t = n.data?.nodeType;
+      if (t === "sendEmail") set.add("email");
+      if (t === "sendWhatsApp") set.add("whatsapp");
+      if (t === "sendSMS") set.add("sms");
+    });
+    return [...set];
+  })();
+  const channels = [...new Set([...flowChannels, ...activities.map(channelOf)])];
+  const isMultiChannel = channels.length > 1;
+  const channelMetrics: Record<string, ReturnType<typeof computeMetrics>> = {};
+  channels.forEach((ch) => {
+    channelMetrics[ch] = computeMetrics(activities.filter((a) => channelOf(a) === ch));
+  });
 
   const deliveryRate = metrics.sent > 0 ? ((metrics.delivered / metrics.sent) * 100).toFixed(1) : "0";
   const readRate = metrics.delivered > 0 ? ((metrics.read / metrics.delivered) * 100).toFixed(1) : "0";
@@ -184,6 +255,59 @@ export default function CampaignDetails() {
             </Card>
           )}
 
+        {/* Barra de progresso (mostra enquanto está enviando ou foi recente) */}
+        {totalTarget > 0 && (() => {
+          const liveStatus = campaignLive?.status || campaign?.status || "";
+          const processed = metrics.total; // todos os customers que já viraram activities
+          const pct = Math.min(100, Math.round((processed / totalTarget) * 100));
+          const isActive = liveStatus === "sending" || liveStatus === "scheduled";
+          const isComplete = processed >= totalTarget;
+
+          return (
+            <Card className="border-primary/20">
+              <CardContent className="pt-5 pb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {isActive && !isComplete ? (
+                      <>
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                        </span>
+                        <p className="text-sm font-medium">Disparando…</p>
+                      </>
+                    ) : isComplete ? (
+                      <>
+                        <CheckCheck className="h-4 w-4 text-emerald-600" />
+                        <p className="text-sm font-medium">Disparo concluído</p>
+                      </>
+                    ) : (
+                      <p className="text-sm font-medium">Disparo</p>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground tabular-nums">
+                    <span className="font-semibold text-foreground">{processed.toLocaleString("pt-BR")}</span>
+                    <span className="mx-1">/</span>
+                    {totalTarget.toLocaleString("pt-BR")}
+                    <span className="ml-2 text-xs">({pct}%)</span>
+                  </p>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-500 ${isComplete ? "bg-emerald-500" : "bg-primary"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {isActive && !isComplete && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Atualiza a cada 8s · cron processa ~30 destinatários por minuto
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <KpiCard icon={Users} label="Total" value={metrics.total} />
@@ -195,6 +319,40 @@ export default function CampaignDetails() {
           <KpiCard icon={TrendingUp} label="Conversões" value={metrics.converted} suffix={`${conversionRate}%`} />
           <KpiCard icon={DollarSign} label="Receita" value={`R$ ${metrics.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} highlight />
         </div>
+
+        {/* Breakdown por canal — só aparece quando a campanha tem mais de um canal */}
+        {isMultiChannel && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground">Por canal</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {channels.map((ch) => {
+                const m = channelMetrics[ch];
+                const dr = m.sent > 0 ? ((m.delivered / m.sent) * 100).toFixed(0) : "0";
+                const rr = m.delivered > 0 ? ((m.read / m.delivered) * 100).toFixed(0) : "0";
+                return (
+                  <Card key={ch}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        {ch === "whatsapp"
+                          ? <MessageCircle className="h-4 w-4 text-emerald-600" />
+                          : <Mail className="h-4 w-4 text-primary" />}
+                        {channelLabel[ch] || ch}
+                        <span className="ml-auto text-xs font-normal text-muted-foreground">{m.total} destinatário(s)</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                      <ChannelStat label="Enviados" value={m.sent} />
+                      <ChannelStat label="Entregues" value={m.delivered} suffix={`${dr}%`} />
+                      <ChannelStat label={ch === "whatsapp" ? "Lidos" : "Aberturas"} value={m.read} suffix={`${rr}%`} />
+                      <ChannelStat label="Cliques" value={m.clicked} />
+                      <ChannelStat label="Falhas" value={m.failed} destructive />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="funnel" className="space-y-4">
@@ -288,6 +446,7 @@ export default function CampaignDetails() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Cliente</TableHead>
+                          <TableHead>Canal</TableHead>
                           <TableHead>Destino</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Enviado</TableHead>
@@ -305,7 +464,19 @@ export default function CampaignDetails() {
                           return (
                             <TableRow key={a.id}>
                               <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
-                              <TableCell className="text-muted-foreground">{a.customers?.email || a.customers?.phone || "—"}</TableCell>
+                              <TableCell>
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  {channelOf(a) === "whatsapp"
+                                    ? <MessageCircle className="h-3 w-3 text-emerald-600" />
+                                    : <Mail className="h-3 w-3 text-primary" />}
+                                  {channelLabel[channelOf(a)] || channelOf(a)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {channelOf(a) === "whatsapp"
+                                  ? (a.customers?.phone || a.customers?.email || "—")
+                                  : (a.customers?.email || a.customers?.phone || "—")}
+                              </TableCell>
                               <TableCell><Badge className={activityStatus.className}>{activityStatus.label}</Badge></TableCell>
                               <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(new Date(a.sent_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(new Date(a.delivered_at), "dd/MM HH:mm")} /> : "—"}</TableCell>
@@ -351,6 +522,21 @@ function KpiCard({ icon: Icon, label, value, suffix, highlight, destructive }: {
         {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
       </CardContent>
     </Card>
+  );
+}
+
+function ChannelStat({ label, value, suffix, destructive }: {
+  label: string;
+  value: string | number;
+  suffix?: string;
+  destructive?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={destructive ? "text-base font-bold text-destructive" : "text-base font-bold text-foreground"}>{value}</span>
+      {suffix && <span className="text-[10px] text-muted-foreground">{suffix}</span>}
+    </div>
   );
 }
 

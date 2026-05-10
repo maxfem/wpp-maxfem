@@ -48,6 +48,7 @@ const getNodeConfigs = (
     title: "Enviar WhatsApp",
     fields: [
       { key: "template", label: "Template", type: "select", options: whatsappOpts },
+      { key: "linkUrl", label: "Link de destino (botão dinâmico)", type: "text", placeholder: "https://maxfem.tech/gummy4 — usado quando o template tem botão de URL dinâmico {{1}}" },
       { key: "delay", label: "Atraso antes de enviar", type: "select", options: ["Sem atraso", "5 minutos", "15 minutos", "1 hora", "1 dia"].map(o => ({ value: o, label: o })) },
       { key: "trackClicks", label: "Rastrear cliques", type: "toggle" },
       { key: "fallbackEnabled", label: "Habilitar Fallback (E-mail)", type: "toggle" },

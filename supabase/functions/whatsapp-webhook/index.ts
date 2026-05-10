@@ -204,7 +204,7 @@ async function refreshBlingToken(integrationId: string, cfg: any): Promise<strin
 
   try {
     const credentials = btoa(`${clientId}:${clientSecret}`);
-    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+    const res = await fetch("https://api.bling.com.br/Api/v3/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
@@ -246,7 +246,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
 
     const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 
-    let contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+    let contactRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
 
@@ -254,7 +254,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
       const newToken = await refreshBlingToken(blingIntegration.id, cfg);
       if (newToken) {
         accessToken = newToken;
-        contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+        contactRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
           headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
         });
       }
@@ -269,7 +269,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
     const contactId = contacts[0].id;
     const contactName = contacts[0].nome;
 
-    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
+    const ordersRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
 
@@ -281,7 +281,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
 
     const detailedOrders = [];
     for (const order of ordersList.slice(0, 5)) {
-      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
+      const detailRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       });
       if (!detailRes.ok) continue;
@@ -296,7 +296,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
 
       if (!trackingCode && d.notaFiscal?.id) {
         try {
-          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+          const nfeRes = await fetch(`https://api.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
             headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
           });
           if (nfeRes.ok) {
@@ -309,7 +309,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
 
       if (!trackingCode) {
         try {
-          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+          const logRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
             headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
           });
           if (logRes.ok) {
@@ -370,6 +370,17 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
     const attrs = customerAttrs || {};
     if (attrs.ai_enabled === false) return;
 
+    // CPF já conhecido do cliente (sincronizado da Yampi) — evita ter que pedir
+    let knownCpf = String(attrs.cpf || attrs.document || "").replace(/\D/g, "");
+    if (knownCpf.length !== 11) {
+      try {
+        const { data: cust } = await supabase.from("customers").select("document").eq("id", customerId).maybeSingle();
+        const d = String(cust?.document || "").replace(/\D/g, "");
+        if (d.length === 11) knownCpf = d;
+      } catch { /* ignore */ }
+    }
+    if (knownCpf.length !== 11) knownCpf = "";
+
     const { data: integration } = await supabase
       .from("integrations").select("config")
       .eq("tenant_id", tenantId).eq("provider", "openai").eq("is_active", true).maybeSingle();
@@ -414,9 +425,13 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
 
     let orderInstructions = "";
     if (hasOrderTools) {
-      orderInstructions = `\nVocê tem acesso a funções para consultar pedidos do cliente pelo CPF.
-${hasBling ? "SEMPRE use lookup_orders_bling PRIMEIRO para consultar rastreio — ele busca dados em tempo real direto do ERP Bling." : ""}
-${hasYampi && !hasBling ? "Use lookup_orders_by_cpf para dados sincronizados localmente." : ""}
+      orderInstructions = `\nVocê tem funções para consultar pedidos/rastreio do cliente — mas elas EXIGEM o CPF do cliente como parâmetro.
+${knownCpf
+  ? `O CPF cadastrado deste cliente é ${knownCpf}. Use-o DIRETO nas consultas — NÃO precisa pedir o CPF.`
+  : `Você ainda NÃO tem o CPF deste cliente. Se ele perguntar sobre pedido / rastreio / entrega / "comprei e quero saber...", PEÇA o CPF primeiro de forma natural (ex.: "Claro! Me passa seu CPF, só os números, que eu localizo seu pedido aqui."). NÃO chame nenhuma função de consulta antes de ter o CPF REAL com 11 dígitos. NUNCA invente, chute ou complete um CPF.`}
+${hasBling ? "Para consultar rastreio, use lookup_orders_bling (dados em tempo real do ERP Bling). Se ela falhar, tente lookup_orders_by_cpf como alternativa." : ""}
+${hasYampi && !hasBling ? "Use lookup_orders_by_cpf (dados sincronizados localmente)." : ""}
+Se a consulta retornar erro ou nada: peça desculpas, peça pro cliente confirmar o CPF (11 dígitos), e se ainda assim não achar, diga que vai verificar e retornar em breve. NUNCA responda só "tive um problema".
 
 REGRAS sobre rastreio (INEGOCIÁVEIS):
 - Quando informar rastreio, escreva apenas: "Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}"

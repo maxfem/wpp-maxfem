@@ -116,6 +116,8 @@ export default function Dashboard() {
     return PERIOD_OPTIONS.find((p) => p.key === periodKey)?.label || "";
   }, [periodKey, customRange]);
 
+  // Só pedidos com pagamento confirmado contam pra receita/indicadores (alinha com o card "Receita" da Yampi)
+  const PAID_STATUSES = ["paid", "invoiced", "approved", "shipped", "on_carriage", "in_transit", "delivered"];
   const { data: orders = [] } = useQuery({
     queryKey: ["dashboard-orders", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
     queryFn: () =>
@@ -124,6 +126,7 @@ export default function Dashboard() {
           .from("orders")
           .select("total, created_at, customer_id")
           .eq("tenant_id", tenantId!)
+          .in("mapped_status", PAID_STATUSES)
           .gte("created_at", periodFrom.toISOString())
           .lte("created_at", periodTo.toISOString())
           .order("created_at")

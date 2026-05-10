@@ -22,6 +22,7 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfUse = lazy(() => import("./pages/TermsOfUse"));
+const DataDeletion = lazy(() => import("./pages/DataDeletion"));
 const MessageTemplates = lazy(() => import("./pages/MessageTemplates"));
 const Lists = lazy(() => import("./pages/Lists"));
 const SettingsWhatsApp = lazy(() => import("./pages/SettingsWhatsApp"));
@@ -78,7 +79,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <BrowserRouter>
+            <BrowserRouter basename={(import.meta.env.BASE_URL || "/").replace(/\/$/, "") || "/"}>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -123,6 +124,7 @@ const App = () => (
                    <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />
                   <Route path="/terms" element={<TermsOfUse />} />
+                  <Route path="/data-deletion" element={<DataDeletion />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

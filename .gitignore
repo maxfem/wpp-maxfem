@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Env — config vem das env vars do projeto Vercel (ver .env.example). NÃO commitar .env.
+.env
+.env.local
+.env.*.local

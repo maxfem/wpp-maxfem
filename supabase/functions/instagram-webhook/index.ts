@@ -230,16 +230,29 @@ function matchesKeywords(rule: any, text: string): { ok: boolean; term?: string 
   return { ok: false };
 }
 
-async function aiIntentMatch(rule: any, text: string): Promise<boolean> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+async function aiIntentMatch(rule: any, text: string, tenantId?: string): Promise<boolean> {
+  let apiKey = Deno.env.get("GEMINI_API_KEY") || "";
+  let model = "gemini-2.5-flash-lite";
+  if (tenantId) {
+    const { data: integ } = await supabase
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "gemini")
+      .maybeSingle();
+    const cfg: any = integ?.config || {};
+    if (cfg.api_key) apiKey = cfg.api_key;
+    // mantém modelo lite por ser classificador, a menos que config defina
+    if (cfg.model) model = String(cfg.model).replace(/^google\//, "");
+  }
   if (!apiKey) return false;
   try {
     const sys = `Você é um classificador binário. Decida se o COMENTÁRIO indica a mesma intenção da REGRA. Responda SOMENTE com "yes" ou "no".\nREGRA: ${rule.name}\nPALAVRAS-CHAVE: ${(rule.keywords || []).join(", ")}\nRESPOSTA PÚBLICA DA REGRA: ${rule.public_reply_text}`;
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
+        model,
         messages: [
           { role: "system", content: sys },
           { role: "user", content: text },
@@ -305,7 +318,7 @@ async function evaluateAndRunRules(opts: {
       matched_by = "keyword";
       matched_term = kw.term;
     } else if (rule.use_ai_intent) {
-      const ai = await aiIntentMatch(rule, text);
+      const ai = await aiIntentMatch(rule, text, opts.account.tenant_id);
       if (ai) matched_by = "ai";
     }
     if (!matched_by) continue;

@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 import { SESClient, SendEmailCommand, GetSendQuotaCommand, GetIdentityVerificationAttributesCommand } from "npm:@aws-sdk/client-ses@3.645.0";
 import { STSClient, GetCallerIdentityCommand } from "npm:@aws-sdk/client-sts@3.645.0";
+import { getAwsCredentials, awsCredsStatus } from "../_shared/aws-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,18 +44,21 @@ interface AwsEnv {
   region: string;
 }
 
-function getAwsEnv(): AwsEnv {
-  const accessKeyId = (Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
-  const secretAccessKey = (Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
-  const region = (Deno.env.get("AWS_REGION") || "us-east-1").trim();
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error("Secrets AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY não configurados no projeto.");
+function adminClient() {
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+}
+
+async function getAwsEnv(tenantId?: string): Promise<AwsEnv> {
+  const supabase = adminClient();
+  const creds = await getAwsCredentials(supabase, { tenantId });
+  if (!creds.accessKeyId || !creds.secretAccessKey) {
+    throw new Error("Credenciais AWS não configuradas. Cole AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY em /settings/integrations/aws.");
   }
-  return { accessKeyId, secretAccessKey, region };
+  return { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey, region: creds.region };
 }
 
 async function getAwsConfigFromDb(tenantId?: string | null): Promise<{ senderEmail: string; configurationSet: string | null }> {
-  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const supabase = adminClient();
   let q = supabase.from("integrations").select("config, tenant_id").eq("provider", "aws").eq("is_active", true);
   if (tenantId) q = q.eq("tenant_id", tenantId);
   const { data } = await q.limit(1).maybeSingle();
@@ -65,6 +69,23 @@ async function getAwsConfigFromDb(tenantId?: string | null): Promise<{ senderEma
   return { senderEmail, configurationSet: (cfg.configuration_set || "").trim() || null };
 }
 
+async function resolveTenantFromAuth(authHeader: string | null): Promise<string | null> {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  const admin = adminClient();
+  const { data } = await admin
+    .from("tenant_members")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  return data?.tenant_id || null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -72,21 +93,32 @@ serve(async (req) => {
     const payload = await req.json().catch(() => ({}));
     const mode: string = payload.mode || (payload.validate_only ? "validate" : "send");
 
-    // ========== STATUS MODE ========== (no AWS calls, just check secrets presence)
-    if (mode === "status") {
-      const accessKeyId = (Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
-      const secretAccessKey = (Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
-      const region = (Deno.env.get("AWS_REGION") || "").trim();
-      return new Response(JSON.stringify({
-        has_access_key: !!accessKeyId,
-        has_secret_key: !!secretAccessKey,
-        has_region: !!region,
-        region: region || null,
-        access_key_prefix: accessKeyId ? accessKeyId.substring(0, 4) + "..." + accessKeyId.slice(-4) : null,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Auth: Supabase Functions já valida o JWT no proxy (verify_jwt = true).
+    // Aqui só extraímos o tenant: prioriza tenantId do body (caso server-to-server),
+    // fallback pro tenant_members do user.
+    const authHeader = req.headers.get("Authorization");
+    let authedTenantId: string | null =
+      String(payload.tenantId || payload.tenant_id || "").trim() || null;
+    if (!authedTenantId) {
+      authedTenantId = await resolveTenantFromAuth(authHeader);
+    }
+    if (!authedTenantId) {
+      return new Response(JSON.stringify({ error: "Unauthorized — missing tenant" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const env = getAwsEnv();
+    // ========== STATUS MODE ========== (no AWS calls, returns DB+env credential availability)
+    if (mode === "status") {
+      const supabase = adminClient();
+      const creds = await getAwsCredentials(supabase, { tenantId: authedTenantId });
+      return new Response(JSON.stringify(awsCredsStatus(creds)), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const env = await getAwsEnv(authedTenantId);
 
     const sesClient = new SESClient({
       region: env.region,

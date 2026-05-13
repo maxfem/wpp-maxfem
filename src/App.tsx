@@ -44,6 +44,7 @@ const SettingsWebhooks = lazy(() => import("./pages/SettingsWebhooks"));
 const Popups = lazy(() => import("./pages/Popups"));
 const SettingsCollaborators = lazy(() => import("./pages/SettingsCollaborators"));
 const PredictiveAnalytics = lazy(() => import("./pages/PredictiveAnalytics"));
+const SaudeAna = lazy(() => import("./pages/SaudeAna"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 const SettingsMCP = lazy(() => import("./pages/SettingsMCP"));
 
@@ -97,6 +98,7 @@ const App = () => (
                   <Route path="/email-marketing" element={<ProtectedRoute><EmailMarketing /></ProtectedRoute>} />
                   <Route path="/pixel" element={<ProtectedRoute><PixelDashboard /></ProtectedRoute>} />
                   <Route path="/predictive" element={<ProtectedRoute><PredictiveAnalytics /></ProtectedRoute>} />
+                  <Route path="/saude-ana" element={<ProtectedRoute><SaudeAna /></ProtectedRoute>} />
                   <Route path="/settings/pixel" element={<ProtectedRoute><SettingsPixel /></ProtectedRoute>} />
                   <Route path="/popups" element={<ProtectedRoute><Popups /></ProtectedRoute>} />
                   <Route path="/chat" element={<Navigate to="/atendimento" replace />} />

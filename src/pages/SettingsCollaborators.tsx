@@ -406,7 +406,7 @@ export default function SettingsCollaborators() {
                       <div className="flex flex-col">
                         <span className="font-medium">{activity.profiles?.display_name || "Sistema"}</span>
                         <span className="text-muted-foreground">{activity.description}</span>
-                        <span className="text-[10px] opacity-50">{new Date(activity.created_at).toLocaleString()}</span>
+                        <span className="text-[10px] opacity-50">{new Date(activity.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span>
                       </div>
                     </div>
                   ))}

@@ -88,13 +88,18 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string, adminClient: any
 
 // ===== Auto-refresh Bling token if expired =====
 async function refreshBlingToken(integrationId: string, cfg: any, adminClient: any): Promise<string | null> {
-  const clientId = Deno.env.get("BLING_CLIENT_ID");
-  const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
-  if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
+  // Prioriza client_id/secret salvos na config da integração (igual ao bling-auth);
+  // as env vars são apenas fallback e nem sempre estão setadas nas edge functions.
+  const clientId = cfg?.client_id || Deno.env.get("BLING_CLIENT_ID");
+  const clientSecret = cfg?.client_secret || Deno.env.get("BLING_CLIENT_SECRET");
+  if (!clientId || !clientSecret || !cfg?.refresh_token) {
+    console.error("[copilot] Bling refresh: faltam client_id/client_secret/refresh_token");
+    return null;
+  }
 
   try {
     const credentials = btoa(`${clientId}:${clientSecret}`);
-    const res = await fetch("https://www.bling.com.br/Api/v3/oauth/token", {
+    const res = await fetch("https://api.bling.com.br/Api/v3/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: cfg.refresh_token }),
@@ -117,10 +122,31 @@ async function refreshBlingToken(integrationId: string, cfg: any, adminClient: a
 }
 
 // ===== Bling V3 API lookup: query orders in real-time by CPF =====
-async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any): Promise<string> {
-  const cleanCpf = cpf.replace(/\D/g, "");
-  if (cleanCpf.length < 11) {
-    return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+async function lookupOrdersBling(
+  tenantId: string,
+  query: string,
+  adminClient: any,
+  queryType: "cpf" | "name" | "email" | "auto" = "auto",
+): Promise<string> {
+  const raw = (query || "").trim();
+  if (!raw) return JSON.stringify({ error: "Informe CPF, nome ou e-mail." });
+
+  // Auto-detect tipo se não passado
+  let qType = queryType;
+  if (qType === "auto") {
+    const onlyDigits = raw.replace(/\D/g, "");
+    if (onlyDigits.length === 11 || onlyDigits.length === 14) qType = "cpf";
+    else if (raw.includes("@")) qType = "email";
+    else qType = "name";
+  }
+
+  let pesquisa = raw;
+  if (qType === "cpf") {
+    const cleanCpf = raw.replace(/\D/g, "");
+    if (cleanCpf.length < 11) return JSON.stringify({ error: "CPF inválido. Informe os 11 dígitos." });
+    pesquisa = cleanCpf.length === 11
+      ? cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+      : cleanCpf.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
   }
 
   try {
@@ -149,9 +175,9 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       if (newToken) accessToken = newToken;
     }
 
-    const formattedCpf = cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+    const searchUrl = `https://api.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(pesquisa)}`;
 
-    let contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+    let contactRes = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
 
@@ -160,7 +186,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
       const newToken = await refreshBlingToken(blingIntegration.id, cfg, adminClient);
       if (newToken) {
         accessToken = newToken;
-        contactRes = await fetch(`https://www.bling.com.br/Api/v3/contatos?pesquisa=${encodeURIComponent(formattedCpf)}`, {
+        contactRes = await fetch(searchUrl, {
           headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
         });
       }
@@ -172,34 +198,44 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
     }
 
     const contactData = await contactRes.json();
-    const contacts = contactData?.data || [];
+    let contacts = contactData?.data || [];
+
+    // Fallback: cadastros que não batem no "pesquisa" formatado — tenta pelo numeroDocumento (só dígitos)
+    if (contacts.length === 0 && qType === "cpf") {
+      try {
+        const altRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(raw.replace(/\D/g, ""))}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        });
+        if (altRes.ok) contacts = (await altRes.json())?.data || [];
+      } catch (_) { /* ignore */ }
+    }
 
     if (contacts.length === 0) {
-      return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
+      return JSON.stringify({ error: `Nenhum cliente encontrado no Bling com "${raw}".`, query: raw, query_type: qType });
     }
 
     const contactId = contacts[0].id;
     const contactName = contacts[0].nome;
 
-    const ordersRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
+    const ordersRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
 
     if (!ordersRes.ok) {
       console.error("[copilot] Bling orders search error:", ordersRes.status);
-      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
+      return JSON.stringify({ customer_name: contactName, query: pesquisa, query_type: qType, orders: [], message: "Erro ao buscar pedidos no Bling." });
     }
 
     const ordersData = await ordersRes.json();
     const ordersList = ordersData?.data || [];
 
     if (ordersList.length === 0) {
-      return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
+      return JSON.stringify({ customer_name: contactName, query: pesquisa, query_type: qType, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
     }
 
     const detailedOrders = [];
     for (const order of ordersList.slice(0, 5)) {
-      const detailRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
+      const detailRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${order.id}`, {
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       });
 
@@ -216,7 +252,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
 
       if (!trackingCode && d.notaFiscal?.id) {
         try {
-          const nfeRes = await fetch(`https://www.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
+          const nfeRes = await fetch(`https://api.bling.com.br/Api/v3/nfe/${d.notaFiscal.id}`, {
             headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
           });
           if (nfeRes.ok) {
@@ -233,7 +269,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
 
       if (!trackingCode) {
         try {
-          const logRes = await fetch(`https://www.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
+          const logRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas/${order.id}/logistica`, {
             headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
           });
           if (logRes.ok) {
@@ -283,7 +319,7 @@ async function lookupOrdersBling(tenantId: string, cpf: string, adminClient: any
     return JSON.stringify({
       source: "bling",
       customer_name: contactName,
-      cpf: formattedCpf,
+      query: pesquisa, query_type: qType,
       orders_count: detailedOrders.length,
       orders: detailedOrders,
     });
@@ -317,16 +353,21 @@ const tools = [
     function: {
       name: "lookup_orders_bling",
       description:
-        "Consulta pedidos e código de rastreio em tempo real na API do Bling pelo CPF do cliente. Use esta função quando lookup_orders_by_cpf não retornar rastreio ou quando quiser dados mais atualizados do ERP.",
+        "Consulta pedidos, código de rastreio, NF-e e status em tempo real na API do Bling. Aceita CPF, e-mail ou nome do cliente. Use sempre que o cliente perguntar sobre rastreio, entrega, status do pedido, pagamento, NF-e — esse é o caminho mais atualizado.",
       parameters: {
         type: "object",
         properties: {
-          cpf: {
+          query: {
             type: "string",
-            description: "CPF do cliente (apenas números ou com pontuação)",
+            description: "CPF (com ou sem pontuação), e-mail completo ou nome do cliente",
+          },
+          query_type: {
+            type: "string",
+            enum: ["cpf", "email", "name", "auto"],
+            description: "Tipo da consulta. Use 'auto' (default) — o sistema detecta sozinho.",
           },
         },
-        required: ["cpf"],
+        required: ["query"],
       },
     },
   },
@@ -574,7 +615,7 @@ serve(async (req) => {
 
     const tone = tone_override || config.tone || "friendly";
     const model = useGemini
-      ? (config.model || "google/gemini-2.5-flash")
+      ? (config.model || "gemini-2.5-flash").replace(/^google\//, "")
       : (config.model || "gpt-4o-mini");
     const systemPrompt = config.system_prompt || "Você é um assistente de atendimento ao cliente.";
 
@@ -698,14 +739,31 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
       }
     }
 
+    // ===== Reforçar contexto adicional como user message =====
+    // Sem isso, o AI responde "continuando" o histórico sem usar o context
+    // (ex: ignora CPF mencionado no contexto e responde texto genérico).
+    if (conversation_context && String(conversation_context).trim()) {
+      chatMessages.push({
+        role: "user",
+        content: `INSTRUÇÃO INTERNA DO ATENDENTE: ${conversation_context}\n\nUse as ferramentas disponíveis para buscar dados reais antes de responder. Sugira a melhor resposta para enviar ao cliente AGORA.`,
+      });
+    }
+
     // ===== Call AI provider =====
     const aiEndpoint = useGemini
-      ? "https://ai.gateway.lovable.dev/v1/chat/completions"
+      ? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
       : "https://api.openai.com/v1/chat/completions";
 
     const aiApiKey = useGemini
-      ? Deno.env.get("LOVABLE_API_KEY")!
+      ? (config.api_key || Deno.env.get("GEMINI_API_KEY") || "")
       : config.openai_api_key;
+
+    if (useGemini && !aiApiKey) {
+      return new Response(
+        JSON.stringify({ error: "Gemini API Key não configurada — configure em /settings/integrations/gemini" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const requestBody: any = {
       model,
@@ -767,8 +825,11 @@ Baseado no histórico de mensagens abaixo, sugira uma resposta para o atendente 
           console.log(`[copilot] Tool call: lookup_orders_by_cpf(${args.cpf})`);
           toolResult = await lookupOrdersByCpf(tenant_id, args.cpf, adminClient);
         } else if (toolCall.function.name === "lookup_orders_bling") {
-          console.log(`[copilot] Tool call: lookup_orders_bling(${args.cpf})`);
-          toolResult = await lookupOrdersBling(tenant_id, args.cpf, adminClient);
+          // Aceita {query, query_type} (novo) ou {cpf} (legacy)
+          const q = args.query || args.cpf || "";
+          const qType = args.query_type || "auto";
+          console.log(`[copilot] Tool call: lookup_orders_bling(${q}, ${qType})`);
+          toolResult = await lookupOrdersBling(tenant_id, q, adminClient, qType);
         }
 
         chatMessages.push({

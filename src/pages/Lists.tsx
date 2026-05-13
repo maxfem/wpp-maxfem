@@ -329,6 +329,10 @@ export default function Lists() {
         .single();
 
       if (jobErr) { toast.error(jobErr.message); return; }
+      if (!job?.id) {
+        toast.error("Falha ao criar job de importação");
+        return;
+      }
 
       // Trigger background processing (fire and forget)
       supabase.functions.invoke("background-import", {

@@ -65,6 +65,71 @@ async function resolveAccessToken(tenantId: string): Promise<string> {
 
 // ===== MEDIA HANDLING =====
 
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+  mp4: "video/mp4", "3gp": "video/3gpp", mov: "video/quicktime",
+  aac: "audio/aac", m4a: "audio/mp4", mp3: "audio/mpeg", amr: "audio/amr", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav",
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
+  }
+  return btoa(bin);
+}
+
+// Lê imagem/áudio/vídeo/documento que o cliente mandou e devolve uma descrição/transcrição via Gemini,
+// pra IA conseguir responder de verdade em vez de "não consigo visualizar".
+async function analyzeMediaWithGemini(tenantId: string, storagePath: string, mimeTypeHint: string | null, msgType: string): Promise<string | null> {
+  try {
+    const { data: geminiInt } = await supabase
+      .from("integrations").select("config")
+      .eq("tenant_id", tenantId).eq("provider", "gemini").eq("is_active", true).maybeSingle();
+    const gcfg = (geminiInt?.config || {}) as any;
+    const gKey = gcfg.api_key;
+    if (!gKey) return null;
+    const model = String(gcfg.model || "gemini-2.5-flash").replace(/^google\//, "");
+
+    const { data: blob, error } = await supabase.storage.from("whatsapp-media").download(storagePath);
+    if (error || !blob) { console.error("[webhook] media download for analysis failed:", error); return null; }
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > 18 * 1024 * 1024) return null; // inline tem limite; pula arquivos grandes
+
+    const ext = (storagePath.split(".").pop() || "").toLowerCase();
+    const mimeType = mimeTypeHint || EXT_TO_MIME[ext] || (blob.type) || "application/octet-stream";
+
+    const promptByType: Record<string, string> = {
+      audio: "Transcreva este áudio em português, do começo ao fim. Se não houver fala compreensível, responda apenas '[áudio sem fala compreensível]'.",
+      image: "Você é assistente de atendimento. Descreva de forma objetiva e curta o que o cliente enviou nesta imagem e TRANSCREVA qualquer texto visível (número de pedido, código de rastreio, valores, nomes, datas, prints de conversa). Não invente nada. Português.",
+      video: "Descreva de forma objetiva e curta o que aparece neste vídeo enviado pelo cliente e transcreva qualquer fala relevante. Não invente nada. Português.",
+      document: "Resuma de forma objetiva e curta o conteúdo deste documento enviado pelo cliente, transcrevendo dados relevantes (números, valores, nomes, datas). Não invente nada. Português.",
+    };
+    const instruction = promptByType[msgType] || promptByType.image;
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${gKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: instruction }, { inline_data: { mime_type: mimeType, data: bytesToBase64(bytes) } }] }],
+        // thinkingBudget 0 = sem "raciocínio" do 2.5-flash consumindo os tokens de saída (senão a resposta vem truncada)
+        generationConfig: { temperature: 0.2, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+    });
+    if (!res.ok) { console.error("[webhook] Gemini media analysis HTTP", res.status, (await res.text()).slice(0, 300)); return null; }
+    const data = await res.json();
+    const text = (data?.candidates?.[0]?.content?.parts || []).map((p: any) => p?.text).filter(Boolean).join(" ").trim();
+    return text || null;
+  } catch (e) {
+    console.error("[webhook] analyzeMediaWithGemini error:", e);
+    return null;
+  }
+}
+
 async function downloadAndStoreMedia(mediaId: string, mimeType: string, tenantId: string): Promise<string | null> {
   try {
     const token = await resolveAccessToken(tenantId);
@@ -198,9 +263,14 @@ async function lookupOrdersByCpf(tenantId: string, cpf: string): Promise<string>
 // ===== BLING INTEGRATION =====
 
 async function refreshBlingToken(integrationId: string, cfg: any): Promise<string | null> {
-  const clientId = Deno.env.get("BLING_CLIENT_ID");
-  const clientSecret = Deno.env.get("BLING_CLIENT_SECRET");
-  if (!clientId || !clientSecret || !cfg?.refresh_token) return null;
+  // Prioriza client_id/secret salvos na config da integração (igual ao bling-auth);
+  // as env vars são apenas fallback e nem sempre estão setadas nas edge functions.
+  const clientId = cfg?.client_id || Deno.env.get("BLING_CLIENT_ID");
+  const clientSecret = cfg?.client_secret || Deno.env.get("BLING_CLIENT_SECRET");
+  if (!clientId || !clientSecret || !cfg?.refresh_token) {
+    console.error("[webhook] Bling refresh: faltam client_id/client_secret/refresh_token");
+    return null;
+  }
 
   try {
     const credentials = btoa(`${clientId}:${clientSecret}`);
@@ -263,21 +333,37 @@ async function lookupOrdersBling(tenantId: string, cpf: string): Promise<string>
     if (!contactRes.ok) return JSON.stringify({ error: "Erro ao consultar Bling." });
 
     const contactData = await contactRes.json();
-    const contacts = contactData?.data || [];
+    let contacts = contactData?.data || [];
+
+    // Fallback: alguns cadastros não batem no "pesquisa" formatado — tenta pelo numeroDocumento (só dígitos)
+    if (contacts.length === 0) {
+      try {
+        const altRes = await fetch(`https://api.bling.com.br/Api/v3/contatos?numeroDocumento=${encodeURIComponent(cleanCpf)}`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        });
+        if (altRes.ok) contacts = (await altRes.json())?.data || [];
+      } catch (_) { /* ignore */ }
+    }
     if (contacts.length === 0) return JSON.stringify({ error: "Nenhum cliente encontrado no Bling com esse CPF.", cpf: formattedCpf });
 
-    const contactId = contacts[0].id;
-    const contactName = contacts[0].nome;
-
-    const ordersRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${contactId}&limit=5`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    });
-
-    if (!ordersRes.ok) return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Erro ao buscar pedidos no Bling." });
-
-    const ordersData = await ordersRes.json();
-    const ordersList = ordersData?.data || [];
-    if (ordersList.length === 0) return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos." });
+    // Pode haver mais de um contato com o mesmo CPF — pega o primeiro que tiver pedidos
+    let contactName = contacts[0].nome;
+    let ordersList: any[] = [];
+    for (const c of contacts.slice(0, 3)) {
+      let ordersRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${c.id}&limit=5`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+      if (!ordersRes.ok && ordersRes.status >= 500) {
+        await new Promise((r) => setTimeout(r, 600));
+        ordersRes = await fetch(`https://api.bling.com.br/Api/v3/pedidos/vendas?idContato=${c.id}&limit=5`, {
+          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        });
+      }
+      if (!ordersRes.ok) continue;
+      const list = (await ordersRes.json())?.data || [];
+      if (list.length > 0) { contactName = c.nome; ordersList = list; break; }
+    }
+    if (ordersList.length === 0) return JSON.stringify({ customer_name: contactName, cpf: formattedCpf, orders: [], message: "Cliente encontrado no Bling, mas sem pedidos vinculados a esse CPF." });
 
     const detailedOrders = [];
     for (const order of ordersList.slice(0, 5)) {
@@ -363,12 +449,51 @@ const aiTools = [
       parameters: { type: "object", properties: { cpf: { type: "string", description: "CPF do cliente" } }, required: ["cpf"] },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "flag_for_human_review",
+      description: "Sinaliza esta conversa como prioritária para revisão humana — MAS você (Ana) continua respondendo normalmente. Use quando: reclamação séria, cancelamento/reembolso/troca, problema de pagamento, dúvida técnica/jurídica/médica, ameaça de processo, ou cliente claramente irritado pedindo humano. NÃO pare de atender; apenas sinalize internamente que o time humano deve dar uma olhada na conversa em paralelo. Depois de chamar essa função, RESPONDA NORMALMENTE ao cliente com acolhimento — você é quem dá a última palavra até o assunto resolver.",
+      parameters: { type: "object", properties: { reason: { type: "string", description: "Motivo curto pra revisão humana" } }, required: ["reason"] },
+    },
+  },
 ];
+
+async function flagForHumanReview(customerId: string, reason: string): Promise<string> {
+  try {
+    const { data: cust } = await supabase.from("customers").select("custom_attributes").eq("id", customerId).maybeSingle();
+    const attrs = { ...((cust?.custom_attributes as any) || {}) };
+    // IMPORTANTE: NÃO desliga ai_enabled — IA continua respondendo (regra: última palavra sempre da IA até resolvido)
+    attrs.needs_human_review = true;
+    attrs.flagged_at = new Date().toISOString();
+    attrs.flag_reason = String(reason || "").slice(0, 300);
+    await supabase.from("customers").update({ custom_attributes: attrs }).eq("id", customerId);
+    console.log(`[webhook] Flagged ${customerId} for human REVIEW (IA continues): ${reason}`);
+    return JSON.stringify({
+      ok: true,
+      instruction: "Conversa sinalizada para revisão humana. IMPORTANTE: você CONTINUA atendendo normalmente. Agora responda ao cliente com acolhimento ('estou anotando aqui, vou priorizar' / 'já estou olhando o seu caso') e tente resolver o que puder. NUNCA diga que vai 'passar pra um atendente' nem que 'alguém vai retornar' — VOCÊ é a Ana e VOCÊ vai resolver junto com o cliente.",
+    });
+  } catch (e) {
+    console.error("[webhook] flagForHumanReview error:", e);
+    return JSON.stringify({ ok: false, instruction: "Responda ao cliente normalmente com acolhimento e tente ajudar. Não prometa transferência humana." });
+  }
+}
 
 async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone: string, customerAttrs: Record<string, any> | null) {
   try {
     const attrs = customerAttrs || {};
-    if (attrs.ai_enabled === false) return;
+    // Regra Maxfem: IA dá a última palavra até resolver. Só silencia se humano explicitamente assumir
+    // (custom_attributes.human_taken_over = true) — diferente do antigo ai_enabled=false que era setado
+    // automaticamente em escalation.
+    if (attrs.human_taken_over === true) {
+      console.log(`[webhook] AI skipped — human took over conversation ${customerId}`);
+      return;
+    }
+    if (attrs.ai_enabled === false && attrs.human_taken_over !== false) {
+      // Legacy ai_enabled=false vinda de escalations antigas: ignora (IA volta a responder).
+      // Logado pra auditoria.
+      console.log(`[webhook] Ignoring legacy ai_enabled=false for ${customerId} — IA volta a atender`);
+    }
 
     // CPF já conhecido do cliente (sincronizado da Yampi) — evita ter que pedir
     let knownCpf = String(attrs.cpf || attrs.document || "").replace(/\D/g, "");
@@ -381,27 +506,62 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
     }
     if (knownCpf.length !== 11) knownCpf = "";
 
-    const { data: integration } = await supabase
+    // Provedor de IA: Gemini (prioridade) > OpenAI (fallback legado).
+    // Ambos usam o endpoint OpenAI-compatível, então o resto do fluxo (tools, loop) é idêntico.
+    const { data: geminiIntegration } = await supabase
       .from("integrations").select("config")
-      .eq("tenant_id", tenantId).eq("provider", "openai").eq("is_active", true).maybeSingle();
+      .eq("tenant_id", tenantId).eq("provider", "gemini").eq("is_active", true).maybeSingle();
 
-    if (!integration) return;
+    let integration = geminiIntegration;
+    const useGemini = !!geminiIntegration;
+    if (!integration) {
+      const { data: openaiIntegration } = await supabase
+        .from("integrations").select("config")
+        .eq("tenant_id", tenantId).eq("provider", "openai").eq("is_active", true).maybeSingle();
+      integration = openaiIntegration;
+    }
+    if (!integration) { console.log(`[webhook] Nenhum provedor de IA (gemini/openai) ativo para tenant ${tenantId} — auto-resposta off`); return; }
 
     const config = integration.config as any;
-    const apiKey = config?.openai_api_key;
-    if (!apiKey) return;
+    if (config?.ai_enabled === false) return; // toggle global do atendimento IA
+
+    const aiEndpoint = useGemini
+      ? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+      : "https://api.openai.com/v1/chat/completions";
+    const apiKey = useGemini
+      ? (config?.api_key || Deno.env.get("GEMINI_API_KEY") || "")
+      : (config?.openai_api_key || "");
+    if (!apiKey) { console.log(`[webhook] ${useGemini ? "Gemini" : "OpenAI"} sem API key para tenant ${tenantId} — auto-resposta off`); return; }
 
     const { data: recentMsgs } = await supabase
       .from("whatsapp_messages")
-      .select("direction, content, message_type, created_at")
+      .select("id, direction, content, message_type, media_url, metadata, created_at")
       .eq("tenant_id", tenantId).eq("phone", phone)
       .order("created_at", { ascending: false }).limit(20);
 
     if (!recentMsgs || recentMsgs.length === 0) return;
 
+    // Safety net: se a mídia mais recente do cliente ainda não foi analisada (passo do webhook
+    // falhou, ou mensagem antiga), analisa agora com Gemini pra IA não responder "não consigo ver".
+    const mediaTypes = ["image", "video", "audio", "document"];
+    const lastUnanalyzed = recentMsgs.find((m: any) =>
+      m.direction === "inbound" && m.media_url && mediaTypes.includes(m.message_type) && !m.metadata?.media_analysis);
+    if (lastUnanalyzed) {
+      try {
+        const analysis = await analyzeMediaWithGemini(tenantId, lastUnanalyzed.media_url, lastUnanalyzed.metadata?.mime_type || null, lastUnanalyzed.message_type);
+        if (analysis) {
+          const newMeta = { ...(lastUnanalyzed.metadata || {}), media_analysis: analysis };
+          await supabase.from("whatsapp_messages").update({ metadata: newMeta }).eq("id", lastUnanalyzed.id);
+          lastUnanalyzed.metadata = newMeta;
+        }
+      } catch (e) { console.error("[webhook] lazy media analysis error:", e); }
+    }
+
     const tone = attrs.ai_tone && attrs.ai_tone !== "default" ? attrs.ai_tone : (config.tone || "friendly");
-    const model = config.model || "gpt-4o-mini";
-    const systemPrompt = config.system_prompt || "Você é um assistente de atendimento ao cliente.";
+    const model = useGemini
+      ? String(config.model || "gemini-2.5-flash").replace(/^google\//, "")
+      : (config.model || "gpt-4o-mini");
+    const systemPrompt = config.whatsapp_prompt || config.system_prompt || "Você é a Ana, atendente da Maxfem. Atende clientes pelo WhatsApp de forma acolhedora e objetiva.";
     const extraContext = attrs.ai_context || "";
 
     const toneInstructions: Record<string, string> = {
@@ -420,18 +580,21 @@ async function tryAutoRespondWithAI(tenantId: string, customerId: string, phone:
     const hasOrderTools = hasYampi || hasBling;
 
     const activeTools: any[] = [];
-    if (hasYampi) activeTools.push(aiTools[0]);
+    // Bling é a fonte de verdade (tem TODOS os pedidos + rastreio em tempo real). O lookup local (Yampi)
+    // é um subconjunto incompleto — só usa se não tiver Bling.
     if (hasBling) activeTools.push(aiTools[1]);
+    else if (hasYampi) activeTools.push(aiTools[0]);
+    activeTools.push(aiTools[2]); // flag_for_human_review — sempre disponível (sinalização interna, IA continua respondendo)
 
+    const lookupFn = hasBling ? "lookup_orders_bling" : (hasYampi ? "lookup_orders_by_cpf" : "");
     let orderInstructions = "";
     if (hasOrderTools) {
-      orderInstructions = `\nVocê tem funções para consultar pedidos/rastreio do cliente — mas elas EXIGEM o CPF do cliente como parâmetro.
+      orderInstructions = `\nQuando o cliente perguntar sobre pedido / rastreio / entrega / "quando vai chegar" / "comprei e quero saber...", você DEVE consultar com a função ${lookupFn} (ela exige o CPF, só dígitos).
 ${knownCpf
-  ? `O CPF cadastrado deste cliente é ${knownCpf}. Use-o DIRETO nas consultas — NÃO precisa pedir o CPF.`
-  : `Você ainda NÃO tem o CPF deste cliente. Se ele perguntar sobre pedido / rastreio / entrega / "comprei e quero saber...", PEÇA o CPF primeiro de forma natural (ex.: "Claro! Me passa seu CPF, só os números, que eu localizo seu pedido aqui."). NÃO chame nenhuma função de consulta antes de ter o CPF REAL com 11 dígitos. NUNCA invente, chute ou complete um CPF.`}
-${hasBling ? "Para consultar rastreio, use lookup_orders_bling (dados em tempo real do ERP Bling). Se ela falhar, tente lookup_orders_by_cpf como alternativa." : ""}
-${hasYampi && !hasBling ? "Use lookup_orders_by_cpf (dados sincronizados localmente)." : ""}
-Se a consulta retornar erro ou nada: peça desculpas, peça pro cliente confirmar o CPF (11 dígitos), e se ainda assim não achar, diga que vai verificar e retornar em breve. NUNCA responda só "tive um problema".
+  ? `O CPF cadastrado deste cliente é ${knownCpf}. Use-o DIRETO em ${lookupFn} — NÃO precisa pedir o CPF.`
+  : `Você ainda NÃO tem o CPF deste cliente. Peça primeiro de forma natural (ex.: "Claro! Me passa seu CPF, só os números, que eu localizo seu pedido aqui."). Assim que o cliente mandar um CPF com 11 dígitos, CHAME ${lookupFn} com esse CPF — não fique enrolando. NUNCA invente, chute ou complete um CPF.`}
+SEMPRE use ${lookupFn} pra responder sobre pedido/rastreio — nunca responda status/prazo/rastreio de cabeça.
+Se ${lookupFn} retornar erro ou "sem pedidos": peça desculpas, peça pro cliente CONFERIR se digitou o CPF certo e mandar de novo; se na segunda tentativa ainda não achar, chame flag_for_human_review (sinalização interna — você CONTINUA atendendo) e diga ao cliente que está investigando junto com o time, pra ele te mandar o e-mail ou número do pedido pra você localizar. NUNCA responda só "tive um problema" nem prometa que alguém vai retornar.
 
 REGRAS sobre rastreio (INEGOCIÁVEIS):
 - Quando informar rastreio, escreva apenas: "Link para rastreamento: http://rastreio.maxfem.com.br/{tracking_code}"
@@ -444,23 +607,54 @@ REGRAS sobre rastreio (INEGOCIÁVEIS):
 - Nunca invente informações.`;
     }
 
-    const fullSystemPrompt = `${systemPrompt}\n\nTom de voz: ${toneInstructions[tone] || toneInstructions.friendly}${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}${orderInstructions}\n\nVocê está respondendo automaticamente ao cliente via WhatsApp. Responda de forma natural e direta, como se fosse um atendente humano. Não use formatações como markdown. Seja breve e objetivo.`;
+    const guardrails = `
 
+REGRAS CRÍTICAS (inegociáveis):
+- Você responde DIRETO ao cliente final no WhatsApp (não a um atendente). Fale na primeira pessoa, como a Ana da Maxfem. Seja didática e paciente: explique com calma, sem pressa, sem jargão; aguente dúvida repetida e erro de digitação sem tratar como óbvio.
+- INTENÇÃO DE COMPRA = MANDA O LINK NA HORA. Se o cliente disser que quer comprar / quanto custa / como pede / "me manda o link" / "quero esse", responda já com o LINK do produto na própria mensagem, com os UTM (utm_source=whatsapp&utm_medium=atendente-ia&utm_campaign=atendimento). Nunca diga só "visite nosso site" sem o link; nunca fique perguntando o que ele quer saber quando ele já disse que quer comprar.
+- NUNCA invente ou "chute" nada: status de pedido, prazos, valores, código de rastreio, políticas, composição de produto, indicação de uso, etc. Se não tem certeza, não responda de cabeça.
+- VOCÊ é a Ana e VOCÊ dá a última palavra até o assunto se resolver. NUNCA prometa "passar pra um atendente", "alguém vai retornar", "vou transferir você". Você está aqui, você atende.
+- Se a pergunta fugir do que você sabe com segurança — reclamação séria, cancelamento/reembolso/troca, problema de pagamento, dúvida técnica/jurídica/médica — chame a função flag_for_human_review (sinalização interna pro time monitorar) e CONTINUE atendendo o cliente normalmente. Use frases como "estou anotando isso aqui pra priorizar com o time", "vou conferir junto com o pessoal e te confirmo já já", "me conta mais pra eu entender o que aconteceu". Acolha, peça mais informações, ofereça caminhos. Você é resolução, não transferência.
+- Se o cliente pedir explicitamente um humano, valide o sentimento ("entendo, você quer falar com alguém do time, sem problema") + chame flag_for_human_review + continue tentando ajudar você mesma ("enquanto isso, me conta o que está acontecendo? Talvez eu já resolva agora").
+- Para reclamação ou raiva: NUNCA fique em loop "não consegui". Acolha de verdade ("imagino sua frustração"), peça contexto (e-mail/pedido/data), proponha um próximo passo concreto e dê um prazo seu mesmo (ex: "vou verificar isso hoje ainda e te trago a posição até amanhã às 18h"). Você ASSUME a resolução.
+- Quando o cliente enviar imagem, áudio, vídeo ou documento, o conteúdo já vem transcrito/descrito no histórico entre colchetes (ex.: "[O cliente enviou uma imagem. Conteúdo: ...]") — use isso normalmente, não diga que "não consegue ver". Se aparecer "não foi possível ler", aí sim peça pro cliente descrever em texto ou encaminhe pra um humano.
+- Não prometa prazos de resultado de produto nem faça promessas de cura/tratamento.`;
+
+    const fullSystemPrompt = `${systemPrompt}\n\nTom de voz: ${toneInstructions[tone] || toneInstructions.friendly}${extraContext ? `\nContexto adicional desta conversa: ${extraContext}` : ""}${orderInstructions}${guardrails}\n\nResponda de forma natural, breve e direta. Não use markdown.`;
+
+    const ptMediaName: Record<string, string> = {
+      image: "uma imagem/foto", video: "um vídeo", audio: "um áudio", document: "um documento",
+    };
     const chatMessages: any[] = [
       { role: "system", content: fullSystemPrompt },
-      ...recentMsgs.reverse().map((m: any) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content || `[${m.message_type}]` })),
+      ...recentMsgs.reverse().map((m: any) => {
+        const role = m.direction === "inbound" ? "user" : "assistant";
+        let c = (m.content || "").trim();
+        const analysis = m.metadata?.media_analysis;
+        if (analysis) {
+          const what = ptMediaName[m.message_type] || "um arquivo";
+          c = c ? `${c}\n[O cliente enviou ${what}. Conteúdo: ${analysis}]` : `[O cliente enviou ${what}. Conteúdo: ${analysis}]`;
+        } else if (!c && mediaTypes.includes(m.message_type)) {
+          c = `[O cliente enviou ${ptMediaName[m.message_type] || "um arquivo"} que não foi possível ler automaticamente]`;
+        } else if (!c) {
+          c = `[${m.message_type}]`;
+        }
+        return { role, content: c };
+      }),
     ];
 
     const openaiBody: any = { model, messages: chatMessages, max_tokens: 500, temperature: 0.7 };
-    if (hasOrderTools) { openaiBody.tools = activeTools; openaiBody.tool_choice = "auto"; }
+    if (activeTools.length > 0) { openaiBody.tools = activeTools; openaiBody.tool_choice = "auto"; }
 
-    let openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    console.log(`[webhook] AI auto-reply via ${useGemini ? "gemini" : "openai"} (${model}) → ${phone}`);
+
+    let openaiResponse = await fetch(aiEndpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
 
-    if (!openaiResponse.ok) { console.error(`[webhook] OpenAI error: ${openaiResponse.status}`); return; }
+    if (!openaiResponse.ok) { console.error(`[webhook] ${useGemini ? "Gemini" : "OpenAI"} error ${openaiResponse.status}:`, (await openaiResponse.text()).slice(0, 500)); return; }
 
     let result = await openaiResponse.json();
     let assistantMessage = result.choices?.[0]?.message;
@@ -475,16 +669,18 @@ REGRAS sobre rastreio (INEGOCIÁVEIS):
         let toolResult = "";
         if (toolCall.function.name === "lookup_orders_by_cpf") toolResult = await lookupOrdersByCpf(tenantId, args.cpf);
         else if (toolCall.function.name === "lookup_orders_bling") toolResult = await lookupOrdersBling(tenantId, args.cpf);
+        else if (toolCall.function.name === "flag_for_human_review") toolResult = await flagForHumanReview(customerId, args.reason);
+        else toolResult = JSON.stringify({ error: "função desconhecida" });
         chatMessages.push({ role: "tool", tool_call_id: toolCall.id, content: toolResult });
       }
 
-      openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      openaiResponse = await fetch(aiEndpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: chatMessages, max_tokens: 800, temperature: 0.7 }),
+        body: JSON.stringify({ model, messages: chatMessages, max_tokens: 800, temperature: 0.7, tools: activeTools, tool_choice: "auto" }),
       });
 
-      if (!openaiResponse.ok) break;
+      if (!openaiResponse.ok) { console.error(`[webhook] ${useGemini ? "Gemini" : "OpenAI"} tool-loop error ${openaiResponse.status}:`, (await openaiResponse.text()).slice(0, 500)); break; }
       result = await openaiResponse.json();
       assistantMessage = result.choices?.[0]?.message;
     }
@@ -523,10 +719,10 @@ REGRAS sobre rastreio (INEGOCIÁVEIS):
     await supabase.from("whatsapp_messages").insert({
       tenant_id: tenantId, customer_id: customerId, phone, direction: "outbound",
       message_type: "text", content: aiReply, wamid: waResult.messages?.[0]?.id, status: "sent",
-      metadata: { ai_generated: true },
+      metadata: { ai_generated: true, ai_provider: useGemini ? "gemini" : "openai", ai_model: model },
     });
 
-    console.log(`[webhook] AI auto-reply sent to ${phone}`);
+    console.log(`[webhook] AI auto-reply sent to ${phone} (${useGemini ? "gemini" : "openai"})`);
   } catch (err) {
     console.error(`[webhook] AI auto-respond error:`, err);
   }
@@ -609,6 +805,7 @@ Deno.serve(async (req) => {
 
               let content = "";
               let mediaUrl: string | null = null;
+              let mediaMime: string | null = null;
 
               switch (msgType) {
                 case "text": content = message.text?.body || ""; break;
@@ -616,14 +813,15 @@ Deno.serve(async (req) => {
                   const mediaData = message[msgType];
                   content = mediaData?.caption || "";
                   const mediaId = mediaData?.id;
-                  const mimeType = mediaData?.mime_type || "application/octet-stream";
-                  if (mediaId) mediaUrl = await downloadAndStoreMedia(mediaId, mimeType, tenantId);
+                  mediaMime = mediaData?.mime_type || "application/octet-stream";
+                  if (mediaId) mediaUrl = await downloadAndStoreMedia(mediaId, mediaMime, tenantId);
                   if (msgType === "document" && mediaData?.filename) content = content || mediaData.filename;
                   break;
                 }
                 case "sticker": {
                   const stickerId = message.sticker?.id;
-                  if (stickerId) mediaUrl = await downloadAndStoreMedia(stickerId, message.sticker?.mime_type || "image/webp", tenantId);
+                  mediaMime = message.sticker?.mime_type || "image/webp";
+                  if (stickerId) mediaUrl = await downloadAndStoreMedia(stickerId, mediaMime, tenantId);
                   content = "[Sticker]"; break;
                 }
                 case "reaction": content = message.reaction?.emoji || ""; break;
@@ -642,15 +840,28 @@ Deno.serve(async (req) => {
                 customer = newCustomer;
               }
 
-              await supabase.from("whatsapp_messages").insert({
+              const { data: insertedMsg } = await supabase.from("whatsapp_messages").insert({
                 tenant_id: tenantId, customer_id: customer!.id, phone, direction: "inbound",
                 message_type: msgType === "sticker" ? "image" : msgType, content, media_url: mediaUrl,
                 wamid, status: "received",
-                metadata: { phone_number_id: phoneNumberId, contact_name: contact?.profile?.name },
-              });
+                metadata: { phone_number_id: phoneNumberId, contact_name: contact?.profile?.name, ...(mediaMime ? { mime_type: mediaMime } : {}) },
+              }).select("id").single();
 
               await markRepliedActivity(customer!.id, tenantId);
               console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
+
+              // Mídia recebida → analisa com Gemini (visão/transcrição) e guarda no metadata,
+              // pra IA (e os atendentes) conseguirem responder de verdade. Feito ANTES da auto-resposta.
+              if (mediaUrl && insertedMsg?.id && ["image", "video", "audio", "document"].includes(msgType)) {
+                try {
+                  const analysis = await analyzeMediaWithGemini(tenantId, mediaUrl, mediaMime, msgType);
+                  if (analysis) {
+                    await supabase.from("whatsapp_messages")
+                      .update({ metadata: { phone_number_id: phoneNumberId, contact_name: contact?.profile?.name, ...(mediaMime ? { mime_type: mediaMime } : {}), media_analysis: analysis } })
+                      .eq("id", insertedMsg.id);
+                  }
+                } catch (e) { console.error("[webhook] media analysis step error:", e); }
+              }
 
               // === Onda 1: STOP keyword detection (LGPD/CAN-SPAM compliance) ===
               if (msgType === "text" && content) {
@@ -690,7 +901,27 @@ Deno.serve(async (req) => {
                 }
               }
 
-              tryAutoRespondWithAI(tenantId, customer!.id, phone, customer!.custom_attributes || null);
+              // FIRE-AND-FORGET: chama whatsapp-ai-respond dedicada
+              // Isso libera o webhook rapidamente pro Meta (evita timeout)
+              // e a edge function dedicada tem timeout próprio de 60s pro tool loop
+              const cronSecret = Deno.env.get("CRON_SECRET") || "";
+              const aiInvokeTask = fetch(`${SUPABASE_URL}/functions/v1/whatsapp-ai-respond`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-internal-call": cronSecret,
+                },
+                body: JSON.stringify({
+                  tenantId,
+                  customerId: customer!.id,
+                  phone,
+                  customerAttrs: customer!.custom_attributes || null,
+                }),
+              }).catch(e => console.error("[webhook] AI invoke error:", e));
+
+              const edgeRuntime = (globalThis as any).EdgeRuntime;
+              if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(aiInvokeTask);
+              // Não await - fire and forget
             }
           }
         }

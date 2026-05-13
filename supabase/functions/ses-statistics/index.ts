@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 import { SESClient, GetSendQuotaCommand, GetSendStatisticsCommand } from "npm:@aws-sdk/client-ses@3.645.0";
 import { SESv2Client, GetAccountCommand } from "npm:@aws-sdk/client-sesv2@3.645.0";
+import { getAwsCredentials } from "../_shared/aws-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,21 +25,15 @@ serve(async (req) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Não autenticado.");
 
-    const region = (Deno.env.get("AWS_REGION") || "us-east-1").trim();
-    const sesClient = new SESClient({
-      region,
-      credentials: {
-        accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID")!.trim(),
-        secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY")!.trim(),
-      },
-    });
-    const sesv2Client = new SESv2Client({
-      region,
-      credentials: {
-        accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID")!.trim(),
-        secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY")!.trim(),
-      },
-    });
+    const sbAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const awsCreds = await getAwsCredentials(sbAdmin);
+    if (!awsCreds.accessKeyId || !awsCreds.secretAccessKey) {
+      throw new Error("Credenciais AWS não configuradas. Cole AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY em /settings/integrations/aws.");
+    }
+    const region = awsCreds.region;
+    const credentials = { accessKeyId: awsCreds.accessKeyId, secretAccessKey: awsCreds.secretAccessKey };
+    const sesClient = new SESClient({ region, credentials });
+    const sesv2Client = new SESv2Client({ region, credentials });
 
     const [quota, stats, account] = await Promise.allSettled([
       sesClient.send(new GetSendQuotaCommand({})),

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle2, Loader2, Phone, Shield, TriangleAlert, Smartphone, Activity } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Phone, Shield, TriangleAlert, Smartphone, Activity, Trash2, Power, Webhook, Copy, KeyRound, ExternalLink, XCircle } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { WhatsAppHealthDashboard } from "@/components/whatsapp/HealthDashboard";
+import { AddWhatsAppDialog } from "@/components/whatsapp/AddWhatsAppDialog";
+import { ConnectWhatsAppDialog } from "@/components/whatsapp/ConnectWhatsAppDialog";
 
 type Step = "status" | "request_code" | "verify_code" | "register" | "done";
 
@@ -48,18 +50,45 @@ export default function SettingsWhatsApp() {
   const [pin, setPin] = useState("123456");
 
   // Fetch linked WhatsApp accounts
-  const { data: waAccounts = [] } = useQuery({
+  const { data: waAccounts = [], refetch: refetchAccounts } = useQuery({
     queryKey: ["whatsapp-accounts", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant?.id) return [];
       const { data } = await supabase
         .from("whatsapp_accounts")
-        .select("id, tenant_id, phone_number_id, display_phone, verified_name, quality_rating, is_active, created_at, updated_at")
+        .select("id, tenant_id, phone_number_id, display_phone, verified_name, quality_rating, is_active, label, whatsapp_business_account_id, notes, created_at, updated_at")
         .eq("tenant_id", currentTenant.id)
         .order("created_at", { ascending: false });
       return data || [];
     },
     enabled: !!currentTenant?.id,
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+      const { error } = await supabase
+        .from("whatsapp_accounts")
+        .update({ is_active })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Status atualizado");
+      void refetchAccounts();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao atualizar"),
+  });
+
+  const removeAccountMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("whatsapp_accounts").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Número removido");
+      void refetchAccounts();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao remover"),
   });
 
   const {
@@ -130,6 +159,39 @@ export default function SettingsWhatsApp() {
     return <Badge variant="outline">Pendente</Badge>;
   };
 
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || "";
+  const callbackUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
+
+  const { data: secretsStatus } = useQuery({
+    queryKey: ["wa-secrets-status"],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${supabaseUrl}/functions/v1/whatsapp-register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ action: "secrets_status" }),
+      });
+      return res.ok ? await res.json() : null;
+    },
+    refetchOnWindowFocus: false,
+  });
+
+  const copyCallback = () => {
+    navigator.clipboard.writeText(callbackUrl);
+    toast.success("URL de callback copiada!");
+  };
+
+  const copyVerifyToken = () => {
+    const token = secretsStatus?.has_verify_token
+      ? "(salvo no servidor — pega no Supabase Secrets se precisar)"
+      : "maxfem_wa_ba510d8bf4e7d046effa0b8c";
+    navigator.clipboard.writeText(token);
+    toast.success("Verify token copiado!");
+  };
+
   const getQualityBadge = (rating: string | undefined) => {
     if (!rating) return null;
 
@@ -178,6 +240,113 @@ export default function SettingsWhatsApp() {
           </TabsContent>
 
           <TabsContent value="configuracao" className="space-y-6">
+            {/* URL de callback (Webhook) */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Webhook className="h-4 w-4" />
+                  URL de callback (Meta Webhook)
+                </CardTitle>
+                <CardDescription>
+                  Cadastre essa URL em <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="underline inline-flex items-center gap-1">developers.facebook.com <ExternalLink className="h-3 w-3" /></a> → seu app → Webhooks → WhatsApp Business Account → Subscription URL.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Callback URL</p>
+                  <div className="flex gap-2">
+                    <Input value={callbackUrl} readOnly className="font-mono text-xs" />
+                    <Button onClick={copyCallback} variant="outline" className="shrink-0 gap-2">
+                      <Copy className="h-4 w-4" />
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Verify token</p>
+                  <div className="flex gap-2">
+                    <Input
+                      value={secretsStatus?.has_verify_token ? "•••••• (configurado nos secrets)" : "maxfem_wa_ba510d8bf4e7d046effa0b8c"}
+                      readOnly
+                      className="font-mono text-xs"
+                    />
+                    <Button onClick={copyVerifyToken} variant="outline" className="shrink-0 gap-2">
+                      <Copy className="h-4 w-4" />
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground rounded-lg bg-muted/30 p-3 space-y-1">
+                  <p className="font-medium text-foreground">Eventos a subscrever:</p>
+                  <p>messages · message_status · message_template_status_update · account_update · phone_number_quality_update</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Status das credenciais Meta */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <KeyRound className="h-4 w-4" />
+                      Credenciais Meta Cloud API
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Token de acesso (System User ou Permanent) + Phone Number ID + WABA ID. Validados via Graph API e salvos nos secrets do Supabase.
+                    </CardDescription>
+                  </div>
+                  <ConnectWhatsAppDialog
+                    onConnected={() =>
+                      queryClient.invalidateQueries({ queryKey: ["wa-secrets-status"] })
+                    }
+                  />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <div className="flex items-center gap-2">
+                      {secretsStatus?.has_access_token ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <code className="text-xs font-mono">WHATSAPP_ACCESS_TOKEN</code>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {secretsStatus?.has_access_token
+                        ? `${secretsStatus.access_token_prefix} (${secretsStatus.access_token_length} chars)`
+                        : "Não configurado"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <div className="flex items-center gap-2">
+                      {secretsStatus?.has_phone_number_id ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <code className="text-xs font-mono">WHATSAPP_PHONE_NUMBER_ID</code>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {secretsStatus?.phone_number_id || "Não configurado"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <div className="flex items-center gap-2">
+                      {secretsStatus?.has_waba_id ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <code className="text-xs font-mono">WHATSAPP_BUSINESS_ACCOUNT_ID</code>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {secretsStatus?.waba_id || "Não configurado"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2">
+                      {secretsStatus?.has_verify_token ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <code className="text-xs font-mono">WHATSAPP_VERIFY_TOKEN</code>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {secretsStatus?.has_verify_token ? "Configurado" : "Não configurado"}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4">
@@ -381,32 +550,99 @@ export default function SettingsWhatsApp() {
               </Card>
             )}
 
-            {waAccounts.length > 0 && (
-              <Card>
-                <CardHeader>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Smartphone className="h-5 w-5" />
-                    Números Conectados
+                    Números cadastrados
+                    <Badge variant="outline" className="ml-1">{waAccounts.length}</Badge>
                   </CardTitle>
-                </CardHeader>
-                <CardContent>
+                  <AddWhatsAppDialog onAdded={() => refetchAccounts()} />
+                </div>
+                <CardDescription>
+                  Cadastre múltiplos números do WhatsApp Cloud API. O número marcado como ativo é o usado para envio padrão.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {waAccounts.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                    <Smartphone className="mx-auto h-8 w-8 text-muted-foreground" />
+                    <p className="mt-2 text-sm font-medium text-foreground">
+                      Nenhum número cadastrado ainda
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Clique em "Adicionar número" pra cadastrar o primeiro.
+                    </p>
+                  </div>
+                ) : (
                   <div className="space-y-3">
                     {waAccounts.map((account) => (
-                      <div key={account.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                        <div className="flex items-center gap-3">
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium">{account.display_phone || account.phone_number_id}</p>
-                            <p className="text-xs text-muted-foreground">{account.verified_name}</p>
+                      <div
+                        key={account.id}
+                        className="flex items-start justify-between rounded-lg border border-border p-3 gap-3"
+                      >
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <Phone className="mt-1 h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-medium truncate">
+                                {account.label || account.display_phone || account.phone_number_id}
+                              </p>
+                              {account.is_active ? (
+                                <Badge variant="secondary">Ativo</Badge>
+                              ) : (
+                                <Badge variant="outline">Inativo</Badge>
+                              )}
+                              {getQualityBadge(account.quality_rating || undefined)}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                              {account.display_phone && <span>{account.display_phone} · </span>}
+                              {account.verified_name && <span>{account.verified_name} · </span>}
+                              <span className="font-mono">{account.phone_number_id}</span>
+                            </div>
+                            {account.notes && (
+                              <p className="mt-1 text-xs text-muted-foreground italic">
+                                {account.notes}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        {account.is_active && <Badge variant="secondary">Ativo</Badge>}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={account.is_active ? "Desativar" : "Ativar"}
+                            onClick={() =>
+                              toggleActiveMutation.mutate({
+                                id: account.id,
+                                is_active: !account.is_active,
+                              })
+                            }
+                            disabled={toggleActiveMutation.isPending}
+                          >
+                            <Power className={`h-4 w-4 ${account.is_active ? "text-primary" : "text-muted-foreground"}`} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Remover"
+                            onClick={() => {
+                              if (confirm(`Remover o número ${account.label || account.phone_number_id}?`)) {
+                                removeAccountMutation.mutate(account.id);
+                              }
+                            }}
+                            disabled={removeAccountMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

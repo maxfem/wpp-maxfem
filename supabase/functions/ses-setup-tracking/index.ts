@@ -18,6 +18,7 @@ import {
   SetTopicAttributesCommand,
   GetTopicAttributesCommand,
 } from "npm:@aws-sdk/client-sns@3.645.0";
+import { getAwsCredentials } from "../_shared/aws-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,18 +32,10 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const accessKeyId = (Deno.env.get("AWS_ACCESS_KEY_ID") || "").trim();
-    const secretAccessKey = (Deno.env.get("AWS_SECRET_ACCESS_KEY") || "").trim();
-    const region = (Deno.env.get("AWS_REGION") || "us-east-1").trim();
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    if (!accessKeyId || !secretAccessKey) throw new Error("AWS secrets ausentes.");
-
-    const credentials = { accessKeyId, secretAccessKey };
-    const ses = new SESClient({ region, credentials });
-    const sns = new SNSClient({ region, credentials });
+    const sbAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     // Auth: tenant via JWT
-    const sbAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const authHeader = req.headers.get("Authorization");
     let tenantId: string | null = null;
     if (authHeader) {
@@ -57,6 +50,15 @@ serve(async (req) => {
       }
     }
     if (!tenantId) throw new Error("Tenant não identificado.");
+
+    const awsCreds = await getAwsCredentials(sbAdmin, { tenantId });
+    if (!awsCreds.accessKeyId || !awsCreds.secretAccessKey) {
+      throw new Error("Credenciais AWS não configuradas. Cole AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY em /settings/integrations/aws.");
+    }
+    const region = awsCreds.region;
+    const credentials = { accessKeyId: awsCreds.accessKeyId, secretAccessKey: awsCreds.secretAccessKey };
+    const ses = new SESClient({ region, credentials });
+    const sns = new SNSClient({ region, credentials });
 
     const webhookUrl = `${supabaseUrl}/functions/v1/ses-events-webhook`;
     const log: string[] = [];

@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const FALLBACK_GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -76,19 +76,34 @@ async function generateCopilotReply(opts: {
   context?: any;
   forcePurchaseRedirect?: boolean;
 }): Promise<string | null> {
-  // load tone from integrations table (gemini or openai)
-  const { data: integ } = await supabase
+  // load tone/prompt from integrations table — Gemini tem prioridade, OpenAI é fallback legado
+  let { data: integ } = await supabase
     .from("integrations")
     .select("config")
     .eq("tenant_id", opts.tenantId)
-    .in("provider", ["gemini", "openai"])
+    .eq("provider", "gemini")
     .eq("is_active", true)
-    .order("provider", { ascending: false }) // gemini first alphabetically? we want gemini priority
-    .limit(1)
     .maybeSingle();
+  if (!integ) {
+    const { data: oai } = await supabase
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", opts.tenantId)
+      .eq("provider", "openai")
+      .eq("is_active", true)
+      .maybeSingle();
+    integ = oai;
+  }
 
   const tone = integ?.config?.tone || "amigável e prestativo";
-  const customPrompt = integ?.config?.system_prompt || "";
+  const customPrompt = integ?.config?.instagram_prompt || integ?.config?.system_prompt || "";
+  const apiKey = integ?.config?.api_key || FALLBACK_GEMINI_API_KEY;
+  const model = (integ?.config?.model || "gemini-2.5-flash").replace(/^google\//, "");
+
+  if (!apiKey) {
+    console.error("[ig-send] gemini api key não configurada");
+    return null;
+  }
 
   let channelHint =
     opts.channel === "live"
@@ -105,14 +120,14 @@ async function generateCopilotReply(opts: {
 
   const userMsg = opts.username ? `@${opts.username}: ${opts.incoming}` : opts.incoming;
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMsg },

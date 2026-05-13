@@ -851,12 +851,109 @@ export default function MessageTemplates() {
 
                   {(form.header_type === "image" || form.header_type === "video" || form.header_type === "document") && (
                     <div className="space-y-2">
-                      <Label>URL da mídia (exemplo)</Label>
-                      <Input
-                        placeholder="https://..."
-                        value={form.header_content}
-                        onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
-                      />
+                      <Label>Mídia do cabeçalho</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Cole URL pública OU clique em Upload"
+                          value={form.header_content}
+                          onChange={(e) => setForm((f) => ({ ...f, header_content: e.target.value }))}
+                          className="font-mono text-xs"
+                        />
+                        <input
+                          type="file"
+                          accept={
+                            form.header_type === "image" ? "image/png,image/jpeg" :
+                            form.header_type === "video" ? "video/mp4,video/3gpp" :
+                            "application/pdf"
+                          }
+                          id={`media-upload-${form.header_type}`}
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = async () => {
+                              const base64 = reader.result as string;
+                              try {
+                                toast.loading("Enviando ao Meta...");
+                                const { data: { session } } = await supabase.auth.getSession();
+                                const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-media-handle`, {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                    Authorization: `Bearer ${session?.access_token || ""}`,
+                                  },
+                                  body: JSON.stringify({
+                                    file_base64: base64,
+                                    file_type: file.type,
+                                    file_name: file.name,
+                                  }),
+                                });
+                                const data = await res.json();
+                                toast.dismiss();
+                                if (!res.ok || !data.ok) {
+                                  toast.error(data?.user_message || data?.error || "Falha no upload", { duration: 8000 });
+                                  return;
+                                }
+                                setForm((f) => ({ ...f, header_content: data.handle }));
+                                toast.success(`Upload OK · handle ${data.handle.slice(0, 12)}...`, { duration: 5000 });
+                              } catch (err: any) {
+                                toast.dismiss();
+                                toast.error(err.message);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                            // reset input
+                            e.target.value = "";
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => document.getElementById(`media-upload-${form.header_type}`)?.click()}
+                        >
+                          Upload
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={!form.header_content.startsWith("http")}
+                          onClick={async () => {
+                            try {
+                              toast.loading("Convertendo URL em handle Meta...");
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-media-handle`, {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${session?.access_token || ""}`,
+                                },
+                                body: JSON.stringify({
+                                  source_url: form.header_content,
+                                  file_type: form.header_type === "image" ? "image/png" : form.header_type === "video" ? "video/mp4" : "application/pdf",
+                                  file_name: "upload",
+                                }),
+                              });
+                              const data = await res.json();
+                              toast.dismiss();
+                              if (!res.ok || !data.ok) {
+                                toast.error(data?.user_message || data?.error || "Falha no upload", { duration: 8000 });
+                                return;
+                              }
+                              setForm((f) => ({ ...f, header_content: data.handle }));
+                              toast.success(`Handle gerado: ${data.handle.slice(0, 12)}...`, { duration: 5000 });
+                            } catch (err: any) {
+                              toast.dismiss();
+                              toast.error(err.message);
+                            }
+                          }}
+                        >
+                          URL → Handle
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Pra criar template no Meta, o campo precisa ser <strong>handle</strong> (não URL). Use o botão <strong>Upload</strong> pra subir arquivo direto, ou <strong>URL → Handle</strong> se já tem hospedado. Imagens até 5 MB.
+                      </p>
                     </div>
                   )}
 

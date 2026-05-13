@@ -121,7 +121,32 @@ Deno.serve(async (req) => {
       savedMediaUrl = media_url;
       content = message || `[${media_type === "image" ? "Imagem" : media_type === "video" ? "Vídeo" : media_type === "audio" ? "Áudio" : "Documento"}]`;
 
-      const mediaPayload: Record<string, unknown> = { link: media_url };
+      // Resolve media_url: if it's a storage path (not http), generate signed URL
+      let resolvedMediaUrl = media_url;
+      if (media_url && !media_url.startsWith("http")) {
+        // It's a Supabase Storage path - generate signed URL (1 hour expiry)
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from("whatsapp-media")
+          .createSignedUrl(media_url, 3600);
+        if (signedError || !signedData?.signedUrl) {
+          console.error("Failed to create signed URL:", signedError);
+          return new Response(
+            JSON.stringify({
+              error: "storage_error",
+              message: "Falha ao gerar URL do arquivo. Verifique se o upload foi concluído.",
+              details: signedError,
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+        resolvedMediaUrl = signedData.signedUrl;
+        console.log("Resolved storage path to signed URL:", media_url, "->", resolvedMediaUrl.slice(0, 100) + "...");
+      }
+
+      const mediaPayload: Record<string, unknown> = { link: resolvedMediaUrl };
       if (message && media_type !== "audio") mediaPayload.caption = message;
       if (media_type === "document" && filename) mediaPayload.filename = filename;
 

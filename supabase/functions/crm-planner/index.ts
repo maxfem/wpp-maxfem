@@ -110,22 +110,39 @@ serve(async (req) => {
 
   try {
     const { messages, tenant_id } = await req.json();
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    const { data: geminiIntegration } = await supabaseAdmin
+      .from("integrations")
+      .select("config")
+      .eq("tenant_id", tenant_id)
+      .eq("provider", "gemini")
+      .maybeSingle();
+
+    const config: any = geminiIntegration?.config || {};
+    const apiKey = config.api_key || Deno.env.get("GEMINI_API_KEY");
+    const model = (config.model || "gemini-2.5-flash").replace(/^google\//, "");
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: "Gemini API Key não configurada — configure em /settings/integrations/gemini" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const callAI = async (msgs: any[]) => {
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": "Bearer " + apiKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             ...msgs,

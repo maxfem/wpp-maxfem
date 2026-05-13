@@ -220,7 +220,10 @@ export default function Chat() {
       const existing = map.get(key);
 
       const isIG = msg.channel === "instagram";
-      const phoneKeyClean = isIG ? msg.ig_user_id! : normalizePhone(msg.phone);
+      const igKey = msg.ig_user_id || "";
+      const phoneKeyClean = isIG ? igKey : normalizePhone(msg.phone);
+      // Skip mensagens IG sem ig_user_id (payload mal formado do Meta)
+      if (isIG && !igKey) continue;
       const attrs = isIG ? {} : customerAttrMap.get(phoneKeyClean) || {};
       const matchedCustomer = isIG ? null : customerMap.get(phoneKeyClean);
 

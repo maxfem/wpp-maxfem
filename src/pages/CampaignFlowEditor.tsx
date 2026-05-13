@@ -78,12 +78,21 @@ function FlowEditorInner() {
   useEffect(() => {
     if (!id || id === "new" || loaded) return;
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("campaigns")
         .select("name, status, flow_data, scheduled_at, list_id, trigger_type, sto_enabled, is_ab_test, is_sandbox")
         .eq("id", id)
-        .single();
-      if (data) {
+        .maybeSingle();
+      if (error || !data) {
+        toast.error(
+          error?.message ||
+            "Campanha não encontrada — pode ter sido removida ou você não tem acesso.",
+          { duration: 8000 },
+        );
+        navigate("/campaigns");
+        return;
+      }
+      {
         setCampaignName(data.name);
         setIsActive(data.status === "running");
         setStoEnabled(!!data.sto_enabled);

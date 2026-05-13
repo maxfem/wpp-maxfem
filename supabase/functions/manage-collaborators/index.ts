@@ -142,8 +142,9 @@ serve(async (req) => {
 
       // 4. Send invitation email via SES (calling the other function or reusing logic)
       try {
-        await supabaseAdmin.functions.invoke("send-email-ses", {
+        const { data: emailResult, error: invokeErr } = await supabaseAdmin.functions.invoke("send-email-ses", {
           body: {
+            tenantId, // OBRIGATÓRIO: o send-email-ses recusa (401) sem tenant — invoke server-to-server não tem user
             to: email,
             subject: "Bem-vindo ao Maxfem CRM",
             html: `
@@ -163,6 +164,11 @@ serve(async (req) => {
             `
           }
         });
+        if (invokeErr || (emailResult && (emailResult as any).error)) {
+          console.error("send-email-ses falhou no convite:", invokeErr || (emailResult as any).error);
+        } else {
+          console.log("Convite enviado via SES para", email);
+        }
       } catch (emailErr) {
         console.error("Erro ao enviar e-mail de convite:", emailErr);
         // We don't throw here to avoid failing the whole process if only email fails

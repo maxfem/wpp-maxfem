@@ -1,4 +1,4 @@
-project_id = "poukhwsbskcvwroeqoct"
+project_id = "lfpwubqmpztxhrmxadcl"
 
 [functions.ses-events-webhook]
 verify_jwt = false
@@ -10,4 +10,25 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.mcp-server]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.instagram-webhook]
+verify_jwt = false
+
+[functions.handle-unsubscribe]
+verify_jwt = false
+
+[functions.link-redirect]
+verify_jwt = false
+
+[functions.bling-auth]
+verify_jwt = false
+
+[functions.data-deletion-callback]
+verify_jwt = false
+
+[functions.send-email-ses]
 verify_jwt = false

@@ -7,6 +7,7 @@ import {
   PutSuppressedDestinationCommand,
   DeleteSuppressedDestinationCommand,
 } from "npm:@aws-sdk/client-sesv2@3.645.0";
+import { getAwsCredentials } from "../_shared/aws-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,12 +33,13 @@ serve(async (req) => {
       if (!user) throw new Error("Não autenticado.");
     }
 
+    const awsCreds = await getAwsCredentials(supabase);
+    if (!awsCreds.accessKeyId || !awsCreds.secretAccessKey) {
+      throw new Error("Credenciais AWS não configuradas. Cole AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY em /settings/integrations/aws.");
+    }
     const ses = new SESv2Client({
-      region: Deno.env.get("AWS_REGION") || "us-east-1",
-      credentials: {
-        accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID")!.trim(),
-        secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY")!.trim(),
-      },
+      region: awsCreds.region,
+      credentials: { accessKeyId: awsCreds.accessKeyId, secretAccessKey: awsCreds.secretAccessKey },
     });
 
     const body = await req.json().catch(() => ({}));

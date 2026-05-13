@@ -140,6 +140,24 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Ação é obrigatória" }, 400);
     }
 
+    // Retorna presença/ausência dos secrets (sem chamar Graph) — usado pelo card de status na UI
+    if (action === "secrets_status") {
+      const tk = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "";
+      const pn = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
+      const ba = Deno.env.get("WHATSAPP_BUSINESS_ACCOUNT_ID") || "";
+      const vt = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || "";
+      return jsonResponse({
+        has_access_token: !!tk,
+        has_phone_number_id: !!pn,
+        has_waba_id: !!ba,
+        has_verify_token: !!vt,
+        access_token_prefix: tk ? tk.slice(0, 6) + "..." + tk.slice(-4) : null,
+        access_token_length: tk.length || 0,
+        phone_number_id: pn || null,
+        waba_id: ba || null,
+      });
+    }
+
     if (action === "request_code") {
       const codeMethod = body.code_method === "VOICE" ? "VOICE" : "SMS";
       const result = await callGraph("/request_code", {

@@ -105,13 +105,66 @@ async function fetchBlingTracking(tenantId: string, document: string | null, ord
 
 function resolveVariable(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
   const { customer, order, campaign, tenantId } = ctx;
+  const td = ctx.triggerData || {};
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
-  
+
   if (!key) return "-";
+
+  // Helpers reutilizados pelos aliases simples
+  const trackingCode = order?.tracking_code || td?.tracking_code || "";
+  const orderNumber = order?.order_number || td?.order_number || order?.external_id?.replace("yampi_", "") || td?.numero_loja || "";
+  const customerName = customer?.name || "Cliente";
+  const customerFirstName = customerName.split(" ")[0];
+  const lojaUrl = Deno.env.get("MAXFEM_LOJA_URL") || "https://www.maxfem.com.br";
+  const linkPedido = td?.order_url || (orderNumber ? `${lojaUrl}/pedidos/${orderNumber}` : lojaUrl);
+  const linkRastreio = trackingCode ? `http://rastreio.maxfem.com.br/${trackingCode}` : (td?.tracking_url || "");
+
   switch (key) {
-    case "customer.name": return customer?.name || "Cliente";
-    case "customer.first_name": return (customer?.name || "Cliente").split(" ")[0];
+    // ===== Aliases simples (formato Maxfem dos templates) =====
+    case "nome": return customerName;
+    case "primeiro_nome": return customerFirstName;
+    case "email": return customer?.email || "";
+    case "telefone":
+    case "phone": return customer?.phone || "";
+
+    case "numero_pedido": return orderNumber || "-";
+    case "valor_pedido": return order?.total ? formatCurrency(order.total) : (td?.total ? formatCurrency(td.total) : "-");
+    case "itens_pedido": return order?.items_summary || td?.items_summary || "seus itens";
+    case "status_pedido": return order?.mapped_status || td?.status || "-";
+
+    case "codigo_rastreio": return trackingCode || "-";
+    case "link_rastreio": return linkRastreio || "#";
+    case "previsao_entrega": return td?.previsao_entrega || td?.delivery_eta || order?.delivery_eta || "em breve";
+    case "transportadora": return td?.carrier || "transportadora";
+
+    case "link_pedido": return linkPedido;
+    case "link_pagamento": return td?.payment_url || order?.payment_url || linkPedido;
+    case "link_carrinho": return cart?.recovery_url || td?.cart_url || lojaUrl;
+    case "link_loja": return lojaUrl;
+    case "link_pesquisa": return td?.survey_url || `${lojaUrl}/pesquisa`;
+    case "link_whatsapp": {
+      const wa = (Deno.env.get("MAXFEM_WHATSAPP_NUMBER") || "5521923673174").replace(/\D/g, "");
+      return `https://wa.me/${wa}`;
+    }
+
+    case "codigo_pix": return td?.pix_qr_code || order?.pix_qr_code || td?.pix_code || "-";
+
+    case "link_nf":
+    case "link_danfe": return td?.link_nf || order?.nf_link_danfe || "-";
+    case "link_nf_pdf":
+    case "link_danfe_pdf": return td?.link_nf_pdf || order?.nf_link_pdf || td?.link_nf || "-";
+    case "numero_nf": return td?.nf_numero || order?.nf_numero || "-";
+    case "chave_nf":
+    case "chave_acesso_nf": return td?.nf_chave_acesso || order?.nf_chave_acesso || "-";
+    case "cupom": return campaign?.coupon || td?.coupon || "-";
+    case "valor_cashback": return campaign?.cashback ? formatCurrency(campaign.cashback) : (attrs?.cashback ? formatCurrency(attrs.cashback) : "-");
+    case "validade_cashback": return attrs?.cashback_expires_at || td?.cashback_expires_at || "30 dias";
+    case "link_cashback": return td?.cashback_url || `${lojaUrl}/conta/cashback`;
+
+    // ===== Esquema antigo com prefixos (mantém compat) =====
+    case "customer.name": return customerName;
+    case "customer.first_name": return customerFirstName;
     case "customer.phone": return customer?.phone || "";
     case "customer.email": return customer?.email || "";
     case "customer.city": return attrs?.city || "";
@@ -127,12 +180,12 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "cart.value": return cart?.value ? formatCurrency(cart.value) : "-";
     case "cart.items_count": return String(cart?.items_count || 0);
     case "cart.items_summary": return cart?.items_summary || "seus itens selecionados";
-    case "order.number": return order?.order_number || ctx.triggerData?.order_number || order?.external_id?.replace("yampi_", "") || order?.id?.slice(0, 8) || "-";
-    case "order.total": return (order?.total || ctx.triggerData?.total) ? formatCurrency(order?.total || ctx.triggerData?.total) : "-";
-    case "order.status": return order?.mapped_status || ctx.triggerData?.status || order?.status || "-";
-    case "order.tracking_code": return order?.tracking_code || ctx.triggerData?.tracking_code || "-";
-    case "order.delivery_days": return order?.delivery_days || ctx.triggerData?.delivery_days || "5 a 8";
-    case "order.pix_code": return ctx.triggerData?.pix_qr_code || order?.pix_qr_code || ctx.triggerData?.pix_code || "-";
+    case "order.number": return orderNumber || "-";
+    case "order.total": return (order?.total || td?.total) ? formatCurrency(order?.total || td?.total) : "-";
+    case "order.status": return order?.mapped_status || td?.status || order?.status || "-";
+    case "order.tracking_code": return trackingCode || "-";
+    case "order.delivery_days": return order?.delivery_days || td?.delivery_days || "5 a 8";
+    case "order.pix_code": return td?.pix_qr_code || order?.pix_qr_code || td?.pix_code || "-";
     case "campaign.coupon": return campaign?.coupon || "-";
     case "campaign.discount": return campaign?.discount || "-";
     case "campaign.product_name": return campaign?.product_name || "-";
@@ -533,7 +586,27 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
         
         // Fetch customer for filter matching and variable resolution
         const { data: customer } = await supabase.from("customers").select("*").eq("id", item.customer_id).single();
-        
+
+        // --- Stop cart_abandoned flow if customer has converted (paid an order) since the cart was abandoned ---
+        if (item.trigger_type === "cart_abandoned") {
+          const cartUpdatedAt = (customer?.custom_attributes as any)?.abandoned_cart?.updated_at || item.created_at;
+          if (cartUpdatedAt) {
+            const { data: paidOrders } = await supabase
+              .from("orders")
+              .select("id, mapped_status, created_at")
+              .eq("tenant_id", campaign.tenant_id)
+              .eq("customer_id", item.customer_id)
+              .gte("created_at", cartUpdatedAt)
+              .in("mapped_status", ["paid","pago","approved","aprovado","invoiced","faturado","shipped","enviado","delivered","entregue"])
+              .limit(1);
+            if (paidOrders && paidOrders.length > 0) {
+              console.log(`[automation] Customer ${item.customer_id} converted cart since ${cartUpdatedAt}, stopping flow (item ${item.id})`);
+              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now }).eq("id", item.id);
+              continue;
+            }
+          }
+        }
+
         // --- Onda 2: Send Time Optimization (STO) ---
         if (campaign.sto_enabled && !item.scheduled_for) {
           const bestHour = await getBestHourForCustomer(supabase, campaign.tenant_id, item.customer_id);
@@ -661,17 +734,27 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
             const emailTemplateName = node.data?.emailTemplate;
 
             if (emailTemplateName && !bodyHtml) {
-              const { data: tpl } = await supabase.from("email_templates")
+              const { data: legacyTpl } = await supabase.from("email_templates")
                 .select("subject, body_html")
                 .eq("name", emailTemplateName)
                 .eq("tenant_id", campaign.tenant_id)
                 .maybeSingle();
-              
+              let tpl: { subject: string | null; body_html: string | null } | null = legacyTpl || null;
+              if (!tpl) {
+                const { data: mtTpl } = await supabase.from("message_templates")
+                  .select("subject, body_html")
+                  .eq("name", emailTemplateName)
+                  .eq("tenant_id", campaign.tenant_id)
+                  .eq("channel", "email")
+                  .maybeSingle();
+                tpl = mtTpl || null;
+              }
+
               if (tpl) {
-                if (subject === "SEM SSUNTO" || !subject || subject === "E-mail importante") subject = tpl.subject;
-                bodyHtml = tpl.body_html;
+                if (subject === "SEM SSUNTO" || !subject || subject === "E-mail importante") subject = tpl.subject || subject;
+                bodyHtml = tpl.body_html || "";
               } else {
-                console.warn(`[automation] Email template "${emailTemplateName}" not found for tenant ${campaign.tenant_id}`);
+                console.warn(`[automation] Email template "${emailTemplateName}" not found in email_templates OR message_templates for tenant ${campaign.tenant_id}`);
               }
             }
 
@@ -702,6 +785,11 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
             if (!customer?.email || !bodyHtml) {
               const reason = !customer?.email ? "missing email" : "missing content";
               console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id,
+                customer_id: customer?.id, status: "skipped", channel: "email",
+                sent_at: new Date().toISOString(), error_message: `skipped:${reason}`,
+              });
               const nextId = getNextNodeId(edges, currentNodeId);
               if (nextId) {
                 currentNodeId = nextId;
@@ -899,7 +987,15 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               .select("id, name, phone, email, document, custom_attributes").eq("id", item.customer_id).single();
 
             if (!customer?.phone) {
-              await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+              const errMsg = `Customer ${item.customer_id} sem phone — WhatsApp skipped, indo pro próximo node`;
+              console.warn(`[automation] ${errMsg}`);
+              const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({ current_node_id: currentNodeId, error_message: errMsg }).eq("id", item.id);
+                continue;
+              }
+              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, error_message: errMsg }).eq("id", item.id);
               break;
             }
 
@@ -1018,7 +1114,8 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 const code = generateCode(10);
                 await supabase.from("tracked_links").insert({
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation", utm_campaign: slugify(campaign.name),
+                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation",
+                  utm_campaign: slugify(campaign.name), utm_content: templateName,
                 });
                 buttonUrlCode = code;
               } else {
@@ -1038,7 +1135,8 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                       await supabase.from("tracked_links").insert({
                         tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                         original_url: btnUrl.replace(varMatch[0], resolvedValue), code,
-                        utm_source: "whatsapp", utm_medium: "automation", utm_campaign: slugify(campaign.name),
+                        utm_source: "whatsapp", utm_medium: "automation",
+                        utm_campaign: slugify(campaign.name), utm_content: templateName,
                       });
                       buttonUrlCode = code;
                     } else {
@@ -1213,9 +1311,14 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
         }
 
         await new Promise((r) => setTimeout(r, 100));
-      } catch (err) {
-        console.error(`Queue item ${item.id} error:`, err);
-        await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+      } catch (err: any) {
+        const errMsg = String(err?.message || err).slice(0, 500);
+        console.error(`Queue item ${item.id} error:`, errMsg, err?.stack?.slice(0, 500));
+        await supabase.from("automation_queue").update({
+          status: "failed",
+          processed_at: now,
+          error_message: errMsg,
+        }).eq("id", item.id);
       }
     }
 

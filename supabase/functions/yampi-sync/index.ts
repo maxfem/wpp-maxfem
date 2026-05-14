@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js";
+import { emitTrackingCreated, emitTrackingUpdated } from "../_shared/automation-emitters.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -485,6 +486,10 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
 
       const extId = existingOrderMap.get(`yampi_${o.id}`);
       if (extId) {
+        // Buscar order existente para detectar se tracking_code é novo
+        const { data: existingOrder } = await supabase.from("orders").select("tracking_code, customer_id").eq("id", extId).single();
+        const hadTracking = !!existingOrder?.tracking_code;
+
         const updateData: any = {};
         if (trackCode) {
           updateData.tracking_code = trackCode;
@@ -496,6 +501,17 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
         }
         if (Object.keys(updateData).length > 0) {
           await supabase.from("orders").update(updateData).eq("id", extId);
+
+          // Emitir evento de tracking se código foi adicionado ou atualizado
+          if (trackCode && existingOrder?.customer_id) {
+            if (!hadTracking) {
+              await emitTrackingCreated(supabase, tenant_id, existingOrder.customer_id, extId, trackCode, trackCarrier);
+              console.log(`[automation] Emitted tracking_created for order ${extId}`);
+            } else if (hadTracking && trackCode !== existingOrder.tracking_code) {
+              await emitTrackingUpdated(supabase, tenant_id, existingOrder.customer_id, extId, trackCode, orderStatus);
+              console.log(`[automation] Emitted tracking_updated for order ${extId}`);
+            }
+          }
         }
       }
     } catch (e) {
@@ -569,6 +585,20 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       if (isPix) {
         console.log(`[DEBUG] Pix order #${orderNum} (yampi ${o.id}): status=${orderStatus}, txStatus=${txStatus}, triggers=${matchedTriggers.join(",")}, rawDate=${o.created_at?.date || o.created_at}`);
       }
+
+      // Persist PIX payment URL on customer when there's a pending PIX so templates can use dynamic button URL
+      if (isPix && isAwaitingPixOrBoleto && customerId && o.public_url) {
+        await supabase.from("customers").update({
+          custom_attributes: {
+            ...((customerEntry as any).custom_attributes || {}),
+            pix_payment_url: o.public_url,
+            pix_pending_order_id: o.id,
+            pix_pending_order_number: String(o.number || o.id),
+            pix_pending_updated_at: new Date().toISOString(),
+          },
+        }).eq("id", customerId);
+      }
+
       if (orderStatus === "paid" || txStatus === "captured") matchedTriggers.push("order_paid");
       if (isCreditCard && ["refused", "rejected", "cancelled"].includes(txStatus)) matchedTriggers.push("order_rejected_card");
       if (["approved", "invoiced", "paid"].includes(orderStatus)) matchedTriggers.push("order_approved");
@@ -601,6 +631,8 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
             payment_method: paymentAlias,
             status: orderStatus,
             pix_qr_code: o.pix?.data?.pix_qr_code || null,
+            pix_payment_url: o.public_url || null,
+            payment_url: o.public_url || null,
             items: itemsSummary,
             state: o.customer?.data?.spreadsheet?.data?.uf || null,
           },
@@ -868,12 +900,15 @@ Deno.serve(async (req) => {
           const trackCode = d.track_code || null;
           const trackUrl = d.track_url || null;
           const trackCarrier = d.shipment_service || null;
+          const orderStatus = d.status?.data?.alias || "shipped";
           const detailPayments = (d.payments?.data || []).map((p: any) => ({
             method: p.payment_method?.name || p.payment_method?.alias || "N/A",
             status: p.status || "N/A",
             value: p.value,
             installments: p.installments || 1,
           }));
+
+          const hadTracking = !!order.tracking_code;
 
           const updateData: any = {};
           if (trackCode) {
@@ -888,6 +923,20 @@ Deno.serve(async (req) => {
           if (Object.keys(updateData).length > 0) {
             await supabase.from("orders").update(updateData).eq("id", order.id);
             updated++;
+
+            // Buscar customer_id para emitir evento
+            const { data: orderWithCustomer } = await supabase.from("orders").select("customer_id").eq("id", order.id).single();
+
+            // Emitir evento de tracking se código foi adicionado ou atualizado
+            if (trackCode && orderWithCustomer?.customer_id) {
+              if (!hadTracking) {
+                await emitTrackingCreated(supabase, tenant_id, orderWithCustomer.customer_id, order.id, trackCode, trackCarrier);
+                console.log(`[automation] Emitted tracking_created for order ${order.id}`);
+              } else if (hadTracking && trackCode !== order.tracking_code) {
+                await emitTrackingUpdated(supabase, tenant_id, orderWithCustomer.customer_id, order.id, trackCode, orderStatus);
+                console.log(`[automation] Emitted tracking_updated for order ${order.id}`);
+              }
+            }
           }
         } catch (e) {
           console.error(`[refresh] Error for order ${yampiId}:`, e);

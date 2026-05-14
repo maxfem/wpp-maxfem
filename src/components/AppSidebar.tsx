@@ -17,6 +17,7 @@ import {
   Layout,
   ShieldCheck,
   Terminal,
+  HelpCircle,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
@@ -69,6 +70,10 @@ const executeItems = [
 const manageItems = [
   { title: "Clientes", url: "/customers", icon: Users },
   { title: "Listas", url: "/lists", icon: List },
+];
+
+const helpItems = [
+  { title: "Central de Ajuda", url: "/faq", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
@@ -151,6 +156,7 @@ export function AppSidebar() {
         {renderGroup("Planejar", planItems)}
         {renderGroup("Executar", executeItems)}
         {renderGroup("Minha Loja", manageItems)}
+        {renderGroup("Ajuda", helpItems)}
       </SidebarContent>
 
       <SidebarFooter className="p-3">

@@ -47,6 +47,7 @@ const PredictiveAnalytics = lazy(() => import("./pages/PredictiveAnalytics"));
 const SaudeAna = lazy(() => import("./pages/SaudeAna"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 const SettingsMCP = lazy(() => import("./pages/SettingsMCP"));
+const Faq = lazy(() => import("./pages/Faq"));
 
 const queryClient = new QueryClient();
 
@@ -122,6 +123,8 @@ const App = () => (
                    <Route path="/settings/mcp" element={<ProtectedRoute><SettingsMCP /></ProtectedRoute>} />
                    <Route path="/settings/auditoria" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
                    <Route path="/auditoria" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
+                   <Route path="/faq" element={<ProtectedRoute><Faq /></ProtectedRoute>} />
+                   <Route path="/ajuda" element={<Navigate to="/faq" replace />} />
                    <Route path="/preferences/:token" element={<PreferenceCenter />} />
                    <Route path="/r/:code" element={<LinkRedirect />} />
                   <Route path="/privacy" element={<PrivacyPolicy />} />

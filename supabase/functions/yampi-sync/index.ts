@@ -167,7 +167,7 @@ const CHANNEL_UTM_SOURCES = new Set(["email", "whatsapp"]);
 async function attributeConversions(
   supabase: any,
   tenant_id: string,
-  orders: { id: string; customer_id: string; total: number; utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_content?: string | null }[],
+  orders: { id: string; customer_id: string; total: number; created_at?: string | null; utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_content?: string | null }[],
 ) {
   const cutoff72 = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
   const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -178,9 +178,16 @@ async function attributeConversions(
     let activityId: string | null = null;
     let method = "";
 
+    // Causalidade temporal obrigatória: só atribuir activities ENVIADAS ANTES do pedido.
+    // Evita atribuição reversa de mensagens pós-compra (rastreio, NF, etc) ao próprio pedido que as gerou.
+    const orderCreatedAt = order.created_at || now;
+
     // --- Caminho 1: pedido com UTM de canal próprio (email/whatsapp) ---
     if (CHANNEL_UTM_SOURCES.has(src) && order.utm_campaign) {
-      const wantSlug = slugify(order.utm_campaign);
+      // Match flexível: remove TODOS caracteres não-alfanuméricos pra tolerar
+      // variações como "imunofem20off" vs slugify("Imunofem 20 off") = "imunofem-20-off"
+      const normalize = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const wantNorm = normalize(order.utm_campaign);
       const { data: candidates } = await supabase
         .from("campaign_activities")
         .select("id, sent_at, campaigns(name)")
@@ -189,9 +196,10 @@ async function attributeConversions(
         .eq("channel", src)
         .is("converted_at", null)
         .gte("sent_at", cutoff14d)
+        .lt("sent_at", orderCreatedAt)
         .order("sent_at", { ascending: false })
         .limit(25);
-      const match = (candidates || []).find((c: any) => slugify(c.campaigns?.name) === wantSlug);
+      const match = (candidates || []).find((c: any) => normalize(c.campaigns?.name) === wantNorm);
       if (match) { activityId = match.id; method = "utm"; }
     }
 
@@ -200,7 +208,7 @@ async function attributeConversions(
       continue;
     }
 
-    // --- Caminho 3: sem UTM útil → activity mais recente que o cliente CLICOU, janela 72h ---
+    // --- Caminho 3: sem UTM útil → activity mais recente que o cliente CLICOU antes do pedido, janela 72h ---
     if (!activityId) {
       const { data: clicked } = await supabase
         .from("campaign_activities")
@@ -210,11 +218,31 @@ async function attributeConversions(
         .is("converted_at", null)
         .not("clicked_at", "is", null)
         .gte("sent_at", cutoff72)
+        .lt("sent_at", orderCreatedAt)
+        .lt("clicked_at", orderCreatedAt)
         .order("clicked_at", { ascending: false })
         .order("sent_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (clicked) { activityId = clicked.id; method = "click_window"; }
+    }
+
+    // --- Caminho 4: last-touch 7d — order sem UTM (direto/orgânico) + activity recente RECEBIDA ANTES do pedido ---
+    if (!activityId && (!src || src === "direct")) {
+      const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: lastTouch } = await supabase
+        .from("campaign_activities")
+        .select("id")
+        .eq("customer_id", order.customer_id)
+        .eq("tenant_id", tenant_id)
+        .is("converted_at", null)
+        .gte("sent_at", cutoff7d)
+        .lt("sent_at", orderCreatedAt)
+        .in("status", ["sent", "delivered", "read", "clicked"])
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastTouch) { activityId = lastTouch.id; method = "last_touch_7d"; }
     }
 
     if (activityId) {
@@ -265,7 +293,7 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 // ===== PHASE: ORDERS =====
-async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null, sortBy: string = "-updated_at") {
+async function syncOrders(supabase: any, tenant_id: string, config: any, startPage: number, lastSyncedAt?: string | null, sortBy: string = "-updated_at", maxPages: number = PAGES_PER_BATCH) {
   const { alias, user_token, user_secret_key } = config;
   
   // Use date filter for incremental sync (only fetch orders updated since last sync)
@@ -278,7 +306,7 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     }
   }
   
-  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items,customer,pix", user_token, user_secret_key, startPage, PAGES_PER_BATCH, 50, extraParams);
+  const { data: orders, nextPage } = await yampiGetBatch(alias, "orders?include=shipments,transactions.payment,status,items,customer,pix", user_token, user_secret_key, startPage, maxPages, 50, extraParams);
 
   // Build customer lookup: load all customers in single paginated query (minimal columns)
   const yampiIdToCustomer = new Map<number, { id: string; total_orders: number }>();
@@ -449,12 +477,16 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     const hasTracking = o.track_code;
     const txData = o.transactions?.data;
     const hasTransactions = txData && (Array.isArray(txData) ? txData.length > 0 : !!txData.payment);
-    return ["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasTransactions);
+    // PIX pendente sem qr_code no batch → precisa de detail fetch pra puxar o pix.data.pix_qr_code
+    const txList = Array.isArray(txData) ? txData : (txData ? [txData] : []);
+    const isPixPending = txList.some((tx: any) => tx.payment?.data?.is_pix && !["captured", "paid", "approved"].includes(tx.status));
+    const missingPixCode = isPixPending && !(o.pix?.data?.pix_qr_code || o.pix?.data?.qr_code);
+    return (["shipped", "on_carriage", "in_transit", "invoiced", "paid", "pending", "waiting_payment", "standby"].includes(status) && (!hasTracking || !hasTransactions)) || missingPixCode;
   });
 
   for (const o of needsEnrichment.slice(0, ENRICHMENT_BATCH)) {
     try {
-      const detailRes = await yampiGet(alias, `orders/${o.id}?include=transactions.payment`, user_token, user_secret_key);
+      const detailRes = await yampiGet(alias, `orders/${o.id}?include=transactions.payment,pix`, user_token, user_secret_key);
       const d = detailRes?.data;
       if (!d) continue;
 
@@ -519,13 +551,24 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
     }
   }
 
-  // Insert new orders
+  // Upsert orders (não falha o batch se algum external_id já existir — apenas atualiza)
   if (toInsertOrders.length > 0) {
     for (let i = 0; i < toInsertOrders.length; i += 50) {
       const batch = toInsertOrders.slice(i, i + 50);
-      const { data: inserted, error } = await supabase.from("orders").insert(batch).select("id, customer_id, total, utm_source, utm_medium, utm_campaign, utm_content");
+      const { data: inserted, error } = await supabase
+        .from("orders")
+        .upsert(batch, { onConflict: "tenant_id,external_id" })
+        .select("id, customer_id, total, created_at, utm_source, utm_medium, utm_campaign, utm_content");
       if (error) {
-        console.error("Order batch insert error:", error.message);
+        console.error("Order batch upsert error:", error.message, " — falling back to per-row insert");
+        // Fallback row-a-row pra não perder o batch
+        for (const row of batch) {
+          const { data: one, error: oneErr } = await supabase
+            .from("orders").upsert(row, { onConflict: "tenant_id,external_id" })
+            .select("id, customer_id, total, created_at, utm_source, utm_medium, utm_campaign, utm_content");
+          if (oneErr) console.error(`[sync] row upsert fail (external_id=${row.external_id}):`, oneErr.message);
+          else if (one) await attributeConversions(supabase, tenant_id, one);
+        }
       } else if (inserted) {
         await attributeConversions(supabase, tenant_id, inserted);
       }
@@ -696,6 +739,20 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
       const cartValue = cart.totalizers?.total || 0;
       const cartUrl = cart.simulate_url || cart.unauth_simulate_url || "";
 
+      // Extract product names from cart items pra usar em mensagens ({{cart.product_name}})
+      const cartItems = Array.isArray(cart.items?.data) ? cart.items.data : [];
+      const productNames = cartItems
+        .map((i: any) => i.name || i.sku?.data?.title || i.sku?.data?.sku || "")
+        .filter(Boolean);
+      const productName = productNames[0] || "";
+      const itemsSummary = productNames.length === 0
+        ? ""
+        : productNames.length === 1
+          ? productNames[0]
+          : productNames.length === 2
+            ? `${productNames[0]} e ${productNames[1]}`
+            : `${productNames[0]} e mais ${productNames.length - 1} ${productNames.length - 1 === 1 ? "item" : "itens"}`;
+
       await supabase.from("customers").update({
         custom_attributes: {
           ...(customer.custom_attributes || {}),
@@ -704,6 +761,8 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
             value: cartValue,
             recovery_url: cartUrl,
             items_count: cart.totalizers?.total_items || 0,
+            product_name: productName,
+            items_summary: itemsSummary,
             updated_at: new Date().toISOString(),
           },
         },
@@ -715,12 +774,23 @@ async function syncCarts(supabase: any, tenant_id: string, config: any, startPag
         const activationDate = automation.start_date || automation.created_at;
         const cartDate = cart.created_at?.date || cart.created_at || cart.updated_at?.date || cart.updated_at || "";
         if (activationDate && cartDate && new Date(cartDate) < new Date(activationDate)) continue;
+
+        // Dedup: skip if there's already a queue item for this customer+campaign+cart_id (any status except old completed/skipped > 7 days)
+        const { data: existing } = await supabase.from("automation_queue")
+          .select("id, status")
+          .eq("customer_id", customer.id)
+          .eq("campaign_id", automation.id)
+          .eq("trigger_type", "cart_abandoned")
+          .filter("trigger_data->>yampi_cart_id", "eq", String(cart.id))
+          .limit(1);
+        if (existing && existing.length > 0) continue;
+
         const { error: qErr } = await supabase.from("automation_queue").insert({
           tenant_id,
           campaign_id: automation.id,
           customer_id: customer.id,
           trigger_type: "cart_abandoned",
-          trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl },
+          trigger_data: { yampi_cart_id: cart.id, value: cartValue, recovery_url: cartUrl, product_name: productName, items_summary: itemsSummary },
           status: "pending",
           current_node_id: "start",
         });
@@ -758,7 +828,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { tenant_id, phase = "customers", page_offset = 1, cron = false } = body;
+    const { tenant_id, phase = "customers", page_offset = 1, cron = false, sort_by, skip_status_filter } = body;
 
     // CRON MODE — processes in smaller batches too
     if (cron) {
@@ -785,12 +855,16 @@ Deno.serve(async (req) => {
           const MAX_CRON_PAGES = 1;
 
           if (syncSettings?.orders !== false) {
-            // Pass 1: Newest orders first (catches new Pix/Boleto for automation triggers)
-            const newOrdersResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-id");
+            // Carga reduzida por invocação pra não estourar o WORKER_RESOURCE_LIMIT
+            // do edge runtime — antes eram 2 passadas × 3 páginas (300 pedidos)
+            // numa execução só e a função morria no meio, deixando pedidos (e
+            // conversões) de fora do import.
+            // Pass 1: pedidos mais novos (-id), 2 páginas — pega pedido novo p/ atribuição.
+            const newOrdersResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-id", 2);
             ordersSynced += newOrdersResult.synced;
 
-            // Pass 2: Recently updated orders (catches status changes like shipped, delivered)
-            const updatedResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-updated_at");
+            // Pass 2: recém-atualizados (-updated_at), 1 página — pega mudança de status.
+            const updatedResult = await syncOrders(supabase, int.tenant_id, cfg, 1, int.last_synced_at, "-updated_at", 1);
             ordersSynced += updatedResult.synced;
           }
 
@@ -954,7 +1028,11 @@ Deno.serve(async (req) => {
       }
     } else if (phase === "orders") {
       if (syncSettings?.orders !== false) {
-        const result = await syncOrders(supabase, tenant_id, config, page_offset, integration.last_synced_at);
+        // Permite override de sort via body (`sort_by`) pra puxar orders novas (`-created_at`) sem
+        // ficar travado em re-syncs de orders antigas com updated_at recente.
+        const sortBy = sort_by || "-updated_at";
+        const lastSync = skip_status_filter ? null : integration.last_synced_at;
+        const result = await syncOrders(supabase, tenant_id, config, page_offset, lastSync, sortBy);
         synced = result.synced;
         nextPage = result.nextPage;
       }

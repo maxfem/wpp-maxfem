@@ -47,7 +47,7 @@ const automationTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
+type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string };
 type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 export default function Automations() {
@@ -90,7 +90,7 @@ export default function Automations() {
       while (true) {
         const { data, error } = await supabase
           .from("campaign_activities")
-          .select("campaign_id, status, clicked_at, conversion_value, created_at")
+          .select("campaign_id, status, clicked_at, converted_at, conversion_value, created_at")
           .eq("tenant_id", currentTenant.id)
           .range(fromPage, fromPage + batchSize - 1);
         
@@ -130,21 +130,30 @@ export default function Automations() {
 
   const metricsMap = useMemo(() => {
     const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
-    
-    // Filter activities based on the standard period range
-    const acts = rawActivities.filter((a) => {
-      const activityDate = toSaoPaulo(a.created_at);
-      return isWithinInterval(activityDate, { start: from, end: to });
-    });
+    const inPeriod = (d: string | null) =>
+      !!d && isWithinInterval(toSaoPaulo(d), { start: from, end: to });
 
     const map: Record<string, CampaignMetrics> = {};
-    acts.forEach((a) => {
-      if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
-      map[a.campaign_id].envios++;
-      if (a.clicked_at) map[a.campaign_id].cliques++;
-      const cv = Number(a.conversion_value || 0);
-      map[a.campaign_id].conversao += cv;
-      if (cv > 0) map[a.campaign_id].conversoes++;
+    const ensure = (id: string) => {
+      if (!map[id]) map[id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
+      return map[id];
+    };
+
+    rawActivities.forEach((a) => {
+      // Envios e cliques: contados pela data do disparo (created_at).
+      if (inPeriod(a.created_at)) {
+        const m = ensure(a.campaign_id);
+        m.envios++;
+        if (a.clicked_at) m.cliques++;
+      }
+      // Conversão e receita: contadas pela data da CONVERSÃO (converted_at),
+      // não pela do disparo — a venda acontece dias depois do envio. Sem isso,
+      // o filtro "Hoje" zerava a receita de automações como carrinho abandonado.
+      if (inPeriod(a.converted_at)) {
+        const m = ensure(a.campaign_id);
+        m.conversao += Number(a.conversion_value || 0);
+        m.conversoes++;
+      }
     });
     return map;
   }, [rawActivities, dateKey, customDateFrom, customDateTo]);

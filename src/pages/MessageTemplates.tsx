@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,136 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+type TemplateVariable = { token: string; label: string; description: string };
+type TemplateVariableGroup = { label: string; variables: TemplateVariable[] };
+
+const TEMPLATE_VARIABLES: TemplateVariableGroup[] = [
+  {
+    label: "Cliente",
+    variables: [
+      { token: "customer.first_name", label: "Primeiro nome", description: 'Ex: "Maria"' },
+      { token: "customer.name", label: "Nome completo", description: 'Ex: "Maria da Silva"' },
+      { token: "customer.phone", label: "Telefone", description: "Telefone cadastrado" },
+      { token: "customer.email", label: "E-mail", description: "E-mail cadastrado" },
+      { token: "customer.city", label: "Cidade", description: "Cidade do cliente" },
+      { token: "customer.state", label: "Estado", description: "UF do cliente" },
+      { token: "customer.days_since_order", label: "Dias desde último pedido", description: 'Ex: "15"' },
+      { token: "customer.last_product", label: "Último produto comprado", description: "Nome do produto" },
+      { token: "customer.last_order_value", label: "Valor do último pedido", description: 'Ex: "147,90"' },
+    ],
+  },
+  {
+    label: "Pedido",
+    variables: [
+      { token: "order.number", label: "Número do pedido", description: 'Ex: "#242127"' },
+      { token: "order.total", label: "Total do pedido", description: 'Ex: "147,90"' },
+      { token: "order.status", label: "Status do pedido", description: 'Ex: "pago"' },
+      { token: "order.tracking_code", label: "Código de rastreio", description: "Busca no Bling se vazio" },
+      { token: "order.delivery_days", label: "Dias de entrega", description: 'Default: "5 a 8"' },
+      { token: "order.pix_code", label: "PIX copia-e-cola", description: "Código PIX gerado" },
+    ],
+  },
+  {
+    label: "Carrinho abandonado",
+    variables: [
+      { token: "cart.recovery_url", label: "Link de recuperação", description: "URL pra retomar o carrinho" },
+      { token: "cart.value", label: "Valor do carrinho", description: "Total dos itens" },
+      { token: "cart.items_count", label: "Qtd. de itens", description: "Número de produtos" },
+      { token: "cart.items_summary", label: "Resumo dos itens", description: "Lista resumida" },
+    ],
+  },
+  {
+    label: "Campanha",
+    variables: [
+      { token: "campaign.coupon", label: "Cupom", description: "Cupom da campanha" },
+      { token: "campaign.discount", label: "Desconto", description: 'Ex: "20%"' },
+      { token: "campaign.product_name", label: "Nome do produto", description: "Produto em destaque" },
+      { token: "campaign.product_desc", label: "Descrição do produto", description: "Pitch curto" },
+      { token: "campaign.return_days", label: "Prazo de retorno", description: 'Default: "5"' },
+    ],
+  },
+  {
+    label: "Sistema",
+    variables: [
+      { token: "unsubscribe_url", label: "Link de descadastro", description: "Opt-out automático" },
+    ],
+  },
+];
+
+// Variáveis dos templates de e-mail Maxfem (formato simples, sem prefixo customer./order.).
+// O campaign-executor (resolveVariable) reconhece esses aliases.
+type EmailTemplateVariableGroup = { label: string; variables: { token: string; label: string; description: string }[] };
+const EMAIL_TEMPLATE_VARIABLES: EmailTemplateVariableGroup[] = [
+  {
+    label: "Cliente",
+    variables: [
+      { token: "nome", label: "Nome completo", description: 'Ex: "Maria da Silva"' },
+      { token: "primeiro_nome", label: "Primeiro nome", description: 'Ex: "Maria"' },
+      { token: "email", label: "E-mail", description: "E-mail cadastrado" },
+      { token: "telefone", label: "Telefone", description: "Telefone cadastrado" },
+    ],
+  },
+  {
+    label: "Pedido",
+    variables: [
+      { token: "numero_pedido", label: "Número do pedido", description: 'Ex: "242127"' },
+      { token: "valor_pedido", label: "Valor do pedido", description: 'Ex: "147,90"' },
+      { token: "itens_pedido", label: "Itens do pedido", description: "Resumo dos produtos" },
+      { token: "status_pedido", label: "Status do pedido", description: 'Ex: "pago", "enviado"' },
+      { token: "link_pedido", label: "Link do pedido", description: "URL do pedido na loja" },
+      { token: "link_pagamento", label: "Link de pagamento", description: "URL pra pagar Pix/boleto" },
+      { token: "codigo_pix", label: "Código PIX copia-e-cola", description: "PIX QR Code" },
+    ],
+  },
+  {
+    label: "Rastreio & Logística",
+    variables: [
+      { token: "codigo_rastreio", label: "Código de rastreio", description: 'Ex: "BLI_16063981436"' },
+      { token: "link_rastreio", label: "Link de rastreio", description: "Rastreio.maxfem.com.br/{código}" },
+      { token: "previsao_entrega", label: "Previsão de entrega", description: 'Ex: "19/05/2026"' },
+      { token: "transportadora", label: "Transportadora", description: 'Ex: "Loggi", "Correios"' },
+    ],
+  },
+  {
+    label: "Nota Fiscal (Bling)",
+    variables: [
+      { token: "link_nf", label: "Link da NF (DANFE HTML)", description: "Visualização da NF no Bling" },
+      { token: "link_nf_pdf", label: "Link da NF em PDF", description: "PDF da DANFE para download" },
+      { token: "numero_nf", label: "Número da NF", description: 'Ex: "164463"' },
+      { token: "chave_nf", label: "Chave de acesso da NF", description: "44 dígitos (SEFAZ)" },
+    ],
+  },
+  {
+    label: "Carrinho",
+    variables: [
+      { token: "link_carrinho", label: "Link recuperar carrinho", description: "URL pra finalizar compra" },
+    ],
+  },
+  {
+    label: "Campanha & Cashback",
+    variables: [
+      { token: "cupom", label: "Cupom de desconto", description: "Cupom da campanha" },
+      { token: "valor_cashback", label: "Valor de cashback", description: 'Ex: "15,00"' },
+      { token: "validade_cashback", label: "Validade do cashback", description: 'Ex: "30 dias"' },
+      { token: "link_cashback", label: "Link do cashback", description: "URL pra usar cashback" },
+    ],
+  },
+  {
+    label: "Sistema & Loja",
+    variables: [
+      { token: "link_loja", label: "Link da loja", description: "maxfem.com.br" },
+      { token: "link_pesquisa", label: "Link pesquisa pós-venda", description: "URL formulário NPS" },
+      { token: "link_whatsapp", label: "Link WhatsApp", description: "wa.me/55..." },
+      { token: "link_descadastro", label: "Link de descadastro", description: "Opt-out automático (LGPD)" },
+    ],
+  },
+];
 
 
 interface TemplateButton {
@@ -138,7 +269,7 @@ const sanitizeHeaderForMeta = (input: string) =>
     .trim();
 
 export default function MessageTemplates() {
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
   const queryClient = useQueryClient();
   const [activeChannel, setActiveChannel] = useState<"whatsapp" | "email">("whatsapp");
   
@@ -148,6 +279,39 @@ export default function MessageTemplates() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [sampleValues, setSampleValues] = useState<string[]>([]);
+  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [variablePickerOpen, setVariablePickerOpen] = useState(false);
+
+  const insertVariable = (token: string) => {
+    const textarea = bodyTextareaRef.current;
+    const current = form.body;
+    const usedNums = Array.from(current.matchAll(/{{(\d+)}}/g)).map((m) => parseInt(m[1], 10));
+    const nextNum = (usedNums.length ? Math.max(...usedNums) : 0) + 1;
+    const placeholder = `{{${nextNum}}}`;
+
+    let start = current.length;
+    let end = current.length;
+    if (textarea) {
+      start = textarea.selectionStart ?? current.length;
+      end = textarea.selectionEnd ?? current.length;
+    }
+    const nextBody = current.slice(0, start) + placeholder + current.slice(end);
+    setForm((f) => ({ ...f, body: nextBody }));
+    setSampleValues((prev) => {
+      const next = [...prev];
+      next[nextNum - 1] = token;
+      return next;
+    });
+
+    setTimeout(() => {
+      if (textarea) {
+        const cursor = start + placeholder.length;
+        textarea.focus();
+        textarea.setSelectionRange(cursor, cursor);
+      }
+    }, 0);
+    setVariablePickerOpen(false);
+  };
   const [previewTemplate, setPreviewTemplate] = useState<TemplateForm>(emptyForm);
   const [bulkSendTemplate, setBulkSendTemplate] = useState<{
     id: string; name: string; status: string; body: string; language: string;
@@ -164,6 +328,112 @@ export default function MessageTemplates() {
   const [emailPreview, setEmailPreview] = useState<any | null>(null);
   const [emailPreviewMode, setEmailPreviewMode] = useState<"desktop" | "mobile">("desktop");
   const [emailEditorMode, setEmailEditorMode] = useState<"builder" | "html" | "preview">("builder");
+
+  // Envio de teste — dispara o template pra um e-mail qualquer com vars
+  // preenchidas por valores de exemplo, pra revisar antes de subir campanha.
+  const [testEmail, setTestEmail] = useState("");
+  const [sendingTest, setSendingTest] = useState(false);
+
+  // Variable picker for email — separate refs for subject and HTML body
+  const emailSubjectRef = useRef<HTMLInputElement | null>(null);
+  const emailBodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const [emailVarPickerTarget, setEmailVarPickerTarget] = useState<"subject" | "body" | null>(null);
+
+  // Insere {{token}} direto (sem auto-numbering — HTML usa {{var}} literal, não {{1}})
+  const insertEmailVariable = (token: string) => {
+    const placeholder = `{{${token}}}`;
+    if (emailVarPickerTarget === "subject") {
+      const el = emailSubjectRef.current;
+      const current = emailForm.subject || "";
+      const start = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? current.length;
+      const next = current.slice(0, start) + placeholder + current.slice(end);
+      setEmailForm((f) => ({ ...f, subject: next }));
+      setTimeout(() => {
+        if (el) {
+          const cursor = start + placeholder.length;
+          el.focus();
+          el.setSelectionRange(cursor, cursor);
+        }
+      }, 0);
+    } else if (emailVarPickerTarget === "body") {
+      const el = emailBodyRef.current;
+      const current = emailForm.body_html || "";
+      const start = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? current.length;
+      const next = current.slice(0, start) + placeholder + current.slice(end);
+      setEmailForm((f) => ({ ...f, body_html: next, design: null }));
+      setTimeout(() => {
+        if (el) {
+          const cursor = start + placeholder.length;
+          el.focus();
+          el.setSelectionRange(cursor, cursor);
+        }
+      }, 0);
+    }
+    setEmailVarPickerTarget(null);
+  };
+
+  // Envia o template como teste para o e-mail informado, com merge vars
+  // substituídas por valores de exemplo. Útil pra validar visual e copy
+  // antes de subir campanha.
+  const SAMPLE_VARS: Record<string, string> = {
+    nome: "Thiago",
+    cupom: "TESTE10",
+    numero_pedido: "#12345",
+    valor_pedido: "R$ 199,90",
+    itens_pedido: "Imunofem Gummy x1",
+    codigo_rastreio: "BR123456789BR",
+    link_pedido: "https://maxfem.com.br/pedido",
+    link_pagamento: "https://maxfem.com.br/pagamento",
+    link_carrinho: "https://maxfem.com.br/carrinho",
+    link_rastreio: "https://maxfem.com.br/rastreio",
+    link_loja: "https://maxfem.com.br",
+    link_whatsapp: "https://wa.me/552130000000",
+    link_descadastro: "https://maxfem.com.br/descadastro",
+    link_cashback: "https://maxfem.com.br/cashback",
+    link_pesquisa: "https://maxfem.com.br/pesquisa",
+    previsao_entrega: "5 a 7 dias úteis",
+    codigo_pix: "00020126360014BR.GOV.BCB.PIX...",
+    valor_cashback: "R$ 19,00",
+    validade_cashback: "30 dias",
+  };
+  const sendTestEmail = async () => {
+    const recipient = (testEmail.trim() || user?.email || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient)) {
+      toast.error("Informe um e-mail válido para o teste.");
+      return;
+    }
+    if (!emailForm.subject?.trim() || !emailForm.body_html?.trim()) {
+      toast.error("Preencha assunto e conteúdo antes de enviar o teste.");
+      return;
+    }
+    if (!tenantId) {
+      toast.error("Tenant não encontrado.");
+      return;
+    }
+    const substitute = (s: string) =>
+      s.replace(/\{\{(\w+)\}\}/g, (_, k) => SAMPLE_VARS[k] ?? `[${k}]`);
+    setSendingTest(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-email-ses", {
+        body: {
+          to: recipient,
+          subject: `[TESTE] ${substitute(emailForm.subject)}`,
+          html: substitute(emailForm.body_html),
+          tenantId,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Teste enviado para ${recipient}`);
+    } catch (err: any) {
+      toast.error(`Falha ao enviar teste: ${err?.message || "erro desconhecido"}`);
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
   const [emailForm, setEmailForm] = useState<{
     name: string;
     subject: string;
@@ -958,8 +1228,56 @@ export default function MessageTemplates() {
                   )}
 
                   <div className="space-y-2">
-                    <Label>Corpo da mensagem *</Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Corpo da mensagem *</Label>
+                      <Popover open={variablePickerOpen} onOpenChange={setVariablePickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" size="sm" className="h-7 gap-1">
+                            <Plus className="h-3.5 w-3.5" />
+                            <span className="text-xs">Inserir variável</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-80 p-0">
+                          <div className="p-3 border-b">
+                            <p className="text-sm font-semibold">Variáveis dinâmicas</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Insere <code className="text-[10px]">{`{{N}}`}</code> e mapeia automaticamente.
+                            </p>
+                          </div>
+                          <ScrollArea className="h-[380px]">
+                            <div className="p-2 space-y-3">
+                              {TEMPLATE_VARIABLES.map((group) => (
+                                <div key={group.label}>
+                                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                    {group.label}
+                                  </p>
+                                  <div className="space-y-0.5">
+                                    {group.variables.map((v) => (
+                                      <button
+                                        key={v.token}
+                                        type="button"
+                                        onClick={() => insertVariable(v.token)}
+                                        className="w-full text-left rounded-md px-2 py-1.5 hover:bg-accent transition-colors group"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-sm font-medium">{v.label}</span>
+                                          <code className="text-[10px] text-muted-foreground group-hover:text-foreground font-mono whitespace-nowrap">
+                                            {v.token}
+                                          </code>
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground mt-0.5">{v.description}</p>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     <Textarea
+                      ref={bodyTextareaRef}
                       placeholder="Olá {{1}}, sua compra #{{2}} foi confirmada!"
                       value={form.body}
                       onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
@@ -1374,15 +1692,58 @@ export default function MessageTemplates() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Assunto do E-mail</Label>
-                      <Input 
-                        placeholder="Ex: Bem-vindo à nossa loja!" 
-                        value={emailForm.subject} 
+                      <div className="flex items-center justify-between">
+                        <Label>Assunto do E-mail</Label>
+                        <EmailVariablePicker
+                          target="subject"
+                          open={emailVarPickerTarget === "subject"}
+                          onOpenChange={(o) => setEmailVarPickerTarget(o ? "subject" : null)}
+                          onSelect={insertEmailVariable}
+                        />
+                      </div>
+                      <Input
+                        ref={emailSubjectRef}
+                        placeholder="Ex: Bem-vindo à nossa loja!"
+                        value={emailForm.subject}
                         onChange={(e) => setEmailForm({...emailForm, subject: e.target.value})}
                         required
                       />
                     </div>
-                    
+
+                    {/* Enviar teste — dispara o template pra um e-mail
+                        qualquer com vars de exemplo. Útil pra revisar visual
+                        e copy antes de subir campanha. */}
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Label className="text-sm font-medium">Enviar teste</Label>
+                        <span className="text-xs text-muted-foreground">— vars são preenchidas com valores de exemplo; o assunto recebe prefixo [TESTE]</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          type="email"
+                          placeholder={user?.email || "voce@exemplo.com"}
+                          value={testEmail}
+                          onChange={(e) => setTestEmail(e.target.value)}
+                          disabled={sendingTest}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={sendTestEmail}
+                          disabled={sendingTest || !emailForm.subject || !emailForm.body_html}
+                        >
+                          {sendingTest ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4 mr-2" />
+                          )}
+                          Enviar teste
+                        </Button>
+                      </div>
+                    </div>
+
                     <div className="min-h-[600px]">
                       <Label className="mb-2 block">Design do E-mail</Label>
                       <Tabs value={emailEditorMode} onValueChange={(v) => setEmailEditorMode(v as any)} className="w-full">
@@ -1427,11 +1788,20 @@ export default function MessageTemplates() {
                         <TabsContent value="html" className="mt-0">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 h-[600px]">
                             <div className="flex flex-col border rounded-md overflow-hidden">
-                              <div className="px-3 py-2 text-xs font-medium bg-muted border-b">Código HTML</div>
+                              <div className="px-3 py-2 text-xs font-medium bg-muted border-b flex items-center justify-between">
+                                <span>Código HTML</span>
+                                <EmailVariablePicker
+                                  target="body"
+                                  open={emailVarPickerTarget === "body"}
+                                  onOpenChange={(o) => setEmailVarPickerTarget(o ? "body" : null)}
+                                  onSelect={insertEmailVariable}
+                                />
+                              </div>
                               <Textarea
+                                ref={emailBodyRef}
                                 value={emailForm.body_html}
                                 onChange={(e) => setEmailForm({ ...emailForm, body_html: e.target.value, design: null })}
-                                placeholder="<html>...</html> — cole seu HTML aqui. Use {{customer.name}}, {{link_descadastro}}, etc."
+                                placeholder="<html>...</html> — cole seu HTML aqui. Use {{nome}}, {{codigo_rastreio}}, {{link_rastreio}}, etc."
                                 className="flex-1 font-mono text-xs resize-none border-0 focus-visible:ring-0 rounded-none"
                               />
                             </div>
@@ -1657,6 +2027,67 @@ export default function MessageTemplates() {
         />
       </div>
     </AppLayout>
+  );
+}
+
+// ===== Botão de inserir variável usado no editor de E-mail =====
+function EmailVariablePicker({
+  target,
+  open,
+  onOpenChange,
+  onSelect,
+}: {
+  target: "subject" | "body";
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSelect: (token: string) => void;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="h-7 gap-1">
+          <Plus className="h-3.5 w-3.5" />
+          <span className="text-xs">Inserir variável</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 p-0">
+        <div className="p-3 border-b">
+          <p className="text-sm font-semibold">Variáveis disponíveis no e-mail</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Insere <code className="text-[10px]">{`{{token}}`}</code> no {target === "subject" ? "assunto" : "corpo HTML"}. O motor de envio substitui pelos dados reais do cliente/pedido.
+          </p>
+        </div>
+        <ScrollArea className="h-[420px]">
+          <div className="p-2 space-y-3">
+            {EMAIL_TEMPLATE_VARIABLES.map((group) => (
+              <div key={group.label}>
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {group.label}
+                </p>
+                <div className="space-y-0.5">
+                  {group.variables.map((v) => (
+                    <button
+                      key={v.token}
+                      type="button"
+                      onClick={() => onSelect(v.token)}
+                      className="w-full text-left rounded-md px-2 py-1.5 hover:bg-accent transition-colors group"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{v.label}</span>
+                        <code className="text-[10px] text-muted-foreground group-hover:text-foreground font-mono whitespace-nowrap">
+                          {`{{${v.token}}}`}
+                        </code>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{v.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -70,11 +70,10 @@ const PROVIDERS = [
   {
     id: "shopify",
     name: "Shopify",
-    description: "Plataforma global de comércio eletrônico.",
+    description: "Plataforma global de comércio eletrônico. Sincronize pedidos, clientes e produtos via Admin API.",
     logo: "https://www.shopify.com/favicon.ico",
     color: "#96BF48",
-    features: ["Clientes", "Pedidos"],
-    comingSoon: true,
+    features: ["Clientes", "Pedidos", "Produtos", "Estoque", "Carrinhos", "Webhooks"],
   },
   {
     id: "vtex",

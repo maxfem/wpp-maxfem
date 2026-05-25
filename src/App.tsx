@@ -30,6 +30,7 @@ const SettingsIntegrations = lazy(() => import("./pages/SettingsIntegrations"));
 const SettingsYampi = lazy(() => import("./pages/SettingsYampi"));
 const SettingsOpenAI = lazy(() => import("./pages/SettingsOpenAI"));
 const SettingsBling = lazy(() => import("./pages/SettingsBling"));
+const SettingsShopify = lazy(() => import("./pages/SettingsShopify"));
 const SettingsGemini = lazy(() => import("./pages/SettingsGemini"));
 const SettingsInstagram = lazy(() => import("./pages/SettingsInstagram"));
 const SettingsAWS = lazy(() => import("./pages/SettingsAWS"));
@@ -113,6 +114,7 @@ const App = () => (
                   <Route path="/settings/integrations/yampi" element={<ProtectedRoute><SettingsYampi /></ProtectedRoute>} />
                   <Route path="/settings/integrations/openai" element={<ProtectedRoute><SettingsOpenAI /></ProtectedRoute>} />
                   <Route path="/settings/integrations/bling" element={<ProtectedRoute><SettingsBling /></ProtectedRoute>} />
+                  <Route path="/settings/integrations/shopify" element={<ProtectedRoute><SettingsShopify /></ProtectedRoute>} />
                   <Route path="/settings/integrations/gemini" element={<ProtectedRoute><SettingsGemini /></ProtectedRoute>} />
                    <Route path="/settings/instagram" element={<ProtectedRoute><SettingsInstagram /></ProtectedRoute>} />
                    <Route path="/settings/integrations/aws" element={<ProtectedRoute><SettingsAWS /></ProtectedRoute>} />

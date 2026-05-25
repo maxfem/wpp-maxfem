@@ -26,8 +26,12 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const tenantId = body.tenant_id;
     const phase: "customers" | "orders" | "all" = body.phase || "all";
-    const maxPages: number = body.max_pages || 50; // segurança contra loop infinito
+    const maxPages: number = body.max_pages || 50;
     const sinceId: string | null = body.since_id || null;
+    const startPageInfo: string | null = body.page_info || null;
+    // Limite de tempo INTERNO pra cortar antes do timeout do Supabase (150s).
+    // Reservamos 20s pra finalizar (recalc + update integrations).
+    const deadline = Date.now() + (body.deadline_ms || 130_000);
 
     if (!tenantId) {
       return jsonError(400, "tenant_id required");
@@ -66,19 +70,29 @@ Deno.serve(async (req) => {
       orders_updated: 0,
       pages_fetched: 0,
       errors: [] as string[],
+      next_page_info: null as string | null,
+      done: true,
+      phase,
     };
 
     if (phase === "customers" || phase === "all") {
-      await syncCustomers(supabase, tenantId, baseUrl, cfg.access_token, stats, maxPages, sinceId);
+      const r = await syncCustomers(supabase, tenantId, baseUrl, cfg.access_token, stats, maxPages, sinceId, startPageInfo, deadline);
+      stats.next_page_info = r.nextPageInfo;
+      stats.done = r.done;
     }
 
-    if (phase === "orders" || phase === "all") {
-      await syncOrders(supabase, tenantId, baseUrl, cfg.access_token, stats, maxPages, sinceId);
+    if ((phase === "orders" || phase === "all") && stats.done) {
+      const r = await syncOrders(supabase, tenantId, baseUrl, cfg.access_token, stats, maxPages, sinceId, phase === "orders" ? startPageInfo : null, deadline);
+      stats.next_page_info = r.nextPageInfo;
+      stats.done = r.done;
+      stats.phase = "orders";
     }
 
-    // Recalcula métricas agregadas — first_order_at, total_orders etc.
-    const { error: recalcErr } = await supabase.rpc("recalc_customer_metrics", { _tenant_id: tenantId });
-    if (recalcErr) stats.errors.push(`recalc: ${recalcErr.message}`);
+    // Recalcula só quando terminou (evita custo a cada batch).
+    if (stats.done) {
+      const { error: recalcErr } = await supabase.rpc("recalc_customer_metrics", { _tenant_id: tenantId });
+      if (recalcErr) stats.errors.push(`recalc: ${recalcErr.message}`);
+    }
 
     await supabase
       .from("integrations")
@@ -111,11 +125,16 @@ async function syncCustomers(
   stats: any,
   maxPages: number,
   sinceId: string | null,
-) {
-  let pageInfo: string | null = null;
+  startPageInfo: string | null,
+  deadline: number,
+): Promise<{ nextPageInfo: string | null; done: boolean }> {
+  let pageInfo: string | null = startPageInfo;
   let pageCount = 0;
 
   while (pageCount < maxPages) {
+    if (Date.now() >= deadline) {
+      return { nextPageInfo: pageInfo, done: false };
+    }
     pageCount++;
     stats.pages_fetched++;
 
@@ -138,16 +157,19 @@ async function syncCustomers(
     const data = await res.json();
     const customers = data.customers || [];
 
-    if (customers.length === 0) break;
+    if (customers.length === 0) return { nextPageInfo: null, done: true };
 
-    for (const c of customers) {
-      try {
-        const email = (c.email || "").trim().toLowerCase() || null;
-        const phone = normalizePhone(c.phone || c.default_address?.phone);
-        const name = `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.email || "Cliente Shopify";
-        const addr = c.default_address || {};
-
-        const customAttrs = {
+    // Manda página inteira pra RPC do Postgres que faz upsert + merge JSONB em
+    // uma única transação. Evita N+1 queries + estouro de memória da edge fn.
+    const payload = customers.map((c: any) => {
+      const email = (c.email || "").trim().toLowerCase() || null;
+      const phone = normalizePhone(c.phone || c.default_address?.phone);
+      const addr = c.default_address || {};
+      return {
+        email,
+        phone,
+        name: `${c.first_name || ""} ${c.last_name || ""}`.trim() || email || "Cliente Shopify",
+        custom_attributes: {
           shopify_id: c.id,
           source: "shopify",
           city: addr.city,
@@ -161,84 +183,27 @@ async function syncCustomers(
           shopify_orders_count: c.orders_count,
           shopify_state: c.state,
           synced_at: new Date().toISOString(),
-        };
+        },
+      };
+    });
 
-        // Dedup: tenta achar por shopify_id → email → phone (nesta ordem)
-        let existingId: string | null = null;
-
-        const { data: byShopify } = await supabase
-          .from("customers")
-          .select("id, custom_attributes")
-          .eq("tenant_id", tenantId)
-          .filter("custom_attributes->>shopify_id", "eq", String(c.id))
-          .maybeSingle();
-        if (byShopify) existingId = byShopify.id;
-
-        if (!existingId && email) {
-          const { data: byEmail } = await supabase
-            .from("customers")
-            .select("id, custom_attributes")
-            .eq("tenant_id", tenantId)
-            .eq("email", email)
-            .maybeSingle();
-          if (byEmail) {
-            existingId = byEmail.id;
-            stats.customers_merged++;
-          }
-        }
-
-        if (!existingId && phone) {
-          const { data: byPhone } = await supabase
-            .from("customers")
-            .select("id, custom_attributes")
-            .eq("tenant_id", tenantId)
-            .eq("phone", phone)
-            .maybeSingle();
-          if (byPhone) {
-            existingId = byPhone.id;
-            stats.customers_merged++;
-          }
-        }
-
-        if (existingId) {
-          // Merge: preserva custom_attributes existentes, sobrescreve campos shopify_*
-          const { data: existingFull } = await supabase
-            .from("customers")
-            .select("custom_attributes")
-            .eq("id", existingId)
-            .maybeSingle();
-          const merged = { ...(existingFull?.custom_attributes || {}), ...customAttrs };
-          await supabase
-            .from("customers")
-            .update({
-              name,
-              email: email || undefined,
-              phone: phone || undefined,
-              custom_attributes: merged,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", existingId);
-          stats.customers_updated++;
-        } else {
-          await supabase.from("customers").insert({
-            tenant_id: tenantId,
-            name,
-            email,
-            phone,
-            custom_attributes: customAttrs,
-          });
-          stats.customers_inserted++;
-        }
-      } catch (err: any) {
-        stats.errors.push(`customer ${c.id}: ${err.message}`);
-      }
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("upsert_shopify_customers", {
+      _tenant_id: tenantId,
+      _customers: payload,
+    });
+    if (rpcErr) {
+      stats.errors.push(`upsert page ${pageCount}: ${rpcErr.message?.slice(0, 120)}`);
+    } else if (rpcRes) {
+      stats.customers_inserted += rpcRes.inserted || 0;
+      stats.customers_updated += rpcRes.updated || 0;
+      stats.customers_merged += rpcRes.merged || 0;
     }
 
-    // Paginação via Link header (Shopify REST)
     const linkHeader = res.headers.get("link") || res.headers.get("Link");
     pageInfo = extractPageInfo(linkHeader);
-    if (!pageInfo) break;
+    if (!pageInfo) return { nextPageInfo: null, done: true };
   }
+  return { nextPageInfo: pageInfo, done: pageInfo === null };
 }
 
 async function syncOrders(
@@ -249,11 +214,16 @@ async function syncOrders(
   stats: any,
   maxPages: number,
   sinceId: string | null,
-) {
-  let pageInfo: string | null = null;
+  startPageInfo: string | null,
+  deadline: number,
+): Promise<{ nextPageInfo: string | null; done: boolean }> {
+  let pageInfo: string | null = startPageInfo;
   let pageCount = 0;
 
   while (pageCount < maxPages) {
+    if (Date.now() >= deadline) {
+      return { nextPageInfo: pageInfo, done: false };
+    }
     pageCount++;
     stats.pages_fetched++;
 
@@ -276,78 +246,28 @@ async function syncOrders(
     const data = await res.json();
     const orders = data.orders || [];
 
-    if (orders.length === 0) break;
+    if (orders.length === 0) return { nextPageInfo: null, done: true };
 
-    for (const o of orders) {
-      try {
-        // Resolve customer_id na nossa base
-        const email = (o.email || o.customer?.email || "").trim().toLowerCase() || null;
-        const phone = normalizePhone(o.phone || o.customer?.phone);
-        const shopifyCustomerId = o.customer?.id;
-
-        let customerId: string | null = null;
-
-        if (shopifyCustomerId) {
-          const { data: byShopify } = await supabase
-            .from("customers")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .filter("custom_attributes->>shopify_id", "eq", String(shopifyCustomerId))
-            .maybeSingle();
-          if (byShopify) customerId = byShopify.id;
-        }
-        if (!customerId && email) {
-          const { data: byEmail } = await supabase
-            .from("customers")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("email", email)
-            .maybeSingle();
-          if (byEmail) customerId = byEmail.id;
-        }
-        if (!customerId && phone) {
-          const { data: byPhone } = await supabase
-            .from("customers")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("phone", phone)
-            .maybeSingle();
-          if (byPhone) customerId = byPhone.id;
-        }
-
-        // Cria customer stub se ainda não existe (pedido sem customer cadastrado)
-        if (!customerId && (email || phone)) {
-          const stubName = o.customer
-            ? `${o.customer.first_name || ""} ${o.customer.last_name || ""}`.trim()
-            : (email || "Cliente Shopify");
-          const { data: newCust } = await supabase.from("customers").insert({
-            tenant_id: tenantId,
-            name: stubName || "Cliente Shopify",
-            email,
-            phone,
-            custom_attributes: {
-              shopify_id: shopifyCustomerId,
-              source: "shopify",
-              created_from_order: true,
-            },
-          }).select("id").maybeSingle();
-          if (newCust) {
-            customerId = newCust.id;
-            stats.customers_inserted++;
-          }
-        }
-
-        const externalId = `shopify_${o.id}`;
-        const orderNumber = String(o.order_number ?? o.number ?? o.name ?? o.id);
-
-        const items = (o.line_items || []).map((li: any) => ({
-          name: li.title || li.name,
-          qty: li.quantity,
-          price: li.price,
-          sku: li.sku,
-        }));
-
-        const paymentSummary = {
+    const payload = orders.map((o: any) => {
+      const email = (o.email || o.customer?.email || "").trim().toLowerCase() || null;
+      const phone = normalizePhone(o.phone || o.customer?.phone);
+      const items = (o.line_items || []).map((li: any) => ({
+        name: li.title || li.name, qty: li.quantity, price: li.price, sku: li.sku,
+      }));
+      return {
+        external_id: `shopify_${o.id}`,
+        order_number: String(o.order_number ?? o.number ?? o.name ?? o.id),
+        total: Number(o.total_price || 0),
+        status: mapShopifyStatus(o.financial_status, o.fulfillment_status),
+        status_alias: o.financial_status || o.fulfillment_status || "unknown",
+        mapped_status: mapShopifyStatus(o.financial_status, o.fulfillment_status),
+        created_at: o.created_at,
+        updated_at_ext: o.updated_at,
+        tracking_code: o.fulfillments?.[0]?.tracking_number || null,
+        tracking_url: o.fulfillments?.[0]?.tracking_url || null,
+        carrier: o.fulfillments?.[0]?.tracking_company || null,
+        items_summary: items,
+        payment_summary: {
           gateway: o.gateway,
           payment_method: o.payment_gateway_names?.[0],
           subtotal: o.subtotal_price,
@@ -355,58 +275,36 @@ async function syncOrders(
           currency: o.currency,
           financial_status: o.financial_status,
           shipping: o.total_shipping_price_set?.shop_money?.amount,
-        };
+        },
+        utm_source: o.source_name === "web" ? null : o.source_name,
+        coupon_code: o.discount_codes?.[0]?.code || null,
+        // Pra resolver/criar customer
+        customer_email: email,
+        customer_phone: phone,
+        customer_shopify_id: o.customer?.id ? String(o.customer.id) : null,
+        customer_name: o.customer
+          ? `${o.customer.first_name || ""} ${o.customer.last_name || ""}`.trim() || email || "Cliente Shopify"
+          : email || "Cliente Shopify",
+      };
+    });
 
-        const orderRow = {
-          tenant_id: tenantId,
-          customer_id: customerId,
-          external_id: externalId,
-          order_number: orderNumber,
-          total: Number(o.total_price || 0),
-          // Status canônico: usamos o financial_status (paid/pending/refunded/voided) +
-          // fulfillment_status (shipped/delivered) combinado.
-          status: mapShopifyStatus(o.financial_status, o.fulfillment_status),
-          status_alias: o.financial_status || o.fulfillment_status || "unknown",
-          mapped_status: mapShopifyStatus(o.financial_status, o.fulfillment_status),
-          created_at: o.created_at,
-          updated_at: o.updated_at,
-          tracking_code: o.fulfillments?.[0]?.tracking_number || null,
-          tracking_url: o.fulfillments?.[0]?.tracking_url || null,
-          carrier: o.fulfillments?.[0]?.tracking_company || null,
-          items_summary: items,
-          payment_summary: paymentSummary,
-          utm_source: o.source_name === "web" ? null : o.source_name,
-          coupon_code: o.discount_codes?.[0]?.code || null,
-        };
-
-        // Upsert por external_id (assume UNIQUE(tenant_id, external_id) — confirmar)
-        const { data: existing } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("external_id", externalId)
-          .maybeSingle();
-
-        if (existing) {
-          await supabase.from("orders").update(orderRow).eq("id", existing.id);
-          stats.orders_updated++;
-        } else {
-          const { error: insErr } = await supabase.from("orders").insert(orderRow);
-          if (insErr) {
-            stats.errors.push(`order ${o.id}: ${insErr.message}`);
-          } else {
-            stats.orders_inserted++;
-          }
-        }
-      } catch (err: any) {
-        stats.errors.push(`order ${o.id}: ${err.message}`);
-      }
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("upsert_shopify_orders", {
+      _tenant_id: tenantId,
+      _orders: payload,
+    });
+    if (rpcErr) {
+      stats.errors.push(`upsert ord page ${pageCount}: ${rpcErr.message?.slice(0, 120)}`);
+    } else if (rpcRes) {
+      stats.orders_inserted += rpcRes.orders_inserted || 0;
+      stats.orders_updated += rpcRes.orders_updated || 0;
+      stats.customers_inserted += rpcRes.customers_inserted || 0;
     }
 
     const linkHeader = res.headers.get("link") || res.headers.get("Link");
     pageInfo = extractPageInfo(linkHeader);
-    if (!pageInfo) break;
+    if (!pageInfo) return { nextPageInfo: null, done: true };
   }
+  return { nextPageInfo: pageInfo, done: pageInfo === null };
 }
 
 function extractPageInfo(linkHeader: string | null): string | null {

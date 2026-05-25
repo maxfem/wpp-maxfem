@@ -43,20 +43,41 @@ export default function CRMPlanner() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("crm-planner", {
-        body: { 
-          messages: newMessages,
-          tenant_id: currentTenant?.id 
+      // Chamada direta via fetch (não supabase.functions.invoke) pra controlar timeout —
+      // o invoke default aborta em ~30s, mas o LLM + tool calls + materialização
+      // podem levar até 2min em listas grandes.
+      const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || "";
+      const anonKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) || "";
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120_000);
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/crm-planner`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${anonKey}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          messages: newMessages,
+          tenant_id: currentTenant?.id,
+        }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
 
-      const assistantMessage = data.choices[0].message.content;
+      const assistantMessage = data.choices?.[0]?.message?.content || "(resposta vazia)";
       setMessages([...newMessages, { role: "assistant", content: assistantMessage }]);
     } catch (error: any) {
       console.error("Error calling CRM Planner:", error);
-      toast.error("Erro ao falar com o consultor de CRM. Tente novamente.");
+      const msg = error.name === "AbortError"
+        ? "A consulta demorou demais (>2min). A lista pode ter sido criada — recarregue /listas pra ver."
+        : `Erro: ${error.message}`;
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }

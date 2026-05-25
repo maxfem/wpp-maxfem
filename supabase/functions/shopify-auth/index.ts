@@ -14,7 +14,13 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const action = url.searchParams.get("action");
+  // Shopify proíbe `?action=` na redirect URI (reserved). Usa último segmento do path.
+  // Aceita também query `?action=` como fallback pra chamadas internas.
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  const lastSegment = pathSegments[pathSegments.length - 1] || "";
+  const action = ["authorize", "callback", "test", "disconnect"].includes(lastSegment)
+    ? lastSegment
+    : url.searchParams.get("action");
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -25,7 +31,7 @@ Deno.serve(async (req) => {
   const APP_URL = Deno.env.get("APP_URL") || "https://maxfem.tech/crm";
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/shopify-auth?action=callback`;
+  const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/shopify-auth/callback`;
 
   async function loadIntegration(tenantId: string) {
     const { data } = await supabase

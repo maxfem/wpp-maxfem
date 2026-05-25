@@ -39,7 +39,7 @@ export default function SettingsShopify() {
 
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || "";
   const redirectUri = useMemo(
-    () => `${supabaseUrl}/functions/v1/shopify-auth?action=callback`,
+    () => `${supabaseUrl}/functions/v1/shopify-auth/callback`,
     [supabaseUrl]
   );
 
@@ -141,13 +141,13 @@ export default function SettingsShopify() {
       toast.error("Salva client_id, client_secret e o domínio da loja antes de conectar");
       return;
     }
-    const fnUrl = `${supabaseUrl}/functions/v1/shopify-auth?action=authorize&tenant_id=${currentTenant.id}`;
+    const fnUrl = `${supabaseUrl}/functions/v1/shopify-auth/authorize?tenant_id=${currentTenant.id}`;
     window.location.href = fnUrl;
   };
 
   const testMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${supabaseUrl}/functions/v1/shopify-auth?action=test`, {
+      const res = await fetch(`${supabaseUrl}/functions/v1/shopify-auth/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenant_id: currentTenant?.id }),
@@ -162,9 +162,34 @@ export default function SettingsShopify() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${supabaseUrl}/functions/v1/shopify-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: currentTenant?.id, phase: "all" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Falha no sync");
+      return data;
+    },
+    onSuccess: (data: any) => {
+      const msg = [
+        data.customers_inserted ? `${data.customers_inserted} novos clientes` : null,
+        data.customers_updated ? `${data.customers_updated} atualizados` : null,
+        data.customers_merged ? `${data.customers_merged} merged` : null,
+        data.orders_inserted ? `${data.orders_inserted} pedidos novos` : null,
+        data.orders_updated ? `${data.orders_updated} atualizados` : null,
+      ].filter(Boolean).join(" · ");
+      toast.success(msg || "Sincronizado (sem novidades)");
+      queryClient.invalidateQueries({ queryKey: ["shopify-integration"] });
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   const disconnectMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${supabaseUrl}/functions/v1/shopify-auth?action=disconnect`, {
+      const res = await fetch(`${supabaseUrl}/functions/v1/shopify-auth/disconnect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tenant_id: currentTenant?.id }),
@@ -397,6 +422,19 @@ export default function SettingsShopify() {
                       <CheckCircle2 className="h-4 w-4" />
                     )}
                     Testar conexão
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={() => syncMutation.mutate()}
+                    disabled={syncMutation.isPending}
+                    className="gap-2"
+                  >
+                    {syncMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    Sincronizar agora
                   </Button>
                   <Button
                     variant="destructive"

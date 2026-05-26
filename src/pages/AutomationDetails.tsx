@@ -25,11 +25,12 @@ import {
 import {
   ArrowLeft, Send, CheckCheck, Eye, MousePointerClick,
   DollarSign, Users, TrendingUp, Zap, AlertTriangle,
-  ChevronLeft, ChevronRight, Trash2, Play,
+  ChevronLeft, ChevronRight, Trash2, Play, MessageCircle, Mail,
 } from "lucide-react";
 import { formatSP, toSaoPaulo } from "@/lib/utils";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from "recharts";
+import { PeriodFilter, DEFAULT_PERIOD, type PeriodRange } from "@/components/campaigns/PeriodFilter";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   draft: { label: "Inativa", className: "bg-muted text-muted-foreground" },
@@ -46,6 +47,7 @@ export default function AutomationDetails() {
 
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(0);
+  const [period, setPeriod] = useState<PeriodRange>(DEFAULT_PERIOD);
 
   // Pending queue count
   const { data: pendingCount = 0 } = useQuery({
@@ -133,7 +135,7 @@ export default function AutomationDetails() {
       while (true) {
         const { data, error } = await supabase
           .from("campaign_activities")
-          .select("sent_at, delivered_at, read_at, clicked_at, replied_at, converted_at, conversion_value")
+          .select("channel, sent_at, delivered_at, read_at, clicked_at, replied_at, converted_at, conversion_value")
           .eq("campaign_id", id!)
           .range(from, from + batchSize - 1);
         if (error) throw error;
@@ -169,17 +171,46 @@ export default function AutomationDetails() {
   const totalActivities = activitiesResult?.total || 0;
   const totalPages = Math.max(1, Math.ceil(totalActivities / pageSize));
 
-  const allActivities = metricsData || [];
-  const metrics = {
-    total: allActivities.length,
-    sent: allActivities.filter((a) => a.sent_at).length,
-    delivered: allActivities.filter((a) => a.delivered_at).length,
-    read: allActivities.filter((a) => a.read_at).length,
-    clicked: allActivities.filter((a) => a.clicked_at).length,
-    replied: allActivities.filter((a) => a.replied_at).length,
-    converted: allActivities.filter((a) => a.converted_at).length,
-    revenue: allActivities.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
-  };
+  // Aplica filtro de período sobre o dataset completo.
+  // Usa created_at como base de envio + converted_at como base de conversão.
+  const allActivitiesFull = metricsData || [];
+  const allActivities = period.from && period.to
+    ? allActivitiesFull.filter((a: any) => {
+        const sentAt = a.sent_at || a.created_at;
+        if (!sentAt) return false;
+        const d = toSaoPaulo(sentAt);
+        return d >= period.from! && d <= period.to!;
+      })
+    : allActivitiesFull;
+  const computeMetrics = (acts: any[]) => ({
+    total: acts.length,
+    sent: acts.filter((a) => a.sent_at).length,
+    delivered: acts.filter((a) => a.delivered_at).length,
+    read: acts.filter((a) => a.read_at).length,
+    clicked: acts.filter((a) => a.clicked_at).length,
+    replied: acts.filter((a) => a.replied_at).length,
+    converted: acts.filter((a) => a.converted_at).length,
+    revenue: acts.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
+  });
+  const metrics = computeMetrics(allActivities);
+
+  // Breakdown por canal (e-mail / whatsapp)
+  const channelOf = (a: any): string =>
+    a.channel === "whatsapp" ? "whatsapp" : a.channel === "sms" ? "sms" : "email";
+  const channelLabel: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", sms: "SMS" };
+  // Detecta canais do fluxo
+  const flowNodes = ((campaign?.flow_data as any)?.nodes || []) as any[];
+  const flowChannels = new Set<string>();
+  flowNodes.forEach((n) => {
+    const t = n.data?.nodeType || n.type;
+    if (t === "sendEmail") flowChannels.add("email");
+    if (t === "sendWhatsApp") flowChannels.add("whatsapp");
+  });
+  const channels = [...new Set([...flowChannels, ...allActivities.map(channelOf)])];
+  const channelMetrics: Record<string, ReturnType<typeof computeMetrics>> = {};
+  channels.forEach((ch) => {
+    channelMetrics[ch] = computeMetrics(allActivities.filter((a) => channelOf(a) === ch));
+  });
 
   const deliveryRate = metrics.sent > 0 ? ((metrics.delivered / metrics.sent) * 100).toFixed(1) : "0";
   const readRate = metrics.delivered > 0 ? ((metrics.read / metrics.delivered) * 100).toFixed(1) : "0";
@@ -245,8 +276,14 @@ export default function AutomationDetails() {
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               Criada em {formatSP(campaign.created_at, "dd/MM/yyyy 'às' HH:mm")}
+              {period.from && period.to && (
+                <span className="ml-2 text-primary">
+                  · Métricas: {formatSP(period.from, "dd/MM/yyyy")} até {formatSP(period.to, "dd/MM/yyyy")}
+                </span>
+              )}
             </p>
           </div>
+          <PeriodFilter value={period} onChange={setPeriod} />
           <Button
             variant="default"
             size="sm"
@@ -312,6 +349,59 @@ export default function AutomationDetails() {
           <KpiCard icon={TrendingUp} label="Conversões" value={metrics.converted} suffix={`${conversionRate}%`} />
           <KpiCard icon={DollarSign} label="Receita" value={`R$ ${metrics.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} highlight />
         </div>
+
+        {/* Breakdown por canal — separa visualmente WhatsApp e E-mail */}
+        {channels.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Detalhes por canal</h2>
+              <span className="text-xs text-muted-foreground">{channels.length} {channels.length === 1 ? "canal" : "canais"}</span>
+            </div>
+            <div className={`grid gap-4 ${channels.length === 1 ? "" : "md:grid-cols-2"}`}>
+              {channels.map((ch) => {
+                const m = channelMetrics[ch];
+                const dr = m.sent > 0 ? ((m.delivered / m.sent) * 100).toFixed(0) : "0";
+                const rr = m.delivered > 0 ? ((m.read / m.delivered) * 100).toFixed(0) : "0";
+                const cr = m.sent > 0 ? ((m.converted / m.sent) * 100).toFixed(1) : "0";
+                const isWa = ch === "whatsapp";
+                return (
+                  <Card key={ch} className={isWa ? "border-emerald-200/60 bg-emerald-50/30" : "border-blue-200/60 bg-blue-50/30"}>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${isWa ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                          {isWa ? <MessageCircle className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+                        </span>
+                        {channelLabel[ch] || ch}
+                        <span className="ml-auto text-xs font-normal text-muted-foreground">
+                          {m.total} destinatário{m.total === 1 ? "" : "s"}
+                        </span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                        <ChannelStat label="Enviados" value={m.sent} />
+                        <ChannelStat label="Entregues" value={m.delivered} suffix={`${dr}%`} />
+                        <ChannelStat label={isWa ? "Lidos" : "Aberturas"} value={m.read} suffix={`${rr}%`} />
+                        <ChannelStat label="Cliques" value={m.clicked} />
+                        <ChannelStat label="Respostas" value={m.replied} />
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-3 text-xs">
+                        <span className="text-muted-foreground">Conversão {isWa ? "(via WhatsApp)" : "(via E-mail)"}</span>
+                        <span className="font-semibold">{m.converted} <span className="text-muted-foreground font-normal">({cr}%)</span></span>
+                      </div>
+                      {m.revenue > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Receita gerada</span>
+                          <span className="font-semibold">R$ {m.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="funnel" className="space-y-4">
@@ -410,8 +500,10 @@ export default function AutomationDetails() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>Canal</TableHead>
                             <TableHead>Cliente</TableHead>
-                            <TableHead>Telefone</TableHead>
+                            <TableHead>Contato</TableHead>
+                            <TableHead>Status</TableHead>
                             <TableHead>Enviado</TableHead>
                             <TableHead>Entregue</TableHead>
                             <TableHead>Lido</TableHead>
@@ -421,10 +513,33 @@ export default function AutomationDetails() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activities.map((a: any) => (
+                          {activities.map((a: any) => {
+                            const ch = a.channel === "whatsapp" ? "whatsapp" : a.channel === "sms" ? "sms" : "email";
+                            const contact = ch === "whatsapp" || ch === "sms" ? (a.customers?.phone || "—") : (a.customers?.email || "—");
+                            const channelBadgeColor =
+                              ch === "whatsapp" ? "bg-green-500/15 text-green-700 dark:text-green-300" :
+                              ch === "sms" ? "bg-blue-500/15 text-blue-700 dark:text-blue-300" :
+                              "bg-violet-500/15 text-violet-700 dark:text-violet-300";
+                            const channelLabel = ch === "whatsapp" ? "WhatsApp" : ch === "sms" ? "SMS" : "E-mail";
+                            const statusColor =
+                              a.status === "sent" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" :
+                              a.status === "failed" ? "bg-red-500/15 text-red-700 dark:text-red-300" :
+                              a.status === "skipped" ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300" :
+                              "bg-muted text-muted-foreground";
+                            return (
                             <TableRow key={a.id}>
+                              <TableCell>
+                                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${channelBadgeColor}`}>
+                                  {channelLabel}
+                                </span>
+                              </TableCell>
                               <TableCell className="font-medium">{a.customers?.name || "—"}</TableCell>
-                              <TableCell className="text-muted-foreground">{a.customers?.phone || "—"}</TableCell>
+                              <TableCell className="text-muted-foreground text-xs">{contact}</TableCell>
+                              <TableCell>
+                                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${statusColor}`} title={a.error_message || ""}>
+                                  {a.status || "—"}
+                                </span>
+                              </TableCell>
                               <TableCell>{a.sent_at ? <StatusDot color="hsl(var(--primary))" label={formatSP(a.sent_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell>{a.delivered_at ? <StatusDot color="hsl(210, 70%, 55%)" label={formatSP(a.delivered_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
                               <TableCell>{a.read_at ? <StatusDot color="hsl(180, 60%, 45%)" label={formatSP(a.read_at, "dd/MM HH:mm")} /> : "—"}</TableCell>
@@ -436,7 +551,8 @@ export default function AutomationDetails() {
                                   : "—"}
                               </TableCell>
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -493,6 +609,21 @@ function StatusDot({ color, label }: { color: string; label: string }) {
     <div className="flex items-center gap-1.5">
       <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
       <span className="text-xs">{label}</span>
+    </div>
+  );
+}
+
+function ChannelStat({ label, value, suffix, destructive }: {
+  label: string;
+  value: string | number;
+  suffix?: string;
+  destructive?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={destructive ? "text-base font-bold text-destructive" : "text-base font-bold text-foreground"}>{value}</span>
+      {suffix && <span className="text-[10px] text-muted-foreground">{suffix}</span>}
     </div>
   );
 }

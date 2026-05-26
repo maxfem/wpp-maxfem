@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,7 +19,8 @@ import {
   DollarSign, Clock, Users, TrendingUp, MessageCircle, Mail,
 } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
-import { formatSP } from "@/lib/utils";
+import { formatSP, toSaoPaulo } from "@/lib/utils";
+import { PeriodFilter, DEFAULT_PERIOD, type PeriodRange } from "@/components/campaigns/PeriodFilter";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -56,6 +58,7 @@ export default function CampaignDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentTenant } = useAuth();
+  const [period, setPeriod] = useState<PeriodRange>(DEFAULT_PERIOD);
 
   const { data: campaign, isLoading: loadingCampaign } = useQuery({
     queryKey: ["campaign", id],
@@ -98,12 +101,12 @@ export default function CampaignDetails() {
       const validField = hasEmail ? "email" : (hasWA ? "phone" : "email");
 
       if (campaign.list_id) {
-        const { data } = await supabase
+        const { count } = await supabase
           .from("contact_list_members")
-          .select("customers!inner(id)", { count: "exact", head: false })
+          .select("customers!inner(id)", { count: "exact", head: true })
           .eq("list_id", campaign.list_id)
           .not(`customers.${validField}`, "is", null);
-        return data?.length ?? 0;
+        return count ?? 0;
       }
       const { count } = await supabase
         .from("customers")
@@ -143,7 +146,16 @@ export default function CampaignDetails() {
     revenue: acts.reduce((sum, a) => sum + (Number(a.conversion_value) || 0), 0),
   });
 
-  const metrics = computeMetrics(activities);
+  // Filtro de período: aplica sobre as activities. Geral (preset=all) usa o dataset inteiro.
+  const filteredActivities = period.from && period.to
+    ? activities.filter((a: any) => {
+        const sentAt = a.sent_at || a.created_at;
+        if (!sentAt) return false;
+        const d = toSaoPaulo(sentAt);
+        return d >= period.from! && d <= period.to!;
+      })
+    : activities;
+  const metrics = computeMetrics(filteredActivities);
 
   // --- Breakdown por canal (e-mail / whatsapp / sms) ---
   const channelOf = (a: any): string =>
@@ -161,11 +173,11 @@ export default function CampaignDetails() {
     });
     return [...set];
   })();
-  const channels = [...new Set([...flowChannels, ...activities.map(channelOf)])];
+  const channels = [...new Set([...flowChannels, ...filteredActivities.map(channelOf)])];
   const isMultiChannel = channels.length > 1;
   const channelMetrics: Record<string, ReturnType<typeof computeMetrics>> = {};
   channels.forEach((ch) => {
-    channelMetrics[ch] = computeMetrics(activities.filter((a) => channelOf(a) === ch));
+    channelMetrics[ch] = computeMetrics(filteredActivities.filter((a) => channelOf(a) === ch));
   });
 
   const deliveryRate = metrics.sent > 0 ? ((metrics.delivered / metrics.sent) * 100).toFixed(1) : "0";
@@ -238,8 +250,14 @@ export default function CampaignDetails() {
               {campaign.scheduled_at && (
                 <> · Agendada para {formatSP(new Date(campaign.scheduled_at), "dd/MM/yyyy 'às' HH:mm")}</>
               )}
+              {period.from && period.to && (
+                <span className="ml-2 text-primary">
+                  · Métricas: {formatSP(period.from, "dd/MM/yyyy")} até {formatSP(period.to, "dd/MM/yyyy")}
+                </span>
+              )}
             </p>
           </div>
+          <PeriodFilter value={period} onChange={setPeriod} />
         </div>
 
           {/* Error banner */}
@@ -320,32 +338,51 @@ export default function CampaignDetails() {
           <KpiCard icon={DollarSign} label="Receita" value={`R$ ${metrics.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} highlight />
         </div>
 
-        {/* Breakdown por canal — só aparece quando a campanha tem mais de um canal */}
-        {isMultiChannel && (
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground">Por canal</h2>
-            <div className="grid gap-3 md:grid-cols-2">
+        {/* Breakdown por canal — sempre mostra quando há pelo menos 1 canal envolvido */}
+        {channels.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Detalhes por canal</h2>
+              <span className="text-xs text-muted-foreground">{channels.length} {channels.length === 1 ? "canal" : "canais"}</span>
+            </div>
+            <div className={`grid gap-4 ${channels.length === 1 ? "" : "md:grid-cols-2"}`}>
               {channels.map((ch) => {
                 const m = channelMetrics[ch];
                 const dr = m.sent > 0 ? ((m.delivered / m.sent) * 100).toFixed(0) : "0";
                 const rr = m.delivered > 0 ? ((m.read / m.delivered) * 100).toFixed(0) : "0";
+                const cr = m.sent > 0 ? ((m.converted / m.sent) * 100).toFixed(1) : "0";
+                const isWa = ch === "whatsapp";
                 return (
-                  <Card key={ch}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        {ch === "whatsapp"
-                          ? <MessageCircle className="h-4 w-4 text-emerald-600" />
-                          : <Mail className="h-4 w-4 text-primary" />}
+                  <Card key={ch} className={isWa ? "border-emerald-200/60 bg-emerald-50/30" : "border-blue-200/60 bg-blue-50/30"}>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${isWa ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                          {isWa ? <MessageCircle className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
+                        </span>
                         {channelLabel[ch] || ch}
-                        <span className="ml-auto text-xs font-normal text-muted-foreground">{m.total} destinatário(s)</span>
+                        <span className="ml-auto text-xs font-normal text-muted-foreground">
+                          {m.total} destinatário{m.total === 1 ? "" : "s"}
+                        </span>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                      <ChannelStat label="Enviados" value={m.sent} />
-                      <ChannelStat label="Entregues" value={m.delivered} suffix={`${dr}%`} />
-                      <ChannelStat label={ch === "whatsapp" ? "Lidos" : "Aberturas"} value={m.read} suffix={`${rr}%`} />
-                      <ChannelStat label="Cliques" value={m.clicked} />
-                      <ChannelStat label="Falhas" value={m.failed} destructive />
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                        <ChannelStat label="Enviados" value={m.sent} />
+                        <ChannelStat label="Entregues" value={m.delivered} suffix={`${dr}%`} />
+                        <ChannelStat label={isWa ? "Lidos" : "Aberturas"} value={m.read} suffix={`${rr}%`} />
+                        <ChannelStat label="Cliques" value={m.clicked} />
+                        <ChannelStat label="Falhas" value={m.failed} destructive />
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-3 text-xs">
+                        <span className="text-muted-foreground">Conversão {isWa ? "(via WhatsApp)" : "(via E-mail)"}</span>
+                        <span className="font-semibold">{m.converted} <span className="text-muted-foreground font-normal">({cr}%)</span></span>
+                      </div>
+                      {m.revenue > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Receita gerada</span>
+                          <span className="font-semibold">R$ {m.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );

@@ -19,24 +19,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Clock, LayoutList, CalendarIcon } from "lucide-react";
+import { Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2, Clock, LayoutList } from "lucide-react";
 import { toast } from "sonner";
-import { isWithinInterval } from "date-fns";
-import { cn, formatSP, toSaoPaulo, getStandardPeriodRange, type DatePeriodKey } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { AutomationTemplatesList } from "@/components/automations/AutomationTemplatesList";
 import { AUTOMATION_TRIGGERS, getTriggerLabel } from "@/components/campaign-flow/FlowSidebar";
 import { getStatusMeta, toneClass } from "@/lib/statusBadges";
+import { StatusTabs, bucketOf, type StatusBucket } from "@/components/campaigns/StatusTabs";
+import { ViewSettings, loadViewSettings, type ColumnDef, type ViewMode } from "@/components/campaigns/ViewSettings";
 
-const datePresets: { label: string; key: DatePeriodKey }[] = [
-  { label: "Hoje", key: "today" },
-  { label: "7 dias", key: "7d" },
-  { label: "14 dias", key: "14d" },
-  { label: "30 dias", key: "30d" },
-  { label: "90 dias", key: "90d" },
-  { label: "Todos", key: "all" },
+const COLUMN_DEFS: ColumnDef[] = [
+  { key: "name", label: "Nome", required: true },
+  { key: "type", label: "Tipo / Gatilho", default: true },
+  { key: "status", label: "Status", default: true },
+  { key: "envios", label: "Envios", default: true },
+  { key: "conversao_pct", label: "% Conversão", default: true },
+  { key: "faturado", label: "Faturado", default: true },
+  { key: "pending", label: "Na fila", default: true },
+  { key: "created_at", label: "Criada em", default: false },
+  { key: "ativo", label: "Switch ativo", default: true },
 ];
+
+const initialView = loadViewSettings("automations:view", "grid", COLUMN_DEFS);
 
 const automationTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
@@ -58,10 +62,9 @@ export default function Automations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom", trigger: "" });
-  const [dateKey, setDateKey] = useState<DatePeriodKey>("today");
-  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
-  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(initialView.mode);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(initialView.cols);
+  const [statusBucket, setStatusBucket] = useState<StatusBucket>("all");
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["automations", currentTenant?.id],
@@ -128,35 +131,25 @@ export default function Automations() {
     enabled: !!currentTenant,
   });
 
+  // Métricas SEMPRE acumulado total na listagem.
+  // Filtro por período fica DENTRO de "Ver detalhes" de cada automação.
   const metricsMap = useMemo(() => {
-    const { from, to } = getStandardPeriodRange(dateKey, { from: customDateFrom, to: customDateTo });
-    const inPeriod = (d: string | null) =>
-      !!d && isWithinInterval(toSaoPaulo(d), { start: from, end: to });
-
     const map: Record<string, CampaignMetrics> = {};
     const ensure = (id: string) => {
       if (!map[id]) map[id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
       return map[id];
     };
-
     rawActivities.forEach((a) => {
-      // Envios e cliques: contados pela data do disparo (created_at).
-      if (inPeriod(a.created_at)) {
-        const m = ensure(a.campaign_id);
-        m.envios++;
-        if (a.clicked_at) m.cliques++;
-      }
-      // Conversão e receita: contadas pela data da CONVERSÃO (converted_at),
-      // não pela do disparo — a venda acontece dias depois do envio. Sem isso,
-      // o filtro "Hoje" zerava a receita de automações como carrinho abandonado.
-      if (inPeriod(a.converted_at)) {
-        const m = ensure(a.campaign_id);
+      const m = ensure(a.campaign_id);
+      m.envios++;
+      if (a.clicked_at) m.cliques++;
+      if (a.converted_at) {
         m.conversao += Number(a.conversion_value || 0);
         m.conversoes++;
       }
     });
     return map;
-  }, [rawActivities, dateKey, customDateFrom, customDateTo]);
+  }, [rawActivities]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {
@@ -242,23 +235,13 @@ export default function Automations() {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())
     );
-    
-    // We removed the campaign creation date filter to show all automations 
-    // regardless of when they were created, but keeping metrics date-filtered
+    if (statusBucket !== "all") {
+      list = list.filter((c) => bucketOf(c.status) === statusBucket);
+    }
     return list;
-  }, [campaigns, search]);
+  }, [campaigns, search, statusBucket]);
 
-  const dateLabel = useMemo(() => {
-    if (dateKey !== "custom" && dateKey !== "all") {
-      return datePresets.find((p) => p.key === dateKey)?.label || "";
-    }
-    if (customDateFrom && customDateTo) {
-      return `${formatSP(customDateFrom, "dd/MM")} - ${formatSP(customDateTo, "dd/MM")}`;
-    }
-    if (customDateFrom) return `A partir de ${formatSP(customDateFrom, "dd/MM")}`;
-    if (customDateTo) return `Até ${formatSP(customDateTo, "dd/MM")}`;
-    return "Todos";
-  }, [dateKey, customDateFrom, customDateTo]);
+  const showCol = (k: string) => visibleColumns.includes(k);
 
   return (
     <AppLayout>
@@ -293,61 +276,28 @@ export default function Automations() {
           </DropdownMenu>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar automações..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        {/* Status tabs + visualização */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <StatusTabs items={campaigns} value={statusBucket} onChange={setStatusBucket} />
+          <div className="flex items-center gap-2">
+            <div className="relative w-56">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-8 text-xs"
+              />
+            </div>
+            <ViewSettings
+              storageKey="automations:view"
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              columns={COLUMN_DEFS}
+              visibleColumns={visibleColumns}
+              onVisibleColumnsChange={setVisibleColumns}
+            />
           </div>
-
-          <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
-            {datePresets.map((p) => (
-              <Button
-                key={p.key}
-                variant={dateKey === p.key && !customDateFrom ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs px-2"
-                onClick={() => {
-                  setDateKey(p.key);
-                  setCustomDateFrom(undefined);
-                  setCustomDateTo(undefined);
-                }}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
-
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className={cn("h-8 text-xs gap-1", customDateFrom && "border-primary")}>
-                <CalendarIcon className="h-3.5 w-3.5" />
-                {customDateFrom ? dateLabel : "Personalizado"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <div className="flex gap-2 p-3">
-                <div>
-                  <p className="text-xs font-medium mb-1 text-muted-foreground">De</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateFrom}
-                    onSelect={(d) => { setCustomDateFrom(d); setDateKey("custom"); }}
-                    className={cn("p-2 pointer-events-auto")}
-                  />
-                </div>
-                <div>
-                  <p className="text-xs font-medium mb-1 text-muted-foreground">Até</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateTo}
-                    onSelect={(d) => { setCustomDateTo(d); setDateKey("custom"); setCalendarOpen(false); }}
-                    className={cn("p-2 pointer-events-auto")}
-                  />
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
         </div>
 
         {/* Grid */}
@@ -360,6 +310,121 @@ export default function Automations() {
               <p className="text-lg font-medium text-foreground mb-1">Nenhuma automação</p>
               <p className="text-sm text-muted-foreground">Crie sua primeira automação para engajar seus clientes.</p>
             </CardContent>
+          </Card>
+        ) : viewMode === "compact" ? (
+          <Card className="border border-border divide-y divide-border">
+            {filtered.map((c) => {
+              const st = getStatusMeta(c.status, "automation");
+              const StIcon = st.icon;
+              const metrics = metricsMap[c.id];
+              const pendingCount = pendingQueueCounts[c.id] || 0;
+              const isActive = c.status === "running";
+              return (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 group">
+                  <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isActive ? "bg-success animate-pulse" : "bg-muted-foreground/40")} />
+                  <button
+                    className="font-medium text-sm flex-1 text-left hover:text-primary truncate"
+                    onClick={() => navigate(`/automations/${c.id}`)}
+                  >
+                    {c.name}
+                  </button>
+                  {showCol("status") && (
+                    <Badge variant="outline" className={cn("text-[10px] gap-1 shrink-0", toneClass(st.tone))}>
+                      <StIcon className="h-3 w-3" />{st.label}
+                    </Badge>
+                  )}
+                  {showCol("envios") && (
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {(metrics?.envios || 0).toLocaleString("pt-BR")} env
+                    </span>
+                  )}
+                  {showCol("faturado") && (metrics?.conversao || 0) > 0 && (
+                    <span className="text-xs font-medium tabular-nums shrink-0 text-success">
+                      R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(0)}
+                    </span>
+                  )}
+                  {showCol("pending") && pendingCount > 0 && (
+                    <Badge variant="outline" className={cn("text-[10px] gap-1 shrink-0", toneClass("warning"))}>
+                      <Clock className="h-2.5 w-2.5" />{pendingCount}
+                    </Badge>
+                  )}
+                  {showCol("ativo") && (
+                    <Switch
+                      className="scale-75 shrink-0"
+                      checked={isActive}
+                      onCheckedChange={() => toggleAutomation.mutate({ id: c.id, currentStatus: c.status })}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </Card>
+        ) : viewMode === "list" ? (
+          <Card className="border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs">
+                <tr className="text-left">
+                  <th className="px-4 py-2 font-medium">Nome</th>
+                  {showCol("type") && <th className="px-4 py-2 font-medium">Gatilho</th>}
+                  {showCol("status") && <th className="px-4 py-2 font-medium">Status</th>}
+                  {showCol("envios") && <th className="px-4 py-2 font-medium text-right">Envios</th>}
+                  {showCol("conversao_pct") && <th className="px-4 py-2 font-medium text-right">% Conv.</th>}
+                  {showCol("faturado") && <th className="px-4 py-2 font-medium text-right">Faturado</th>}
+                  {showCol("pending") && <th className="px-4 py-2 font-medium text-right">Fila</th>}
+                  {showCol("created_at") && <th className="px-4 py-2 font-medium">Criada</th>}
+                  {showCol("ativo") && <th className="px-4 py-2 font-medium text-right">Ativo</th>}
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((c) => {
+                  const st = getStatusMeta(c.status, "automation");
+                  const StIcon = st.icon;
+                  const typeLabel = c.trigger_type ? getTriggerLabel(c.trigger_type) : (automationTypes.find((t) => t.value === c.type)?.label || c.type);
+                  const metrics = metricsMap[c.id];
+                  const pendingCount = pendingQueueCounts[c.id] || 0;
+                  const isActive = c.status === "running";
+                  return (
+                    <tr key={c.id} className="hover:bg-muted/30 group">
+                      <td className="px-4 py-2 font-medium">
+                        <button onClick={() => navigate(`/automations/${c.id}`)} className="hover:text-primary text-left">{c.name}</button>
+                      </td>
+                      {showCol("type") && <td className="px-4 py-2 text-xs text-muted-foreground">{typeLabel}</td>}
+                      {showCol("status") && (
+                        <td className="px-4 py-2">
+                          <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
+                            <StIcon className="h-3 w-3" />{st.label}
+                          </Badge>
+                        </td>
+                      )}
+                      {showCol("envios") && <td className="px-4 py-2 text-right text-xs tabular-nums">{(metrics?.envios || 0).toLocaleString("pt-BR")}</td>}
+                      {showCol("conversao_pct") && <td className="px-4 py-2 text-right text-xs tabular-nums">{metrics && metrics.envios > 0 ? `${((metrics.conversoes / metrics.envios) * 100).toFixed(1)}%` : "—"}</td>}
+                      {showCol("faturado") && <td className="px-4 py-2 text-right text-xs tabular-nums text-success">{(metrics?.conversao || 0) > 0 ? `R$ ${metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(0)}` : "—"}</td>}
+                      {showCol("pending") && <td className="px-4 py-2 text-right text-xs tabular-nums">{pendingCount > 0 ? pendingCount : "—"}</td>}
+                      {showCol("created_at") && <td className="px-4 py-2 text-xs text-muted-foreground">{c.created_at ? new Date(c.created_at).toLocaleDateString("pt-BR") : "—"}</td>}
+                      {showCol("ativo") && (
+                        <td className="px-4 py-2 text-right">
+                          <Switch className="scale-75" checked={isActive} onCheckedChange={() => toggleAutomation.mutate({ id: c.id, currentStatus: c.status })} />
+                        </td>
+                      )}
+                      <td className="px-2 py-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><MoreVertical className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => navigate(`/automations/${c.id}`)}><Eye className="h-4 w-4 mr-2" />Ver relatório</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => navigate(`/automations/flow/${c.id}`)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => duplicateCampaign.mutate(c)}><Copy className="h-4 w-4 mr-2" />Duplicar</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => deleteCampaign.mutate(c.id)}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

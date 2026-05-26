@@ -23,16 +23,15 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Plus, Search, Megaphone, Zap, MoreVertical, Eye, Pencil, Copy, Trash2,
   Check, Clock, FileText, LayoutGrid, List, CalendarIcon, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { subDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
-import { cn, formatSP } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { getStatusMeta, toneClass } from "@/lib/statusBadges";
+import { StatusTabs, bucketOf, type StatusBucket } from "@/components/campaigns/StatusTabs";
+import { ViewSettings, loadViewSettings, type ColumnDef, type ViewMode } from "@/components/campaigns/ViewSettings";
 
 const campaignTypes = [
   { value: "recovery", label: "Recuperação de Pedidos" },
@@ -43,17 +42,22 @@ const campaignTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-const datePresets = [
-  { label: "Hoje", days: 0 },
-  { label: "7 dias", days: 7 },
-  { label: "14 dias", days: 14 },
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
-  { label: "Todos", days: -1 },
+const COLUMN_DEFS: ColumnDef[] = [
+  { key: "name", label: "Nome", required: true },
+  { key: "type", label: "Tipo", default: true },
+  { key: "status", label: "Status", default: true },
+  { key: "envios", label: "Envios", default: true },
+  { key: "conversao_pct", label: "% Conversão", default: true },
+  { key: "faturado", label: "Faturado", default: true },
+  { key: "created_at", label: "Criado em", default: true },
+  { key: "scheduled_at", label: "Agendado pra", default: false },
+  { key: "ativo", label: "Switch ativo", default: true },
 ];
 
 type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
 type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
+
+const initialView = loadViewSettings("campaigns:view", "grid", COLUMN_DEFS);
 
 export default function Campaigns() {
   const { currentTenant } = useAuth();
@@ -62,11 +66,9 @@ export default function Campaigns() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "custom" });
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [datePreset, setDatePreset] = useState(-1);
-  const [customDateFrom, setCustomDateFrom] = useState<Date | undefined>();
-  const [customDateTo, setCustomDateTo] = useState<Date | undefined>();
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(initialView.mode);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(initialView.cols);
+  const [statusBucket, setStatusBucket] = useState<StatusBucket>("all");
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns", currentTenant?.id],
@@ -99,22 +101,11 @@ export default function Campaigns() {
     enabled: !!currentTenant,
   });
 
+  // Métricas SEMPRE no acumulado total (a listagem mostra geral).
+  // Filtro por período fica DENTRO de "Ver detalhes" — pra cada campanha individual.
   const metricsMap = useMemo(() => {
-    let acts = rawActivities;
-    if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
-      acts = acts.filter((a) => isWithinInterval(new Date(a.created_at), { start: from, end: to }));
-    } else if (customDateFrom || customDateTo) {
-      acts = acts.filter((a) => {
-        const d = new Date(a.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
-        return true;
-      });
-    }
     const map: Record<string, CampaignMetrics> = {};
-    acts.forEach((a) => {
+    rawActivities.forEach((a) => {
       if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
       map[a.campaign_id].envios++;
       if (a.clicked_at) map[a.campaign_id].cliques++;
@@ -123,7 +114,7 @@ export default function Campaigns() {
       if (cv > 0) map[a.campaign_id].conversoes++;
     });
     return map;
-  }, [rawActivities, datePreset, customDateFrom, customDateTo]);
+  }, [rawActivities]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {
@@ -197,41 +188,16 @@ export default function Campaigns() {
     let list = campaigns.filter((c) =>
       c.name.toLowerCase().includes(search.toLowerCase())
     );
-
-    // Date filter
-    if (datePreset >= 0) {
-      const from = startOfDay(subDays(new Date(), datePreset));
-      const to = endOfDay(new Date());
-      list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        return isWithinInterval(d, { start: from, end: to });
-      });
-    } else if (customDateFrom || customDateTo) {
-      list = list.filter((c) => {
-        const d = new Date(c.created_at);
-        if (customDateFrom && d < startOfDay(customDateFrom)) return false;
-        if (customDateTo && d > endOfDay(customDateTo)) return false;
-        return true;
-      });
+    if (statusBucket !== "all") {
+      list = list.filter((c) => bucketOf(c.status) === statusBucket);
     }
-
     return list;
-  }, [campaigns, search, datePreset, customDateFrom, customDateTo]);
+  }, [campaigns, search, statusBucket]);
 
   const formatDate = (d: string | null) =>
     d ? new Date(d).toLocaleDateString("pt-BR") : "—";
 
-  const dateLabel = useMemo(() => {
-    if (datePreset >= 0) {
-      return datePresets.find((p) => p.days === datePreset)?.label || "";
-    }
-    if (customDateFrom && customDateTo) {
-      return `${formatSP(customDateFrom, "dd/MM")} - ${formatSP(customDateTo, "dd/MM")}`;
-    }
-    if (customDateFrom) return `A partir de ${formatSP(customDateFrom, "dd/MM")}`;
-    if (customDateTo) return `Até ${formatSP(customDateTo, "dd/MM")}`;
-    return "Todos";
-  }, [datePreset, customDateFrom, customDateTo]);
+  const showCol = (k: string) => visibleColumns.includes(k);
 
   const renderCampaignActions = (c: typeof campaigns[0]) => (
     <DropdownMenu>
@@ -280,89 +246,27 @@ export default function Campaigns() {
           </DropdownMenu>
         </div>
 
-        {/* Filters bar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar campanhas..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-
-          {/* Date presets */}
-          <div className="flex items-center gap-1 border border-border rounded-md p-0.5">
-            {datePresets.map((p) => (
-              <Button
-                key={p.days}
-                variant={datePreset === p.days && !customDateFrom && !customDateTo ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs px-2.5"
-                onClick={() => {
-                  setDatePreset(p.days);
-                  setCustomDateFrom(undefined);
-                  setCustomDateTo(undefined);
-                }}
-              >
-                {p.label}
-              </Button>
-            ))}
-
-            {/* Custom date picker */}
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={(customDateFrom || customDateTo) ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 text-xs px-2.5"
-                >
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {customDateFrom || customDateTo ? dateLabel : "Período"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="p-3 space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground">De</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateFrom}
-                    onSelect={(d) => {
-                      setCustomDateFrom(d);
-                      setDatePreset(-1);
-                    }}
-                    className={cn("p-0 pointer-events-auto")}
-                  />
-                  <p className="text-xs font-medium text-muted-foreground">Até</p>
-                  <Calendar
-                    mode="single"
-                    selected={customDateTo}
-                    onSelect={(d) => {
-                      setCustomDateTo(d);
-                      setDatePreset(-1);
-                      if (customDateFrom) setCalendarOpen(false);
-                    }}
-                    className={cn("p-0 pointer-events-auto")}
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* View toggle */}
-          <div className="flex items-center border border-border rounded-md p-0.5">
-            <Button
-              variant={viewMode === "grid" ? "default" : "ghost"}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode("grid")}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setViewMode("list")}
-            >
-              <List className="h-3.5 w-3.5" />
-            </Button>
+        {/* Status tabs + visualização */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <StatusTabs items={campaigns} value={statusBucket} onChange={setStatusBucket} />
+          <div className="flex items-center gap-2">
+            <div className="relative w-56">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-8 text-xs"
+              />
+            </div>
+            <ViewSettings
+              storageKey="campaigns:view"
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              columns={COLUMN_DEFS}
+              visibleColumns={visibleColumns}
+              onVisibleColumnsChange={setVisibleColumns}
+            />
           </div>
         </div>
 
@@ -376,6 +280,47 @@ export default function Campaigns() {
               <p className="text-lg font-medium text-foreground mb-1">Nenhuma campanha</p>
               <p className="text-sm text-muted-foreground">Crie sua primeira campanha para engajar seus clientes.</p>
             </CardContent>
+          </Card>
+        ) : viewMode === "compact" ? (
+          <Card className="border border-border divide-y divide-border">
+            {filtered.map((c) => {
+              const st = getStatusMeta(c.status, "campaign");
+              const StIcon = st.icon;
+              const metrics = metricsMap[c.id];
+              return (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors group">
+                  <Badge variant="outline" className={cn("text-[10px] gap-1 shrink-0", toneClass(st.tone))}>
+                    <StIcon className="h-3 w-3" />{st.label}
+                  </Badge>
+                  <button
+                    className="font-medium text-sm flex-1 text-left hover:text-primary truncate"
+                    onClick={() => navigate(`/campaigns/${c.id}`)}
+                  >
+                    {c.name}
+                  </button>
+                  {showCol("envios") && (
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {(metrics?.envios || 0).toLocaleString("pt-BR")} envios
+                    </span>
+                  )}
+                  {showCol("faturado") && (metrics?.conversao || 0) > 0 && (
+                    <span className="text-xs font-medium tabular-nums shrink-0" style={{ color: "hsl(var(--chart-2))" }}>
+                      R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}
+                    </span>
+                  )}
+                  {showCol("ativo") && (
+                    <Switch
+                      className="scale-75 shrink-0"
+                      checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
+                      onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                    />
+                  )}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    {renderCampaignActions(c)}
+                  </div>
+                </div>
+              );
+            })}
           </Card>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -430,13 +375,14 @@ export default function Campaigns() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Envios</TableHead>
-                   <TableHead className="text-right">% Conversão</TableHead>
-                   <TableHead className="text-right">Faturado</TableHead>
-                  <TableHead>Criado em</TableHead>
-                  <TableHead className="text-right">Ativo</TableHead>
+                  {showCol("type") && <TableHead>Tipo</TableHead>}
+                  {showCol("status") && <TableHead>Status</TableHead>}
+                  {showCol("envios") && <TableHead className="text-right">Envios</TableHead>}
+                  {showCol("conversao_pct") && <TableHead className="text-right">% Conversão</TableHead>}
+                  {showCol("faturado") && <TableHead className="text-right">Faturado</TableHead>}
+                  {showCol("created_at") && <TableHead>Criado em</TableHead>}
+                  {showCol("scheduled_at") && <TableHead>Agendado pra</TableHead>}
+                  {showCol("ativo") && <TableHead className="text-right">Ativo</TableHead>}
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -449,34 +395,47 @@ export default function Campaigns() {
 
                   return (
                     <TableRow key={c.id} className="group">
-                      <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{typeLabel}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
-                          <StIcon className="h-3 w-3" />
-                          {st.label}
-                        </Badge>
+                      <TableCell className="font-medium">
+                        <button onClick={() => navigate(`/campaigns/${c.id}`)} className="hover:text-primary text-left">
+                          {c.name}
+                        </button>
                       </TableCell>
-                      <TableCell className="text-right text-xs">{metrics?.envios?.toLocaleString("pt-BR") || "—"}</TableCell>
-                      <TableCell className="text-right text-xs">
-                        {metrics && metrics.envios > 0
-                          ? `${((metrics.conversoes / metrics.envios) * 100).toFixed(1)}%`
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right text-xs">
-                        {metrics && metrics.conversao > 0
-                          ? <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>
-                      <TableCell className="text-right">
-                         <Switch
-                           className="scale-75"
-                           aria-label={`Ativar campanha ${c.name}`}
-                           checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
-                           onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
-                         />
-                      </TableCell>
+                      {showCol("type") && <TableCell className="text-muted-foreground text-xs">{typeLabel}</TableCell>}
+                      {showCol("status") && (
+                        <TableCell>
+                          <Badge variant="outline" className={cn("text-[10px] gap-1", toneClass(st.tone))}>
+                            <StIcon className="h-3 w-3" />
+                            {st.label}
+                          </Badge>
+                        </TableCell>
+                      )}
+                      {showCol("envios") && <TableCell className="text-right text-xs">{metrics?.envios?.toLocaleString("pt-BR") || "—"}</TableCell>}
+                      {showCol("conversao_pct") && (
+                        <TableCell className="text-right text-xs">
+                          {metrics && metrics.envios > 0
+                            ? `${((metrics.conversoes / metrics.envios) * 100).toFixed(1)}%`
+                            : "—"}
+                        </TableCell>
+                      )}
+                      {showCol("faturado") && (
+                        <TableCell className="text-right text-xs">
+                          {metrics && metrics.conversao > 0
+                            ? <span className="font-medium" style={{ color: "hsl(var(--chart-2))" }}>R$ {metrics.conversao >= 1000 ? `${(metrics.conversao / 1000).toFixed(1)}k` : metrics.conversao.toFixed(2)}</span>
+                            : "—"}
+                        </TableCell>
+                      )}
+                      {showCol("created_at") && <TableCell className="text-xs text-muted-foreground">{formatDate(c.created_at)}</TableCell>}
+                      {showCol("scheduled_at") && <TableCell className="text-xs text-muted-foreground">{formatDate((c as any).scheduled_at)}</TableCell>}
+                      {showCol("ativo") && (
+                        <TableCell className="text-right">
+                          <Switch
+                            className="scale-75"
+                            aria-label={`Ativar campanha ${c.name}`}
+                            checked={c.status === "scheduled" || c.status === "sending" || c.status === "sent" || c.status === "running"}
+                            onCheckedChange={() => toggleCampaign.mutate({ id: c.id, currentStatus: c.status })}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>{renderCampaignActions(c)}</TableCell>
                     </TableRow>
                   );

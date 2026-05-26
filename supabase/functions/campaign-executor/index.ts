@@ -140,7 +140,7 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
 
     case "link_pedido": return linkPedido;
     case "link_pagamento": return td?.payment_url || order?.payment_url || linkPedido;
-    case "link_carrinho": return cart?.recovery_url || td?.cart_url || lojaUrl;
+    case "link_carrinho": return cart?.recovery_url || td?.recovery_url || td?.cart_url || lojaUrl;
     case "link_loja": return lojaUrl;
     case "link_pesquisa": return td?.survey_url || `${lojaUrl}/pesquisa`;
     case "link_whatsapp": {
@@ -158,8 +158,35 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     case "chave_nf":
     case "chave_acesso_nf": return td?.nf_chave_acesso || order?.nf_chave_acesso || "-";
     case "cupom": return campaign?.coupon || td?.coupon || "-";
-    case "valor_cashback": return campaign?.cashback ? formatCurrency(campaign.cashback) : (attrs?.cashback ? formatCurrency(attrs.cashback) : "-");
-    case "validade_cashback": return attrs?.cashback_expires_at || td?.cashback_expires_at || "30 dias";
+    // Cashback: lê das colunas customers.cashback_balance / cashback_expires_at
+    // (preenchidas pela yampi-cashback-sync com base nas regras do Yampi).
+    // Fallbacks legados: campaign.cashback, attrs.cashback, triggerData.cashback.
+    case "valor_cashback": {
+      const balance = Number(customer?.cashback_balance ?? 0);
+      if (balance > 0) return formatCurrency(balance);
+      if (campaign?.cashback) return formatCurrency(campaign.cashback);
+      if (attrs?.cashback) return formatCurrency(attrs.cashback);
+      return "-";
+    }
+    case "validade_cashback": {
+      const exp = customer?.cashback_expires_at;
+      if (exp) {
+        const d = new Date(exp);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+        }
+      }
+      return attrs?.cashback_expires_at || td?.cashback_expires_at || "30 dias";
+    }
+    case "dias_cashback": {
+      // Dias restantes até expirar — útil pra urgência "expira em X dias"
+      const exp = customer?.cashback_expires_at;
+      if (exp) {
+        const days = Math.max(0, Math.ceil((new Date(exp).getTime() - Date.now()) / 86400000));
+        return String(days);
+      }
+      return "30";
+    }
     case "link_cashback": return td?.cashback_url || `${lojaUrl}/conta/cashback`;
 
     // ===== Esquema antigo com prefixos (mantém compat) =====
@@ -176,16 +203,23 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
     }
     case "customer.last_product": return attrs?.last_product || "seu produto favorito";
     case "customer.last_order_value": return attrs?.last_order_value ? formatCurrency(attrs.last_order_value) : "-";
-    case "cart.recovery_url": return cart?.recovery_url || "";
-    case "cart.value": return cart?.value ? formatCurrency(cart.value) : "-";
-    case "cart.items_count": return String(cart?.items_count || 0);
-    case "cart.items_summary": return cart?.items_summary || "seus itens selecionados";
+    case "cart.recovery_url": return cart?.recovery_url || td?.recovery_url || td?.cart_url || lojaUrl;
+    case "cart.value": return (cart?.value || td?.value) ? formatCurrency(cart?.value || td?.value) : "-";
+    case "cart.items_count": return String(cart?.items_count || td?.items_count || 0);
+    case "cart.items_summary": return cart?.items_summary || td?.items_summary || "seus itens selecionados";
+    case "cart.product_name": return cart?.product_name || cart?.items_summary || td?.product_name || td?.items_summary || "alguns produtos";
     case "order.number": return orderNumber || "-";
     case "order.total": return (order?.total || td?.total) ? formatCurrency(order?.total || td?.total) : "-";
     case "order.status": return order?.mapped_status || td?.status || order?.status || "-";
     case "order.tracking_code": return trackingCode || "-";
     case "order.delivery_days": return order?.delivery_days || td?.delivery_days || "5 a 8";
-    case "order.pix_code": return td?.pix_qr_code || order?.pix_qr_code || td?.pix_code || "-";
+    case "order.pix_code": {
+      // Procura em: trigger_data → coluna order → payment_summary[].pix_qr_code (jsonb)
+      const fromSummary = Array.isArray(order?.payment_summary)
+        ? (order.payment_summary.find((p: any) => p?.pix_qr_code)?.pix_qr_code || null)
+        : null;
+      return td?.pix_qr_code || order?.pix_qr_code || fromSummary || td?.pix_code || "-";
+    }
     case "campaign.coupon": return campaign?.coupon || "-";
     case "campaign.discount": return campaign?.discount || "-";
     case "campaign.product_name": return campaign?.product_name || "-";
@@ -196,8 +230,49 @@ function resolveVariable(key: string, ctx: { customer: any; order: any; campaign
       if (!tenantId || !customer?.email) return "#";
       return `${Deno.env.get("SUPABASE_URL")}/functions/v1/handle-unsubscribe?t=${tenantId}&e=${encodeURIComponent(customer.email)}`;
     }
-    default: return "-";
+    default:
+      // If key looks like literal text (has whitespace, punctuation other than dots, or doesn't match token shape),
+      // interpolate any known tokens INSIDE the text and return the result.
+      // Tokens are always snake_case or dot.notation, no spaces or special chars.
+      if (/\s/.test(key) || /[^\w.]/.test(key.replace(/_/g, ""))) return interpolateInlineTokens(key, ctx);
+      return "-";
   }
+}
+
+// Detects known tokens (snake_case ou dot.notation) DENTRO de uma string literal e os substitui pelo valor resolvido.
+// Permite que overrides do flow misturem texto + token, ex: "que seu cart.product_name está reservado".
+const KNOWN_TOKENS = new Set<string>([
+  "customer.name","customer.first_name","customer.phone","customer.email","customer.city","customer.state",
+  "customer.days_since_order","customer.last_product","customer.last_order_value",
+  "cart.recovery_url","cart.value","cart.items_count","cart.items_summary","cart.product_name",
+  "order.number","order.total","order.status","order.tracking_code","order.delivery_days","order.pix_code",
+  "campaign.coupon","campaign.discount","campaign.product_name","campaign.product_desc","campaign.return_days",
+  "unsubscribe_url","link_descadastro",
+  "nome","primeiro_nome","email","telefone","phone",
+  "numero_pedido","valor_pedido","itens_pedido","status_pedido",
+  "codigo_rastreio","link_rastreio","previsao_entrega","transportadora",
+  "link_pedido","link_pagamento","link_carrinho","link_loja","link_pesquisa","link_whatsapp",
+  "link_nf_pdf","link_danfe_pdf","link_nf","link_danfe","numero_nf","chave_nf","chave_acesso_nf",
+  "cupom","valor_cashback","validade_cashback","link_cashback","codigo_pix",
+]);
+
+function interpolateInlineTokens(text: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
+  if (!text) return text;
+  // Match dot.notation tokens (e.g. customer.first_name) and snake_case tokens (e.g. primeiro_nome).
+  // \b word boundary garante que não pega prefixos/sufixos colados.
+  return text.replace(/\b([a-z][a-z_]*(?:\.[a-z_]+)+|[a-z]+(?:_[a-z]+)+)\b/g, (match) => {
+    if (!KNOWN_TOKENS.has(match)) return match;
+    // Calls switch directly (NOT resolveVariable recursively, pra evitar loop infinito caso o resolve devolva outra string com o mesmo token).
+    const tmp = resolveVariableSingle(match, ctx);
+    return tmp;
+  });
+}
+
+// Versão de resolveVariable que NÃO invoca interpolateInlineTokens no default — usada só pelo interpolador acima.
+function resolveVariableSingle(key: string, ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string }): string {
+  const before = resolveVariable(key, ctx);
+  // Se voltou idêntico ao input (heurística do default), considera não resolvido
+  return before === key ? key : before;
 }
 
 function formatCurrency(value: number): string {
@@ -286,23 +361,72 @@ async function wrapHtmlLinks(
   return newHtml;
 }
 
-function getCustomerDynamicUrl(customer: any, templateName: string): string | null {
+function getCustomerDynamicUrl(customer: any, templateName: string, triggerData?: any): string | null {
   const attrs = customer?.custom_attributes || {};
   const cart = attrs?.abandoned_cart || {};
-  if (templateName.startsWith("carrinho_abandonado") && cart?.recovery_url) return cart.recovery_url;
-  if (templateName.startsWith("pix_nao_pago")) return attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
+  const td = triggerData || {};
+  if (templateName.startsWith("carrinho_abandonado")) {
+    return cart?.recovery_url || td?.recovery_url || td?.cart_url || null;
+  }
+  if (templateName.startsWith("pix_nao_pago")) {
+    return td?.payment_url || attrs?.pix_payment_url || attrs?.payment_url || "https://maxfem.com.br/account";
+  }
   return null;
 }
 
 // ===== TEMPLATE BUILDER =====
 
-function buildTemplateComponents(
+// Detecta URLs externas dentro de um texto resolvido e troca pelo encurtador rastreável `LINK_REDIRECT_BASE/<code>`.
+// Cada clique passa pelo `link-redirect` que loga `clicked_at` na campaign_activity correspondente.
+async function wrapUrlsInTextParam(
+  text: string,
+  supabase: any,
+  trackingCtx: { tenantId: string; campaignId: string; campaignName?: string; customerId: string; medium?: string },
+): Promise<string> {
+  if (!text) return text;
+  const supaUrl = Deno.env.get("SUPABASE_URL") || "";
+  const linkBase = Deno.env.get("LINK_REDIRECT_BASE") || "https://maxfem.tech/lk";
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  const matches = Array.from(new Set(text.match(urlRegex) || []));
+  if (matches.length === 0) return text;
+
+  const utmCampaign = slugify(trackingCtx.campaignName);
+  let out = text;
+  for (const original of matches) {
+    if (original.includes(linkBase)) continue;                  // já encurtado
+    if (supaUrl && original.includes(supaUrl)) continue;        // edge function (handle-unsubscribe etc)
+    let wrapped: string;
+    try {
+      const code = generateCode(10);
+      const final = applyTracking(original, { source: "whatsapp", medium: trackingCtx.medium || "campaign", campaign: utmCampaign, code });
+      await supabase.from("tracked_links").insert({
+        tenant_id: trackingCtx.tenantId,
+        campaign_id: trackingCtx.campaignId,
+        customer_id: trackingCtx.customerId,
+        code,
+        original_url: final,
+        utm_source: "whatsapp",
+        utm_medium: trackingCtx.medium || "campaign",
+        utm_campaign: utmCampaign,
+      });
+      wrapped = `${linkBase}/${code}`;
+    } catch (e) {
+      console.warn(`[wrapUrl] skip ${original}: ${(e as Error).message}`);
+      continue;
+    }
+    out = out.split(original).join(wrapped);
+  }
+  return out;
+}
+
+async function buildTemplateComponents(
   variableMappings: string[], ctx: { customer: any; order: any; campaign: any; triggerData?: any; tenantId?: string },
   bodyVarCount: number, hasHeaderVar: boolean,
   buttonUrlCode?: string, buttonUrlIndex?: number,
   copyCodeButtons?: { index: number; value: string }[],
   headerMediaType?: "image" | "video" | "document" | null,
   headerMediaUrl?: string | null,
+  trackingCtx?: { supabase: any; tenantId: string; campaignId: string; campaignName?: string; customerId: string; medium?: string },
 ) {
   const components: any[] = [];
   if (hasHeaderVar) {
@@ -319,7 +443,14 @@ function buildTemplateComponents(
   if (bodyVarCount > 0) {
     const params: any[] = [];
     for (let i = 0; i < bodyVarCount; i++) {
-      const value = resolveVariable(variableMappings[i] || "customer.name", ctx);
+      let value = resolveVariable(variableMappings[i] || "customer.name", ctx);
+      if (trackingCtx?.supabase) {
+        value = await wrapUrlsInTextParam(value, trackingCtx.supabase, {
+          tenantId: trackingCtx.tenantId, campaignId: trackingCtx.campaignId,
+          campaignName: trackingCtx.campaignName, customerId: trackingCtx.customerId,
+          medium: trackingCtx.medium,
+        });
+      }
       params.push({ type: "text", text: value || "-" });
     }
     components.push({ type: "body", parameters: params });
@@ -353,6 +484,22 @@ function calculateWaitMs(waitTime: number | string, waitUnit: string): number {
     case "days": return t * 24 * 60 * 60 * 1000;
     default: return t * 60 * 1000;
   }
+}
+
+// Converte o valor do campo "Janela de espera por resposta" (ex: "30 minutos",
+// "1 hora", "3 horas") em minutos. Default 60 quando vazio/inválido.
+function parseReplyWindowMinutes(value: unknown): number {
+  if (typeof value === "number" && value > 0) return value;
+  const s = String(value || "").toLowerCase().trim();
+  if (!s) return 60;
+  const m = s.match(/(\d+)\s*(minuto|min|hora|hour|dia|day)/);
+  if (!m) return 60;
+  const n = parseInt(m[1], 10);
+  const unit = m[2];
+  if (unit.startsWith("min")) return n;
+  if (unit.startsWith("hor") || unit.startsWith("hou")) return n * 60;
+  if (unit.startsWith("dia") || unit.startsWith("day")) return n * 60 * 24;
+  return 60;
 }
 
 // ===== PAYMENT CHECK =====
@@ -529,10 +676,13 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
   const results: any[] = [];
   const now = new Date().toISOString();
 
+  // Pega itens 'pending' prontos + itens 'waiting_reply' cujo prazo de espera venceu.
+  // waiting_reply sempre tem scheduled_for setado, então o filtro .or() exclui
+  // os que ainda estão dentro da janela de espera por resposta.
   let queueQuery = supabase
     .from("automation_queue")
-    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for, metadata")
-    .eq("status", "pending")
+    .select("id, tenant_id, campaign_id, customer_id, trigger_type, trigger_data, created_at, current_node_id, scheduled_for, metadata, status")
+    .in("status", ["pending", "waiting_reply"])
     .or(`scheduled_for.is.null,scheduled_for.lte.${now}`)
     .order("created_at", { ascending: true })
     .limit(100);
@@ -587,21 +737,30 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
         // Fetch customer for filter matching and variable resolution
         const { data: customer } = await supabase.from("customers").select("*").eq("id", item.customer_id).single();
 
-        // --- Stop cart_abandoned flow if customer has converted (paid an order) since the cart was abandoned ---
+        // --- Hierarquia de funis: carrinho abandonado para QUANDO o cliente gera um pedido ---
+        // Carrinho abandonado = não chegou a finalizar checkout. Se um pedido (pago OU PIX/boleto
+        // pendente) foi criado depois do carrinho, o cliente converteu o carrinho em pedido — sai
+        // do funil de carrinho e entra no funil de pagamento (pix_nao_pago / boleto). Evita o
+        // cliente receber "esqueceu o carrinho" + "pague seu PIX" ao mesmo tempo.
         if (item.trigger_type === "cart_abandoned") {
           const cartUpdatedAt = (customer?.custom_attributes as any)?.abandoned_cart?.updated_at || item.created_at;
           if (cartUpdatedAt) {
-            const { data: paidOrders } = await supabase
+            // Janela: do carrinho até 30min depois do disparo do trigger (cobre delay de checkout)
+            const windowStart = new Date(new Date(cartUpdatedAt).getTime() - 30 * 60 * 1000).toISOString();
+            const { data: anyOrder } = await supabase
               .from("orders")
-              .select("id, mapped_status, created_at")
+              .select("id, mapped_status, status, created_at")
               .eq("tenant_id", campaign.tenant_id)
               .eq("customer_id", item.customer_id)
-              .gte("created_at", cartUpdatedAt)
-              .in("mapped_status", ["paid","pago","approved","aprovado","invoiced","faturado","shipped","enviado","delivered","entregue"])
+              .gte("created_at", windowStart)
               .limit(1);
-            if (paidOrders && paidOrders.length > 0) {
-              console.log(`[automation] Customer ${item.customer_id} converted cart since ${cartUpdatedAt}, stopping flow (item ${item.id})`);
-              await supabase.from("automation_queue").update({ status: "skipped", processed_at: now }).eq("id", item.id);
+            if (anyOrder && anyOrder.length > 0) {
+              const o = anyOrder[0];
+              console.log(`[automation] Customer ${item.customer_id} gerou pedido (${o.mapped_status || o.status}) desde ${windowStart} — carrinho convertido, parando flow (item ${item.id})`);
+              await supabase.from("automation_queue").update({
+                status: "skipped", processed_at: now,
+                error_message: `cart_converted_to_order:${o.mapped_status || o.status}`,
+              }).eq("id", item.id);
               continue;
             }
           }
@@ -644,6 +803,30 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
         let currentNodeId = item.current_node_id || "start";
         let stepCount = 0;
         const MAX_STEPS = 20;
+
+        // --- Timeout de "waiting_reply": cliente não respondeu dentro da janela ---
+        // O item estava parado no nó de WhatsApp esperando resposta. Venceu o prazo
+        // → segue pelo branch "Se não responder" (out-2). Sem branch → encerra.
+        if (item.status === "waiting_reply") {
+          const waitNodeId = currentNodeId;
+          const noReplyTarget = getNextNodeId(edges, waitNodeId, "out-2");
+          const cleanedMeta = { ...((item.metadata as any) || {}) };
+          delete cleanedMeta.waiting_for_reply;
+          delete cleanedMeta.wait_node_id;
+          if (noReplyTarget) {
+            console.log(`[automation] waiting_reply timeout no item ${item.id} → out-2 (${noReplyTarget})`);
+            currentNodeId = noReplyTarget;
+            await supabase.from("automation_queue").update({
+              status: "pending", current_node_id: currentNodeId, scheduled_for: null, metadata: cleanedMeta,
+            }).eq("id", item.id);
+          } else {
+            console.log(`[automation] waiting_reply timeout no item ${item.id} sem branch out-2 → encerrando`);
+            await supabase.from("automation_queue").update({
+              status: "completed", processed_at: now, current_node_id: currentNodeId, metadata: cleanedMeta,
+            }).eq("id", item.id);
+            continue;
+          }
+        }
 
         while (stepCount < MAX_STEPS) {
           stepCount++;
@@ -909,6 +1092,120 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
             const templateLanguage = node.data?.templateLanguage || "pt_BR";
             const triggerData = (item.trigger_data || {}) as any;
 
+            // ===== MODO TEXTO LIVRE =====
+            // Mensagem de texto puro (type:text), só funciona dentro da janela 24h
+            // — ou seja, no branch "Se responder". Útil pra mandar o order.pix_code
+            // sozinho, fácil de copiar.
+            const isTextMode = node.data?.messageMode === "text";
+            if (isTextMode) {
+              const rawText = String(node.data?.messageText || "").trim();
+              if (!rawText) {
+                const errMsg = `Nó WhatsApp em modo texto sem mensagem definida (nó ${currentNodeId})`;
+                console.error(`[automation] ${errMsg}`);
+                const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+                if (nextId) { currentNodeId = nextId; await supabase.from("automation_queue").update({ current_node_id: currentNodeId, error_message: errMsg }).eq("id", item.id); continue; }
+                await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
+                break;
+              }
+              if (!phoneNumberId || !accessToken) {
+                await supabase.from("automation_queue").update({ status: "failed", processed_at: now }).eq("id", item.id);
+                break;
+              }
+
+              const { data: txtCustomer } = await supabase.from("customers")
+                .select("id, name, phone, email, document, custom_attributes").eq("id", item.customer_id).single();
+              if (!txtCustomer?.phone) {
+                const errMsg = `Customer ${item.customer_id} sem phone — texto WhatsApp skipped`;
+                console.warn(`[automation] ${errMsg}`);
+                const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+                if (nextId) { currentNodeId = nextId; await supabase.from("automation_queue").update({ current_node_id: currentNodeId, error_message: errMsg }).eq("id", item.id); continue; }
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, error_message: errMsg }).eq("id", item.id);
+                break;
+              }
+
+              let txtPhone = txtCustomer.phone.replace(/[\s\-\(\)\+]/g, "");
+              if (!txtPhone.startsWith("55") && txtPhone.length <= 11) txtPhone = "55" + txtPhone;
+
+              // Respeita blocklist/opt-out (categoria transacional — janela 24h aberta pelo cliente)
+              const { data: txtPolicy } = await supabase.rpc("check_send_allowed", {
+                _tenant_id: campaign.tenant_id, _channel: "whatsapp", _identifier: txtPhone,
+                _customer_id: txtCustomer.id, _category: "transactional",
+              });
+              if (txtPolicy && (txtPolicy as any).allowed === false) {
+                const reason = (txtPolicy as any).reason;
+                if (reason === "blocklist" || reason === "opt_out" || reason === "channel_paused") {
+                  console.log(`[automation] Texto bloqueado por policy (${reason}) p/ ${txtPhone}`);
+                  await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+                  break;
+                }
+                // quiet hours / frequency cap não se aplicam a mensagem dentro da janela do cliente — segue
+              }
+
+              // Busca o pedido pra resolver order.pix_code e afins
+              let txtOrder: any = null;
+              if (triggerData?.yampi_order_id || triggerData?.order_id || triggerData?.order_number) {
+                let oq = supabase.from("orders").select("*").eq("tenant_id", campaign.tenant_id);
+                if (triggerData.yampi_order_id) oq = oq.eq("external_id", `yampi_${triggerData.yampi_order_id}`);
+                else if (triggerData.order_id) oq = oq.eq("id", triggerData.order_id);
+                else if (triggerData.order_number) oq = oq.eq("order_number", triggerData.order_number);
+                const { data: ord } = await oq.limit(1).single();
+                txtOrder = ord;
+              }
+
+              const txtCtx = { customer: txtCustomer, order: txtOrder, campaign: campaignVars, triggerData, tenantId: campaign.tenant_id };
+              const resolvedText = resolveVariable(rawText, txtCtx);
+
+              if (!resolvedText || resolvedText === "-") {
+                const errMsg = `Texto resolvido vazio (variável "${rawText}" sem valor) — nó ${currentNodeId}`;
+                console.warn(`[automation] ${errMsg}`);
+                const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+                if (nextId) { currentNodeId = nextId; await supabase.from("automation_queue").update({ current_node_id: currentNodeId, error_message: errMsg }).eq("id", item.id); continue; }
+                await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, error_message: errMsg }).eq("id", item.id);
+                break;
+              }
+
+              const txtRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  messaging_product: "whatsapp", to: txtPhone, type: "text",
+                  text: { body: resolvedText, preview_url: false },
+                }),
+              });
+              const txtData = await txtRes.json();
+
+              if (!txtRes.ok || !txtData.messages?.[0]?.id) {
+                const errMsg = txtData?.error?.message || JSON.stringify(txtData);
+                console.error(`[automation] Texto livre falhou (item ${item.id}): ${errMsg}`);
+                await supabase.from("campaign_activities").insert({
+                  tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: txtCustomer.id,
+                  status: "failed", channel: "whatsapp", sent_at: new Date().toISOString(), error_message: errMsg,
+                });
+                await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId, error_message: errMsg }).eq("id", item.id);
+                break;
+              }
+
+              await supabase.from("whatsapp_messages").insert({
+                tenant_id: campaign.tenant_id, customer_id: txtCustomer.id, phone: txtPhone,
+                direction: "outbound", message_type: "text", wamid: txtData.messages[0].id,
+                status: "sent", content: resolvedText,
+              });
+              await supabase.from("campaign_activities").insert({
+                tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: txtCustomer.id,
+                status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
+              });
+
+              const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
+              if (nextId) {
+                currentNodeId = nextId;
+                await supabase.from("automation_queue").update({ current_node_id: currentNodeId, scheduled_for: null }).eq("id", item.id);
+                continue;
+              }
+              await supabase.from("automation_queue").update({ status: "sent", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+              break;
+            }
+            // ===== FIM MODO TEXTO LIVRE =====
+
             // --- Onda 2: A/B Template Override for WhatsApp ---
             if (abVariantId) {
               const variant = (campaign.ab_test_config as any)?.variants?.find((v: any) => v.id === abVariantId);
@@ -943,7 +1240,9 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
             if (!templateCache.has(templateName)) {
               const { data: tpl } = await supabase.from("message_templates")
                 .select("body, header_type, header_content, header_media_url, sample_values, buttons, status, category")
-                .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
+                .eq("name", templateName).eq("tenant_id", campaign.tenant_id)
+                .or("channel.is.null,channel.eq.whatsapp")
+                .limit(1).maybeSingle();
               templateCache.set(templateName, tpl);
             }
             const templateRecord = templateCache.get(templateName);
@@ -975,7 +1274,15 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
 
             const bodyVarCount = templateRecord?.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
             const hasHeaderVar = templateRecord?.header_type === "text" && templateRecord?.header_content?.includes("{{");
-            const variableMappings: string[] = (templateRecord?.sample_values as string[]) || [];
+            const baseMappings: string[] = (templateRecord?.sample_values as string[]) || [];
+            // Honor per-node variable overrides set in the flow editor (NodeConfigPanel "Variáveis" tab)
+            const nodeOverrides: Record<string, string> = (node.data?.variableOverrides as Record<string, string>) || {};
+            const variableMappings: string[] = baseMappings.map((v, i) => nodeOverrides[String(i + 1)] || v);
+            for (let i = 0; i < bodyVarCount; i++) {
+              if (nodeOverrides[String(i + 1)] && !variableMappings[i]) {
+                variableMappings[i] = nodeOverrides[String(i + 1)];
+              }
+            }
             const templateButtons = (templateRecord?.buttons as any[]) || [];
             const dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{"));
             const hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
@@ -1108,13 +1415,24 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
 
             let buttonUrlCode: string | undefined;
             if (hasDynamicUrlButton) {
-              const dynamicUrl = getCustomerDynamicUrl(customer, templateName);
+              const dynamicUrl = getCustomerDynamicUrl(customer, templateName, triggerData);
               if (dynamicUrl) {
-                // Create tracked shortlink for cart/pix URLs
+                // Create tracked shortlink for cart/pix URLs.
+                // applyTracking injeta utm_* na URL final (sobrescreve eventuais utm_source= vazios da Yampi)
+                // pra o redirect carregar UTMs no destino, não só na linha do banco.
                 const code = generateCode(10);
+                let trackedUrl: string;
+                try {
+                  trackedUrl = applyTracking(dynamicUrl, {
+                    source: "whatsapp", medium: "automation",
+                    campaign: slugify(campaign.name), content: templateName, code,
+                  });
+                } catch {
+                  trackedUrl = dynamicUrl;
+                }
                 await supabase.from("tracked_links").insert({
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                  original_url: dynamicUrl, code, utm_source: "whatsapp", utm_medium: "automation",
+                  original_url: trackedUrl, code, utm_source: "whatsapp", utm_medium: "automation",
                   utm_campaign: slugify(campaign.name), utm_content: templateName,
                 });
                 buttonUrlCode = code;
@@ -1132,9 +1450,19 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                     const nodeTrackClicks = node.data?.trackClicks;
                     if (nodeTrackClicks) {
                       const code = generateCode(10);
+                      const rawUrl = btnUrl.replace(varMatch[0], resolvedValue);
+                      let trackedUrl: string;
+                      try {
+                        trackedUrl = applyTracking(rawUrl, {
+                          source: "whatsapp", medium: "automation",
+                          campaign: slugify(campaign.name), content: templateName, code,
+                        });
+                      } catch {
+                        trackedUrl = rawUrl;
+                      }
                       await supabase.from("tracked_links").insert({
                         tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
-                        original_url: btnUrl.replace(varMatch[0], resolvedValue), code,
+                        original_url: trackedUrl, code,
                         utm_source: "whatsapp", utm_medium: "automation",
                         utm_campaign: slugify(campaign.name), utm_content: templateName,
                       });
@@ -1168,16 +1496,17 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               messaging_product: "whatsapp", to: phone, type: "template",
               template: {
                 name: templateName, language: { code: templateLanguage },
-                components: buildTemplateComponents(
+                components: await buildTemplateComponents(
                   variableMappings, ctx, bodyVarCount, hasHeaderVar,
                   buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
                   resolvedCopyCodeButtons.length > 0 ? resolvedCopyCodeButtons : undefined,
                   ["image","video","document"].includes(templateRecord?.header_type || "") ? templateRecord.header_type : null,
                   templateRecord?.header_media_url || null,
+                  { supabase, tenantId: campaign.tenant_id, campaignId: campaign.id, campaignName: campaign.name, customerId: customer.id, medium: "automation" },
                 ),
               },
             };
-            
+
             console.log(`[automation] Sending message to ${phone} with payload:`, JSON.stringify(templatePayload, null, 2));
 
             const waRes = await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
@@ -1253,6 +1582,24 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
               });
+
+              // Se o nó tem branch "Se responder" (out-1) ou "Se não responder" (out-2),
+              // o fluxo PAUSA aqui aguardando o cliente responder. O webhook do WhatsApp
+              // avança pro out-1 quando chega resposta; o timeout abaixo cai no out-2.
+              const hasReplyBranch = edges.some(e =>
+                e.source === currentNodeId && (e.sourceHandle === "out-1" || e.sourceHandle === "out-2"));
+              if (hasReplyBranch) {
+                const waitMinutes = parseReplyWindowMinutes(node.data?.replyWaitWindow);
+                const deadline = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
+                await supabase.from("automation_queue").update({
+                  status: "waiting_reply",
+                  current_node_id: currentNodeId,
+                  scheduled_for: deadline,
+                  metadata: { ...((item.metadata as any) || {}), waiting_for_reply: true, wait_node_id: currentNodeId },
+                }).eq("id", item.id);
+                console.log(`[automation] Item ${item.id} aguardando resposta até ${deadline} (nó ${currentNodeId})`);
+                break;
+              }
 
               const nextId = getNextNodeId(edges, currentNodeId, "out-3") || getNextNodeId(edges, currentNodeId);
               if (nextId) {
@@ -1433,15 +1780,35 @@ async function processScheduledCampaigns(supabase: any) {
       if (templateName) {
         const { data: tRecord } = await supabase.from("message_templates")
           .select("body, header_type, header_content, header_media_url, sample_values, buttons")
-          .eq("name", templateName).eq("tenant_id", campaign.tenant_id).limit(1).single();
-        
+          .eq("name", templateName).eq("tenant_id", campaign.tenant_id)
+          .or("channel.is.null,channel.eq.whatsapp")
+          .limit(1).maybeSingle();
+
         templateRecord = tRecord;
         if (templateRecord) {
           bodyVarCount = templateRecord.body ? (templateRecord.body.match(/\{\{\d+\}\}/g) || []).length : 0;
           hasHeaderVar = templateRecord.header_type === "text" && templateRecord.header_content?.includes("{{");
-          variableMappings = (templateRecord.sample_values as string[]) || [];
+          const baseMappings: string[] = (templateRecord.sample_values as string[]) || [];
+
+          // Honor per-node variableOverrides set in the flow editor (NodeConfigPanel "Variáveis" tab)
+          let nodeOverrides: Record<string, string> = {};
+          if (flowData?.nodes) {
+            const waNode = flowData.nodes.find((n: any) =>
+              (n.data?.nodeType === "sendWhatsApp" || n.type === "sendWhatsApp") &&
+              (n.data?.template === templateName || n.data?.templateName === templateName),
+            );
+            if (waNode?.data?.variableOverrides) nodeOverrides = waNode.data.variableOverrides as Record<string, string>;
+          }
+
+          variableMappings = baseMappings.map((v, i) => nodeOverrides[String(i + 1)] || v);
+          for (let i = 0; i < bodyVarCount; i++) {
+            if (nodeOverrides[String(i + 1)] && !variableMappings[i]) {
+              variableMappings[i] = nodeOverrides[String(i + 1)];
+            }
+          }
+
           templateButtons = (templateRecord.buttons as any[]) || [];
-          dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url?.includes("{{1}}"));
+          dynamicUrlBtnIndex = templateButtons.findIndex((b: any) => b.type === "URL" && b.url && /\{\{\d+\}\}/.test(b.url));
           hasDynamicUrlButton = dynamicUrlBtnIndex >= 0;
         }
       }
@@ -1606,12 +1973,13 @@ async function processScheduledCampaigns(supabase: any) {
                 messaging_product: "whatsapp", to: phone, type: "template",
                 template: {
                   name: templateName, language: { code: templateLanguage },
-                  components: buildTemplateComponents(
+                  components: await buildTemplateComponents(
                     variableMappings, ctx, bodyVarCount, hasHeaderVar,
                     buttonUrlCode, hasDynamicUrlButton ? dynamicUrlBtnIndex : undefined,
                     undefined,
                     ["image","video","document"].includes(templateRecord?.header_type || "") ? templateRecord.header_type : null,
                     templateRecord?.header_media_url || null,
+                    { supabase, tenantId: campaign.tenant_id, campaignId: campaign.id, campaignName: campaign.name, customerId: customer.id, medium: "campaign" },
                   ),
                 },
               }),
@@ -1627,7 +1995,7 @@ async function processScheduledCampaigns(supabase: any) {
               await supabase.from("campaign_activities").upsert({
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
-              }, { onConflict: "campaign_id, customer_id" });
+              }, { onConflict: "campaign_id,customer_id,channel" });
               sentCount++;
             } else {
               lastError = waData?.error?.message || JSON.stringify(waData);

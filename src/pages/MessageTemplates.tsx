@@ -183,8 +183,9 @@ const EMAIL_TEMPLATE_VARIABLES: EmailTemplateVariableGroup[] = [
     label: "Campanha & Cashback",
     variables: [
       { token: "cupom", label: "Cupom de desconto", description: "Cupom da campanha" },
-      { token: "valor_cashback", label: "Valor de cashback", description: 'Ex: "15,00"' },
-      { token: "validade_cashback", label: "Validade do cashback", description: 'Ex: "30 dias"' },
+      { token: "valor_cashback", label: "Valor de cashback", description: 'Saldo Yampi do cliente. Ex: "45,30"' },
+      { token: "validade_cashback", label: "Validade do cashback", description: 'Data de expiração. Ex: "31/08/2026"' },
+      { token: "dias_cashback", label: "Dias até expirar", description: 'Urgência. Ex: "7" (= 7 dias)' },
       { token: "link_cashback", label: "Link do cashback", description: "URL pra usar cashback" },
     ],
   },

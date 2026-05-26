@@ -1635,6 +1635,88 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
             break;
           }
 
+          // TRIGGER AUTOMATION — enfileira o contato em outra automação
+          if (nodeType === "triggerAutomation" && node.data?.targetAutomationId) {
+            const targetId = String(node.data.targetAutomationId);
+            const mode = node.data?.mode === "exclusive" ? "exclusive" : "parallel";
+            const delayMin = Number(node.data?.delayMinutes || 0);
+            const deduplicate = !!node.data?.deduplicate;
+
+            // Evita loop pra si mesma
+            if (targetId === item.campaign_id) {
+              console.warn(`[automation] triggerAutomation aponta pra própria campanha ${targetId} — skip`);
+            } else {
+              // Valida target ativa
+              const { data: target } = await supabase
+                .from("campaigns")
+                .select("id, name, status, tenant_id, kind")
+                .eq("id", targetId)
+                .eq("tenant_id", item.tenant_id)
+                .maybeSingle();
+
+              if (!target || target.status !== "active" || target.kind !== "automation") {
+                console.warn(`[automation] target ${targetId} indisponível (status=${target?.status}, kind=${target?.kind})`);
+              } else {
+                // Dedup: já existe queue pendente/running pro mesmo customer + campanha?
+                let shouldEnqueue = true;
+                if (deduplicate) {
+                  const { count } = await supabase
+                    .from("automation_queue")
+                    .select("id", { head: true, count: "exact" })
+                    .eq("campaign_id", targetId)
+                    .eq("customer_id", item.customer_id)
+                    .in("status", ["pending", "running"]);
+                  if ((count ?? 0) > 0) {
+                    shouldEnqueue = false;
+                    console.log(`[automation] dedup: ${item.customer_id} já está em ${targetId}`);
+                  }
+                }
+
+                if (shouldEnqueue) {
+                  const scheduledFor = delayMin > 0
+                    ? new Date(Date.now() + delayMin * 60_000).toISOString()
+                    : null;
+                  const { error: enqErr } = await supabase.from("automation_queue").insert({
+                    tenant_id: item.tenant_id,
+                    campaign_id: targetId,
+                    customer_id: item.customer_id,
+                    trigger_type: "triggered_by_automation",
+                    trigger_data: {
+                      from_campaign_id: item.campaign_id,
+                      from_node_id: currentNodeId,
+                      from_queue_item_id: item.id,
+                      mode,
+                    },
+                    status: "pending",
+                    current_node_id: "start",
+                    scheduled_for: scheduledFor,
+                  });
+                  if (enqErr) {
+                    console.error(`[automation] failed to trigger ${targetId}:`, enqErr.message);
+                  } else {
+                    console.log(`[automation] triggered ${target.name} (${targetId}) for customer ${item.customer_id}, mode=${mode}, delay=${delayMin}min`);
+                  }
+                }
+              }
+            }
+
+            // Modo exclusive: encerra este flow no nó
+            if (mode === "exclusive") {
+              await supabase.from("automation_queue").update({
+                status: "completed",
+                processed_at: now,
+                current_node_id: currentNodeId,
+                error_message: `Substituído por automação ${targetId}`,
+              }).eq("id", item.id);
+              break;
+            }
+            // Modo parallel: segue o flow atual normalmente
+            const nextId = getNextNodeId(edges, currentNodeId);
+            if (nextId) { currentNodeId = nextId; continue; }
+            await supabase.from("automation_queue").update({ status: "completed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
+            break;
+          }
+
           // REMOVE TAG
           if (nodeType === "removeTag" && node.data?.tagName) {
             const { data: cust } = await supabase.from("customers").select("tags").eq("id", item.customer_id).single();

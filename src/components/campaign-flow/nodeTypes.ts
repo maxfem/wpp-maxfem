@@ -23,6 +23,7 @@ export const NODE_PALETTE = {
   advanced: [
     { type: "addTag", label: "Adicionar etiqueta", icon: "Tag", color: "#8b5cf6", enabled: true },
     { type: "removeTag", label: "Remover etiqueta", icon: "TagX", color: "#8b5cf6", enabled: true },
+    { type: "triggerAutomation", label: "Disparar automação", icon: "Workflow", color: "#0ea5e9", enabled: true },
     { type: "exit", label: "Sair", icon: "LogOut", color: "#ef4444", enabled: true },
   ],
   extra: [

@@ -2,13 +2,13 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
-  Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap,
+  Archive, ArrowRightLeft, Tag, LogOut, StickyNote, Zap, Workflow,
 } from "lucide-react";
 
 const iconMap: Record<string, React.ElementType> = {
   MessageCircle, Mail, MessageSquare, Phone, Globe,
   GitBranch, Network, Shuffle, Clock, Timer, CalendarClock,
-  Archive, ArrowRightLeft, Tag, TagX: Tag, LogOut, StickyNote, Zap,
+  Archive, ArrowRightLeft, Tag, TagX: Tag, LogOut, StickyNote, Zap, Workflow,
 };
 
 interface FlowNodeData {
@@ -34,11 +34,14 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
   const isTransfer = data.nodeType === "transferChat";
   const isArchive = data.nodeType === "archiveChat";
   const isExit2 = data.nodeType === "exit";
+  const isTriggerAuto = data.nodeType === "triggerAutomation";
 
   // Build body text based on node type
   let bodyText = "Configurar...";
   if (data.subtitle) {
     bodyText = String(data.subtitle);
+  } else if (isWhatsApp && data.messageMode === "text" && data.messageText) {
+    bodyText = `Texto: ${String(data.messageText).slice(0, 50)}`;
   } else if (isWhatsApp && (data.template || data.templateName)) {
     bodyText = String(data.templateName || data.template);
   } else if (isEmail && data.emailTemplate) {
@@ -63,6 +66,10 @@ function FlowNodeComponent({ data, selected }: NodeProps & { data: FlowNodeData 
     bodyText = String(data.reason);
   } else if (isExit2 && data.reason) {
     bodyText = String(data.reason);
+  } else if (isTriggerAuto && data.targetAutomationName) {
+    bodyText = `→ ${String(data.targetAutomationName)}`;
+  } else if (isTriggerAuto && data.targetAutomationId) {
+    bodyText = `→ ${String(data.targetAutomationId).slice(0, 8)}…`;
   }
 
   return (

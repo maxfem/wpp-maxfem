@@ -38,6 +38,10 @@ export default function Popups() {
   const [selectedPopupForSnippet, setSelectedPopupForSnippet] = useState<any>(null);
   const [showSnippet, setShowSnippet] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [editingList, setEditingList] = useState(false);
+  const [editListMode, setEditListMode] = useState<"existing" | "new">("existing");
+  const [editListSelectedId, setEditListSelectedId] = useState<string>("");
+  const [editListNewName, setEditListNewName] = useState("");
 
   const copySnippet = (id: string) => {
     const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${id}"></script>`;
@@ -135,14 +139,15 @@ export default function Popups() {
   });
 
   const updatePopupMutation = useMutation({
-    mutationFn: async ({ id, design, html, design_mobile, html_mobile, settings, is_active }: { 
-      id: string, 
-      design?: any, 
-      html?: string, 
+    mutationFn: async ({ id, design, html, design_mobile, html_mobile, settings, is_active, contact_list_id }: {
+      id: string,
+      design?: any,
+      html?: string,
       design_mobile?: any,
       html_mobile?: string,
-      settings?: any, 
-      is_active?: boolean 
+      settings?: any,
+      is_active?: boolean,
+      contact_list_id?: string | null
     }) => {
       const update: any = {};
       if (design !== undefined) update.design = design;
@@ -151,6 +156,7 @@ export default function Popups() {
       if (html_mobile !== undefined) update.html_mobile = html_mobile;
       if (settings !== undefined) update.settings = settings;
       if (is_active !== undefined) update.is_active = is_active;
+      if (contact_list_id !== undefined) update.contact_list_id = contact_list_id;
 
       const { data, error } = await supabase
         .from("popups")
@@ -198,6 +204,43 @@ export default function Popups() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["popups"] });
       toast.success("Pop-up removido!");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const changeListMutation = useMutation({
+    mutationFn: async ({ popupId, listId, newListName: name }: { popupId: string; listId: string; newListName?: string }) => {
+      if (!currentTenant) throw new Error("No tenant");
+      let targetListId = listId;
+
+      if (name) {
+        const { data: list, error: listError } = await supabase
+          .from("contact_lists")
+          .insert({ tenant_id: currentTenant.id, name, type: "manual" })
+          .select("id")
+          .single();
+        if (listError) throw listError;
+        targetListId = list.id;
+      }
+
+      const { data, error } = await supabase
+        .from("popups")
+        .update({ contact_list_id: targetListId || null })
+        .eq("id", popupId)
+        .select(`id, contact_list_id, contact_lists ( id, name )`)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      setEditingPopup((prev: any) => prev ? { ...prev, contact_list_id: data.contact_list_id, contact_lists: data.contact_lists } : prev);
+      queryClient.invalidateQueries({ queryKey: ["popups"] });
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+      setEditingList(false);
+      setEditListNewName("");
+      setEditListSelectedId("");
+      setEditListMode("existing");
+      toast.success("Lista de destino atualizada!");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -272,10 +315,116 @@ export default function Popups() {
                 <p className="text-sm text-muted-foreground">
                   Os leads captados por este pop-up serão adicionados à lista:
                 </p>
-                <div className="flex items-center gap-2 font-medium bg-muted p-3 rounded-md">
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  {editingPopup.contact_lists?.name || "Nenhuma lista vinculada"}
-                </div>
+
+                {!editingList ? (
+                  <>
+                    <div className="flex items-center gap-2 font-medium bg-muted p-3 rounded-md">
+                      {editingPopup.contact_lists?.name ? (
+                        <>
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          {editingPopup.contact_lists.name}
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-5 w-5 text-amber-500" />
+                          Nenhuma lista vinculada
+                        </>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditListMode("existing");
+                          setEditListSelectedId(editingPopup.contact_list_id || "");
+                          setEditListNewName("");
+                          setEditingList(true);
+                        }}
+                      >
+                        <Edit className="h-3 w-3 mr-1" />
+                        {editingPopup.contact_list_id ? "Trocar lista" : "Vincular lista"}
+                      </Button>
+                      {editingPopup.contact_list_id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => changeListMutation.mutate({ popupId: editingPopup.id, listId: "" })}
+                          disabled={changeListMutation.isPending}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" /> Desvincular
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    {editListMode === "existing" ? (
+                      <>
+                        <Select value={editListSelectedId} onValueChange={setEditListSelectedId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma lista existente" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {lists.map((list: any) => (
+                              <SelectItem key={list.id} value={list.id}>
+                                {list.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="link" size="sm" className="px-0" onClick={() => setEditListMode("new")}>
+                          Ou criar uma nova lista
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          placeholder="Nome da nova lista"
+                          value={editListNewName}
+                          onChange={(e) => setEditListNewName(e.target.value)}
+                        />
+                        <Button variant="link" size="sm" className="px-0" onClick={() => setEditListMode("existing")}>
+                          Voltar para listas existentes
+                        </Button>
+                      </>
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          changeListMutation.mutate({
+                            popupId: editingPopup.id,
+                            listId: editListMode === "existing" ? editListSelectedId : "",
+                            newListName: editListMode === "new" ? editListNewName : undefined,
+                          })
+                        }
+                        disabled={
+                          changeListMutation.isPending ||
+                          (editListMode === "existing" && !editListSelectedId) ||
+                          (editListMode === "new" && !editListNewName.trim())
+                        }
+                      >
+                        <Save className="h-3 w-3 mr-1" />
+                        {changeListMutation.isPending ? "Salvando..." : "Salvar"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditingList(false);
+                          setEditListNewName("");
+                          setEditListSelectedId("");
+                          setEditListMode("existing");
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

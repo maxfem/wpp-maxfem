@@ -15,6 +15,7 @@ interface KPIGradientCardProps {
   gradient: "pink" | "cyan" | "magenta" | "purple";
   tooltip?: string;
   children?: ReactNode;
+  onClick?: () => void;
 }
 
 const gradientMap = {
@@ -24,7 +25,7 @@ const gradientMap = {
   purple: "gradient-button",
 };
 
-export function KPIGradientCard({ title, value, unit, gradient, tooltip }: KPIGradientCardProps) {
+export function KPIGradientCard({ title, value, unit, gradient, tooltip, onClick }: KPIGradientCardProps) {
   return (
     <TooltipProvider>
       <motion.div
@@ -32,7 +33,11 @@ export function KPIGradientCard({ title, value, unit, gradient, tooltip }: KPIGr
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
         whileHover={{ y: -2, transition: { duration: 0.2 } }}
-        className={`relative overflow-hidden rounded-2xl p-6 h-[140px] ${gradientMap[gradient]} text-white shadow-lg`}
+        onClick={onClick}
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+        className={`relative overflow-hidden rounded-2xl p-6 h-[140px] ${gradientMap[gradient]} text-white shadow-lg ${onClick ? "cursor-pointer" : ""}`}
       >
         {/* Decorative glow circle */}
         <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10 blur-xl" />

@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Reports = lazy(() => import("./pages/Reports"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Campaigns = lazy(() => import("./pages/Campaigns"));
 const Automations = lazy(() => import("./pages/Automations"));
@@ -88,6 +89,8 @@ const App = () => (
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
                   <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+                  <Route path="/reports" element={<Navigate to="/relatorios" replace />} />
                   <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
                   <Route path="/campaigns" element={<ProtectedRoute><Campaigns /></ProtectedRoute>} />
                   <Route path="/campaigns/flow/:id?" element={<ProtectedRoute><CampaignFlowEditor /></ProtectedRoute>} />

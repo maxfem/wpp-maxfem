@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   Terminal,
   HelpCircle,
+  PieChart,
 } from "lucide-react";
 import logoMaxfem from "@/assets/logo-maxfem.png";
 import { NavLink } from "@/components/NavLink";
@@ -46,6 +47,7 @@ import {
 
 const monitorItems = [
   { title: "Indicadores", url: "/dashboard", icon: BarChart3 },
+  { title: "Relatórios", url: "/relatorios", icon: PieChart },
   { title: "Inteligência IA", url: "/predictive", icon: Sparkles },
   { title: "Saúde da Ana", url: "/saude-ana", icon: Activity },
 ];

@@ -139,11 +139,41 @@ serve(async (req) => {
           updates.error_message = ev.diagnostic_code;
           activityUpdates.status = "failed";
           activityUpdates.error_message = ev.diagnostic_code || "Bounced";
+
+          // Hard bounce: add to suppression list and mark customer unsubscribed
+          if (ev.bounce_type === "Permanent" && ev.recipient) {
+            const { data: log } = await supabase.from("email_logs")
+              .select("tenant_id, customer_id").eq("aws_message_id", messageId).maybeSingle();
+            if (log?.tenant_id) {
+              await supabase.from("email_suppressions").upsert({
+                tenant_id: log.tenant_id, email: ev.recipient.toLowerCase(),
+                reason: "hard_bounce",
+              }, { onConflict: "tenant_id,email" });
+              if (log.customer_id) {
+                await supabase.from("customers").update({ subscribed_email: false }).eq("id", log.customer_id);
+              }
+            }
+          }
         }
         else if (ev.event_type === "Complaint") {
           updates.status = "complained";
           updates.complaint_type = ev.complaint_type;
           activityUpdates.status = "complained";
+
+          // Complaint = spam report. Always suppress.
+          if (ev.recipient) {
+            const { data: log } = await supabase.from("email_logs")
+              .select("tenant_id, customer_id").eq("aws_message_id", messageId).maybeSingle();
+            if (log?.tenant_id) {
+              await supabase.from("email_suppressions").upsert({
+                tenant_id: log.tenant_id, email: ev.recipient.toLowerCase(),
+                reason: "complaint",
+              }, { onConflict: "tenant_id,email" });
+              if (log.customer_id) {
+                await supabase.from("customers").update({ subscribed_email: false }).eq("id", log.customer_id);
+              }
+            }
+          }
         }
         else if (ev.event_type === "Reject") {
           updates.status = "rejected";
@@ -201,7 +231,8 @@ serve(async (req) => {
           await supabase.from("campaign_activities")
             .update(activityUpdates)
             .eq("campaign_id", cId)
-            .eq("customer_id", custId);
+            .eq("customer_id", custId)
+            .eq("channel", "email");
         }
       }
 

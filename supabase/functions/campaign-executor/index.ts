@@ -969,6 +969,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               const reason = !customer?.email ? "missing email" : "missing content";
               console.warn(`[automation] Skipping email send for item ${item.id}: ${reason}`);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer?.id, status: "skipped", channel: "email",
                 sent_at: new Date().toISOString(), error_message: `skipped:${reason}`,
@@ -1035,6 +1036,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               }
               await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                 status: "skipped", channel: "email", sent_at: new Date().toISOString(),
                 error_message: `policy_blocked:${emailPolicyResult.reason}`,
@@ -1178,6 +1180,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 const errMsg = txtData?.error?.message || JSON.stringify(txtData);
                 console.error(`[automation] Texto livre falhou (item ${item.id}): ${errMsg}`);
                 await supabase.from("campaign_activities").insert({
+                  node_id: currentNodeId,
                   tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: txtCustomer.id,
                   status: "failed", channel: "whatsapp", sent_at: new Date().toISOString(), error_message: errMsg,
                 });
@@ -1191,6 +1194,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 status: "sent", content: resolvedText,
               });
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: txtCustomer.id,
                 status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
               });
@@ -1252,6 +1256,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               console.error(`[automation] ${errMsg}`);
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
                 sent_at: new Date().toISOString(), error_message: errMsg,
@@ -1265,6 +1270,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
               console.warn(`[automation] ${errMsg}`);
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now, error_message: errMsg }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: item.customer_id, status: "failed", channel: "whatsapp", 
                 sent_at: new Date().toISOString(), error_message: errMsg,
@@ -1340,6 +1346,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 status: "skipped", processed_at: now, current_node_id: currentNodeId,
               }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                 status: "skipped", channel: "whatsapp", sent_at: new Date().toISOString(),
                 error_message: `policy_blocked:${policyResult.reason}`,
@@ -1401,6 +1408,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                   console.warn(`[automation] Bling tracking still missing after ${retries} retries. Skipping item ${item.id}.`);
                   await supabase.from("automation_queue").update({ status: "skipped", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
                   await supabase.from("campaign_activities").insert({
+                    node_id: currentNodeId,
                     tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                     status: "skipped", channel: "whatsapp", sent_at: new Date().toISOString(),
                     error_message: "Código de rastreio não disponível no Bling após 6 tentativas (24h).",
@@ -1547,6 +1555,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                   });
 
                   await supabase.from("campaign_activities").insert({
+                    node_id: currentNodeId,
                     tenant_id: campaign.tenant_id, campaign_id: campaign.id, customer_id: customer.id,
                     status: "sent", channel: "email", sent_at: new Date().toISOString(), error_message: "fallback_from_wa",
                   });
@@ -1564,6 +1573,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
 
               await supabase.from("automation_queue").update({ status: "failed", processed_at: now, current_node_id: currentNodeId }).eq("id", item.id);
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer.id, status: "failed", channel: "whatsapp", 
                 sent_at: new Date().toISOString(), error_message: errorMessage,
@@ -1579,6 +1589,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 ab_variant_id: abVariantId
               });
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id, campaign_id: campaign.id,
                 customer_id: customer.id, status: "sent", channel: "whatsapp", sent_at: new Date().toISOString(),
               });
@@ -2118,6 +2129,7 @@ async function processScheduledCampaigns(supabase: any) {
               await sesClient.send(new SendEmailCommand(sendParams));
               sentCount++;
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id,
                 campaign_id: campaign.id,
                 customer_id: customer.id,
@@ -2132,6 +2144,7 @@ async function processScheduledCampaigns(supabase: any) {
               lastError = errMsg;
               failedCount++;
               await supabase.from("campaign_activities").insert({
+                node_id: currentNodeId,
                 tenant_id: campaign.tenant_id,
                 campaign_id: campaign.id,
                 customer_id: customer.id,
@@ -2148,6 +2161,7 @@ async function processScheduledCampaigns(supabase: any) {
           lastError = `Exception: ${(err as Error).message}`;
           try {
             await supabase.from("campaign_activities").insert({
+              node_id: currentNodeId,
               tenant_id: campaign.tenant_id,
               campaign_id: campaign.id,
               customer_id: customer.id,

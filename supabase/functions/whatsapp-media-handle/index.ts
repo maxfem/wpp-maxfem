@@ -1,12 +1,18 @@
 // whatsapp-media-handle
-// Recebe URL ou base64 → executa Resumable Upload API do Meta → retorna handle
+// Recebe URL ou base64 → executa Resumable Upload API do Meta E sobe pro Supabase Storage → retorna handle + public_url
 // Doc: https://developers.facebook.com/docs/whatsapp/cloud-api/reference/resumable-upload
 //
 // Body:
-//   { source_url: "https://..."  ou  file_base64: "...", file_type: "image/png", file_name: "img.png" }
+//   { source_url: "https://..."  ou  file_base64: "...", file_type: "image/png", file_name: "img.png", tenant_id: "..." }
 //
-// Retorna: { handle: "h:..." }
+// Retorna: { ok, handle, public_url }
+//
+// public_url é o que vai pra message_templates.header_media_url — necessário no envio
+// (Meta exige link/id no header parameter mesmo com template aprovado com imagem fixa,
+// senao retorna #132012 Parameter format does not match).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+
+const STORAGE_BUCKET = "whatsapp-template-headers";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +63,7 @@ Deno.serve(async (req) => {
     const sourceUrl = String(body.source_url || "").trim();
     const fileType = String(body.file_type || "image/png");
     const fileName = String(body.file_name || "upload");
+    const tenantId = String(body.tenant_id || "").trim();
     let fileBase64 = String(body.file_base64 || "");
 
     // 1. Obter bytes
@@ -134,9 +141,35 @@ Deno.serve(async (req) => {
       }, 500);
     }
 
+    // 4. Subir TAMBÉM pro Supabase Storage (necessário pro envio do template — Meta exige link público no header parameter)
+    let publicUrl: string | null = null;
+    try {
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const tenantPrefix = tenantId || user.id;
+      const storagePath = `${tenantPrefix}/${Date.now()}-${safeName}`;
+
+      const { error: uploadErr } = await admin.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, bytes, { contentType: fileType, upsert: false });
+
+      if (uploadErr) {
+        console.error("[wa-media] storage upload failed:", uploadErr.message);
+      } else {
+        const { data: urlData } = admin.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+        publicUrl = urlData?.publicUrl || null;
+      }
+    } catch (storageErr) {
+      console.error("[wa-media] storage exception:", (storageErr as Error).message);
+    }
+
     return jsonResponse({
       ok: true,
       handle: uploadData.h,
+      public_url: publicUrl,
       session_id: sessionId,
       bytes: fileLength,
       file_type: fileType,

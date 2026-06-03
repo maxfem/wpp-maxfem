@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +39,7 @@ import {
 } from "recharts";
 import { differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatSP, getStandardPeriodRange, type DatePeriodKey, toSaoPaulo, fetchAll } from "@/lib/utils";
+import { formatSP, getStandardPeriodRange, type DatePeriodKey, toSaoPaulo } from "@/lib/utils";
 import TrackingDashboard from "@/components/dashboard/TrackingDashboard";
 import { KPIGradientCard } from "@/components/dashboard/KPIGradientCard";
 import { MiniMetricCard } from "@/components/dashboard/MiniMetricCard";
@@ -97,6 +98,7 @@ const CustomTooltip = ({ active, payload, label, formatter }: any) => {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { currentTenant } = useAuth();
   const tenantId = currentTenant?.id;
 
@@ -116,125 +118,79 @@ export default function Dashboard() {
     return PERIOD_OPTIONS.find((p) => p.key === periodKey)?.label || "";
   }, [periodKey, customRange]);
 
-  // Só pedidos com pagamento confirmado contam pra receita/indicadores (alinha com o card "Receita" da Yampi)
-  const PAID_STATUSES = ["paid", "invoiced", "approved", "shipped", "on_carriage", "in_transit", "delivered"];
-  const { data: orders = [] } = useQuery({
-    queryKey: ["dashboard-orders", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
-    queryFn: () =>
-      fetchAll<{ total: number; created_at: string; customer_id: string }>(
-        supabase
-          .from("orders")
-          .select("total, created_at, customer_id")
-          .eq("tenant_id", tenantId!)
-          .in("mapped_status", PAID_STATUSES)
-          .gte("created_at", periodFrom.toISOString())
-          .lte("created_at", periodTo.toISOString())
-          .order("created_at")
-      ),
+  // Agregados via RPC (eliminou fetchAll de 75k+ customers / milhões de activities)
+  type KpiPayload = {
+    totalRevenue: number;
+    totalOrders: number;
+    daily: { date: string; receita: number; pedidos: number; novos: number; recorrentes: number }[];
+    weekday: Record<string, number>;
+  };
+  type CustAggPayload = { totalCustomers: number; activeCustomers: number; ltv: number; avgFreq: number; avgDaysBetween: number };
+  type ActivityKpiPayload = { martzRevenue: number; statusCounts: Record<string, number> };
+
+  const { data: kpis } = useQuery({
+    queryKey: ["dashboard-kpis-rpc", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_dashboard_kpis", {
+        p_tenant: tenantId!, p_from: periodFrom.toISOString(), p_to: periodTo.toISOString(),
+      });
+      if (error) throw error;
+      return data as KpiPayload;
+    },
     enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: customers = [] } = useQuery({
-    queryKey: ["dashboard-customers", tenantId],
-    queryFn: () =>
-      fetchAll<{ id: string; total_spent: number | null; total_orders: number | null; avg_ticket: number | null; last_order_at: string | null; created_at: string }>(
-        supabase
-          .from("customers")
-          .select("id, total_spent, total_orders, avg_ticket, last_order_at, created_at")
-          .eq("tenant_id", tenantId!)
-      ),
+  const { data: custAgg } = useQuery({
+    queryKey: ["dashboard-customer-agg-rpc", tenantId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_dashboard_customer_aggregates", { p_tenant: tenantId! });
+      if (error) throw error;
+      return data as CustAggPayload;
+    },
     enabled: !!tenantId,
+    staleTime: 10 * 60 * 1000,
   });
 
-  const { data: activities = [] } = useQuery({
-    queryKey: ["dashboard-activities", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
-    queryFn: () =>
-      fetchAll<{ status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string }>(
-        supabase
-          .from("campaign_activities")
-          .select("status, clicked_at, converted_at, conversion_value, created_at")
-          .eq("tenant_id", tenantId!)
-          .gte("created_at", periodFrom.toISOString())
-          .lte("created_at", periodTo.toISOString())
-      ),
+  const { data: actKpi } = useQuery({
+    queryKey: ["dashboard-activity-kpi-rpc", tenantId, periodFrom.toISOString(), periodTo.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("rpc_dashboard_activity_kpis", {
+        p_tenant: tenantId!, p_from: periodFrom.toISOString(), p_to: periodTo.toISOString(),
+      });
+      if (error) throw error;
+      return data as ActivityKpiPayload;
+    },
     enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Compute KPIs
-  const totalRevenue = orders.reduce((s, o) => s + Number(o.total || 0), 0);
-  const martzRevenue = activities
-    .filter((a) => a.converted_at)
-    .reduce((s, a) => s + Number(a.conversion_value || 0), 0);
-  const totalCustomers = customers.length;
-  const totalOrders = orders.length;
+  // KPIs computados pelo backend
+  const totalRevenue = kpis?.totalRevenue ?? 0;
+  const totalOrders = kpis?.totalOrders ?? 0;
+  const martzRevenue = actKpi?.martzRevenue ?? 0;
+  const totalCustomers = custAgg?.totalCustomers ?? 0;
   const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+  const ltv = custAgg?.ltv ?? 0;
+  const avgFrequency = custAgg?.avgFreq ?? 0;
+  const avgDaysBetween = custAgg?.avgDaysBetween ?? 0;
 
-  const activeCustomers = customers.filter((c) => (c.total_orders || 0) > 0);
-  const ltv = activeCustomers.length > 0
-    ? activeCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0) / activeCustomers.length
-    : 0;
-  const avgFrequency = activeCustomers.length > 0
-    ? activeCustomers.reduce((s, c) => s + (c.total_orders || 0), 0) / activeCustomers.length
-    : 0;
-
-  const customersWithMultiple = activeCustomers.filter((c) => (c.total_orders || 0) > 1 && c.last_order_at && c.created_at);
-  const avgDaysBetween = customersWithMultiple.length > 0
-    ? customersWithMultiple.reduce((s, c) => {
-        const d = (new Date(c.last_order_at!).getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24);
-        return s + d / ((c.total_orders || 2) - 1);
-      }, 0) / customersWithMultiple.length
-    : 0;
-
-  // Chart data
+  // Chart data — vem da série diária pré-agregada
   const dayEntries = buildDayEntries(periodFrom, periodTo);
-  const dayMap: Record<string, { label: string; receita: number; pedidos: number }> = {};
-  dayEntries.forEach(({ key, label }) => {
-    dayMap[key] = { label, receita: 0, pedidos: 0 };
+  const dailyByDate: Record<string, { receita: number; pedidos: number; novos: number; recorrentes: number }> = {};
+  (kpis?.daily ?? []).forEach((d) => {
+    dailyByDate[d.date] = { receita: Number(d.receita || 0), pedidos: Number(d.pedidos || 0), novos: Number(d.novos || 0), recorrentes: Number(d.recorrentes || 0) };
   });
-  orders.forEach((o) => {
-    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
-    if (dayMap[key]) {
-      dayMap[key].receita += Number(o.total || 0);
-      dayMap[key].pedidos += 1;
-    }
+  const revenueData = dayEntries.map(({ key, label }) => {
+    const d = dailyByDate[key] || { receita: 0, pedidos: 0, novos: 0, recorrentes: 0 };
+    return { day: label, receita: d.receita, pedidos: d.pedidos };
   });
-  const revenueData = dayEntries.map(({ key }) => ({
-    day: dayMap[key].label,
-    receita: dayMap[key].receita,
-    pedidos: dayMap[key].pedidos,
-  }));
+  const customerTypeData = dayEntries.map(({ key, label }) => {
+    const d = dailyByDate[key] || { receita: 0, pedidos: 0, novos: 0, recorrentes: 0 };
+    return { day: label, novos: d.novos, recorrentes: d.recorrentes };
+  });
 
-  // New vs returning
-  const newCustomerIds = new Set(
-    customers
-      .filter((c) => new Date(c.created_at) >= periodFrom)
-      .map((c) => c.id)
-  );
-  const customerDayMap: Record<string, { label: string; novos: number; recorrentes: number }> = {};
-  dayEntries.forEach(({ key, label }) => {
-    customerDayMap[key] = { label, novos: 0, recorrentes: 0 };
-  });
-  orders.forEach((o) => {
-    const key = formatSP(new Date(o.created_at), "yyyy-MM-dd");
-    if (customerDayMap[key]) {
-      if (newCustomerIds.has(o.customer_id)) {
-        customerDayMap[key].novos += Number(o.total || 0);
-      } else {
-        customerDayMap[key].recorrentes += Number(o.total || 0);
-      }
-    }
-  });
-  const customerTypeData = dayEntries.map(({ key }) => ({
-    day: customerDayMap[key].label,
-    novos: customerDayMap[key].novos,
-    recorrentes: customerDayMap[key].recorrentes,
-  }));
-
-  // Activity status distribution for donut chart
-  const statusCounts = activities.reduce<Record<string, number>>((acc, a) => {
-    acc[a.status] = (acc[a.status] || 0) + 1;
-    return acc;
-  }, {});
+  const statusCounts = actKpi?.statusCounts ?? {};
   const statusLabels: Record<string, string> = {
     sent: "Enviados",
     delivered: "Entregues",
@@ -248,13 +204,12 @@ export default function Dashboard() {
     value: count,
   }));
 
-  // Orders by weekday for bar chart
+  // Orders by weekday (já agregado no RPC)
   const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const weekdayMap = weekdayNames.map((name) => ({ name, pedidos: 0 }));
-  orders.forEach((o) => {
-    const dow = new Date(o.created_at).getDay();
-    weekdayMap[dow].pedidos += 1;
-  });
+  const weekdayMap = weekdayNames.map((name, idx) => ({
+    name,
+    pedidos: Number(kpis?.weekday?.[String(idx)] || 0),
+  }));
 
   return (
     <AppLayout>
@@ -338,7 +293,8 @@ export default function Dashboard() {
                 title={"Receita\nGerada"}
                 value={fmtMoney(martzRevenue)}
                 gradient="cyan"
-                tooltip="Receita de clientes que receberam mensagens e converteram em até 72h (Efeito Halo)."
+                tooltip="Receita de clientes que receberam mensagens e converteram em até 72h (Efeito Halo). Clique para ver de onde veio."
+                onClick={() => navigate("/relatorios?tab=revenue")}
               />
               <KPIGradientCard
                 title="LTV Médio"

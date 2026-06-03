@@ -83,7 +83,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Reschedule pending items to now
+    // "Processar fila" só destrava items que ainda NÃO entraram no flow (current_node_id='start' ou null).
+    // Items aguardando em wait nodes (scheduled_for futuro + current_node_id já avançado) NÃO são tocados —
+    // os horários configurados nos nós de aguardar são respeitados.
     const nowIso = new Date().toISOString();
     let pendingQuery = admin
       .from("automation_queue")
@@ -98,7 +100,7 @@ Deno.serve(async (req) => {
       .update({ scheduled_for: nowIso })
       .eq("tenant_id", tenantId)
       .eq("status", "pending")
-      .or(`scheduled_for.is.null,scheduled_for.gt.${nowIso}`);
+      .or("current_node_id.is.null,current_node_id.eq.start");
     if (campaignId) updateQuery = updateQuery.eq("campaign_id", campaignId);
     await updateQuery;
 

@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js";
+import { emitConversationCreated } from "../_shared/automation-emitters.ts";
 
 const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -189,14 +190,17 @@ async function propagateStatusToActivity(wamid: string, status: string) {
   if (status === "delivered") {
     await supabase.from("campaign_activities").update({ delivered_at: now })
       .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .eq("channel", "whatsapp")
       .is("delivered_at", null).gte("sent_at", cutoff);
   } else if (status === "read") {
     await supabase.from("campaign_activities").update({ read_at: now })
       .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .eq("channel", "whatsapp")
       .is("read_at", null).gte("sent_at", cutoff);
   } else if (status === "failed") {
     await supabase.from("campaign_activities").update({ status: "failed" })
       .eq("customer_id", msg.customer_id).eq("tenant_id", msg.tenant_id)
+      .eq("channel", "whatsapp")
       .eq("status", "pending").gte("sent_at", cutoff);
   }
 }
@@ -206,7 +210,98 @@ async function markRepliedActivity(customerId: string, tenantId: string) {
   const now = new Date().toISOString();
   await supabase.from("campaign_activities").update({ replied_at: now })
     .eq("customer_id", customerId).eq("tenant_id", tenantId)
+    .eq("channel", "whatsapp")
     .is("replied_at", null).gte("sent_at", cutoff);
+}
+
+// Quando o cliente responde, avança qualquer automação que estava parada
+// no estado "waiting_reply" pro branch "Se responder" (out-1) do nó de WhatsApp.
+// Sem branch out-1 → encerra o item (cliente respondeu, mas o fluxo não tem
+// caminho de resposta definido).
+// Retorna true se a resposta do cliente foi "consumida" por alguma automação
+// (avançou um item que estava aguardando resposta). Nesse caso a IA NÃO deve
+// responder — quem fala é a automação.
+async function advanceWaitingReplyAutomations(customerId: string, tenantId: string): Promise<boolean> {
+  const { data: items } = await supabase
+    .from("automation_queue")
+    .select("id, campaign_id, current_node_id, metadata")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .eq("status", "waiting_reply");
+
+  if (!items || items.length === 0) return false;
+
+  let advancedAny = false;
+  for (const item of items) {
+    const { data: campaign } = await supabase
+      .from("campaigns")
+      .select("flow_data")
+      .eq("id", item.campaign_id)
+      .maybeSingle();
+    const edges = ((campaign?.flow_data as any)?.edges || []) as Array<{ source: string; target: string; sourceHandle?: string }>;
+    const waitNodeId = item.current_node_id;
+    const replyEdge = edges.find((e) => e.source === waitNodeId && e.sourceHandle === "out-1");
+    const cleanedMeta = { ...((item.metadata as any) || {}) };
+    delete cleanedMeta.waiting_for_reply;
+    delete cleanedMeta.wait_node_id;
+
+    if (replyEdge?.target) {
+      const { error } = await supabase.from("automation_queue").update({
+        status: "pending",
+        current_node_id: replyEdge.target,
+        scheduled_for: null,
+        metadata: cleanedMeta,
+      }).eq("id", item.id).eq("status", "waiting_reply");
+      if (!error) {
+        advancedAny = true;
+        console.log(`[webhook] Automação ${item.id} avançou pro "Se responder" (${replyEdge.target})`);
+      } else {
+        console.error(`[webhook] Falha ao avançar automação ${item.id}:`, error.message);
+      }
+    } else {
+      await supabase.from("automation_queue").update({
+        status: "completed",
+        processed_at: new Date().toISOString(),
+        metadata: cleanedMeta,
+      }).eq("id", item.id).eq("status", "waiting_reply");
+      console.log(`[webhook] Automação ${item.id} encerrada — resposta recebida, sem branch out-1`);
+    }
+  }
+
+  // Dispara o executor pro tenant pra a próxima etapa rodar na hora
+  // (ex: enviar o código Pix), sem esperar o cron.
+  if (advancedAny) {
+    const execTask = fetch(`${SUPABASE_URL}/functions/v1/campaign-executor`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ trigger: "reply", tenant_id: tenantId }),
+    }).catch((e) => console.error("[webhook] executor invoke (reply) error:", e));
+    const edgeRuntime = (globalThis as any).EdgeRuntime;
+    if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(execTask);
+  }
+
+  // Havia automação aguardando a resposta deste cliente → a resposta pertence
+  // à automação, a IA não deve responder este turno.
+  return true;
+}
+
+// Decide se a IA de atendimento deve ficar quieta porque uma automação está
+// no controle da conversa. Regra (definida pelo Mestre):
+//   - Se a resposta do cliente avançou uma automação → IA quieta.
+//   - Se uma automação mandou mensagem pra este cliente nos últimos 5 min →
+//     IA quieta. Depois de 5 min sem automação, a IA pode atender dúvidas.
+async function isAutomationHandlingCustomer(customerId: string, tenantId: string): Promise<boolean> {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: recentAct } = await supabase
+    .from("campaign_activities")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .eq("channel", "whatsapp")
+    .eq("status", "sent")
+    .gte("sent_at", fiveMinAgo)
+    .limit(1);
+  return !!(recentAct && recentAct.length > 0);
 }
 
 // ===== ORDER LOOKUPS =====
@@ -788,9 +883,36 @@ Deno.serve(async (req) => {
           // Process status updates
           if (value.statuses && Array.isArray(value.statuses)) {
             for (const status of value.statuses) {
-              const { id: wamid, status: msgStatus } = status;
-              await supabase.from("whatsapp_messages").update({ status: msgStatus }).eq("wamid", wamid);
+              const { id: wamid, status: msgStatus, errors } = status;
+              // Persiste errors[] do Meta em metadata pra diagnóstico de mensagens failed.
+              const update: any = { status: msgStatus };
+              if (errors && Array.isArray(errors) && errors.length > 0) {
+                update.metadata = {
+                  errors: errors.map((e: any) => ({
+                    code: e.code, title: e.title,
+                    message: e.message, details: e.error_data?.details || e.details,
+                    href: e.href,
+                  })),
+                  failed_at: new Date().toISOString(),
+                };
+                console.log(`[webhook] WA status=failed wamid=${wamid} errors=${JSON.stringify(errors)}`);
+              }
+              await supabase.from("whatsapp_messages").update(update).eq("wamid", wamid);
               await propagateStatusToActivity(wamid, msgStatus);
+              // Propaga o motivo do erro pra campaign_activities.error_message (do customer+tenant correspondente)
+              if (msgStatus === "failed" && errors && errors.length > 0) {
+                const errMsg = errors.map((e: any) => `(#${e.code}) ${e.title || e.message || ""}`.trim()).join(" | ");
+                const { data: wm } = await supabase.from("whatsapp_messages")
+                  .select("customer_id, tenant_id, created_at").eq("wamid", wamid).maybeSingle();
+                if (wm?.customer_id) {
+                  const cutoff = new Date(new Date(wm.created_at).getTime() - 5 * 60 * 1000).toISOString();
+                  await supabase.from("campaign_activities")
+                    .update({ status: "failed", error_message: errMsg })
+                    .eq("customer_id", wm.customer_id).eq("tenant_id", wm.tenant_id)
+                    .eq("channel", "whatsapp")
+                    .gte("sent_at", cutoff);
+                }
+              }
             }
           }
 
@@ -848,7 +970,25 @@ Deno.serve(async (req) => {
               }).select("id").single();
 
               await markRepliedActivity(customer!.id, tenantId);
+              // Avança automações paradas aguardando resposta (branch "Se responder")
+              const automationConsumedReply = await advanceWaitingReplyAutomations(customer!.id, tenantId);
               console.log(`[webhook] Saved ${msgType} from ${phone}${mediaUrl ? " (with media)" : ""}`);
+
+              // Detectar se é a primeira mensagem inbound deste cliente (nova conversa)
+              if (insertedMsg?.id) {
+                const { count } = await supabase
+                  .from("whatsapp_messages")
+                  .select("id", { count: "exact", head: true })
+                  .eq("tenant_id", tenantId)
+                  .eq("customer_id", customer!.id)
+                  .eq("direction", "inbound");
+
+                if (count === 1) {
+                  // É a primeira mensagem inbound - nova conversa criada
+                  console.log(`[webhook] New conversation detected for customer ${customer!.id}`);
+                  await emitConversationCreated(supabase, tenantId, customer!.id, phone, insertedMsg.id);
+                }
+              }
 
               // Mídia recebida → analisa com Gemini (visão/transcrição) e guarda no metadata,
               // pra IA (e os atendentes) conseguirem responder de verdade. Feito ANTES da auto-resposta.
@@ -901,27 +1041,37 @@ Deno.serve(async (req) => {
                 }
               }
 
-              // FIRE-AND-FORGET: chama whatsapp-ai-respond dedicada
-              // Isso libera o webhook rapidamente pro Meta (evita timeout)
-              // e a edge function dedicada tem timeout próprio de 60s pro tool loop
-              const cronSecret = Deno.env.get("CRON_SECRET") || "";
-              const aiInvokeTask = fetch(`${SUPABASE_URL}/functions/v1/whatsapp-ai-respond`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "x-internal-call": cronSecret,
-                },
-                body: JSON.stringify({
-                  tenantId,
-                  customerId: customer!.id,
-                  phone,
-                  customerAttrs: customer!.custom_attributes || null,
-                }),
-              }).catch(e => console.error("[webhook] AI invoke error:", e));
+              // GATE DA IA: se uma automação está atendendo o cliente, a IA
+              // fica quieta. Evita a IA falar por cima do código Pix etc.
+              const automationActive =
+                automationConsumedReply ||
+                (await isAutomationHandlingCustomer(customer!.id, tenantId));
 
-              const edgeRuntime = (globalThis as any).EdgeRuntime;
-              if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(aiInvokeTask);
-              // Não await - fire and forget
+              if (automationActive) {
+                console.log(`[webhook] IA suprimida — automação no controle da conversa com ${phone}`);
+              } else {
+                // FIRE-AND-FORGET: chama whatsapp-ai-respond dedicada
+                // Isso libera o webhook rapidamente pro Meta (evita timeout)
+                // e a edge function dedicada tem timeout próprio de 60s pro tool loop
+                const cronSecret = Deno.env.get("CRON_SECRET") || "";
+                const aiInvokeTask = fetch(`${SUPABASE_URL}/functions/v1/whatsapp-ai-respond`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-call": cronSecret,
+                  },
+                  body: JSON.stringify({
+                    tenantId,
+                    customerId: customer!.id,
+                    phone,
+                    customerAttrs: customer!.custom_attributes || null,
+                  }),
+                }).catch(e => console.error("[webhook] AI invoke error:", e));
+
+                const edgeRuntime = (globalThis as any).EdgeRuntime;
+                if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(aiInvokeTask);
+                // Não await - fire and forget
+              }
             }
           }
         }

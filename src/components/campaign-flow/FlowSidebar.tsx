@@ -36,42 +36,73 @@ const groupLabels: Record<string, string> = {
   extra: "Extra",
 };
 
-type TriggerItem = { value: string; label: string; description: string; enabled?: boolean };
+type IntegrationTag = "yampi" | "bling" | "pixel" | "whatsapp" | "crm";
+type TriggerItem = {
+  value: string;
+  label: string;
+  description: string;
+  enabled?: boolean;
+  integration?: IntegrationTag;
+};
 type TriggerGroup = { group: string; items: TriggerItem[] };
 
 export const AUTOMATION_TRIGGERS: TriggerGroup[] = [
-  { group: "Pedido", items: [
-    { value: "order_created", label: "Pedido criado", description: "Disparado quando houver novo pedido (qualquer método)", enabled: true },
-    { value: "order_created_pix", label: "Pedido criado (Pix)", description: "Pedido criado aguardando pagamento Pix", enabled: true },
-    { value: "order_created_boleto", label: "Pedido criado (Boleto)", description: "Pedido criado aguardando pagamento de boleto", enabled: true },
-    { value: "order_paid", label: "Pedido pago", description: "Disparado quando o pagamento for confirmado", enabled: true },
-    { value: "order_approved", label: "Pedido aprovado", description: "Pedido aprovado/faturado pelo lojista", enabled: true },
-    { value: "order_delivered", label: "Pedido entregue", description: "Status alterado para entregue", enabled: true },
-    { value: "order_rejected_card", label: "Pedido recusado (Cartão)", description: "Pagamento de cartão recusado", enabled: true },
-    { value: "invoice_issued", label: "Nota fiscal emitida", description: "NF-e emitida para o pedido", enabled: true },
-    { value: "return_approved", label: "Devolução aprovada", description: "Devolução, troca ou estorno aprovado", enabled: true },
-    { value: "first_purchase", label: "Primeira compra", description: "Cliente concluiu sua primeira compra", enabled: true },
+  // ─── GERAL (sem integração externa, funciona com dados do CRM) ───
+  { group: "Geral · CRM", items: [
+    { value: "birthday", label: "Aniversário do cliente", description: "Disparado todo dia no aniversário do cliente (usa data cadastrada no customer)", enabled: true, integration: "crm" },
+    { value: "inactivity", label: "Inatividade", description: "Cliente sem comprar há X dias (defina X no nome da automation: ex. \"60 dias\")", enabled: true, integration: "crm" },
+    { value: "lead_created", label: "Lead inserido na lista", description: "Disparado quando um cliente é adicionado a uma contact_list", enabled: true, integration: "crm" },
+    { value: "webhook", label: "Webhook customizado", description: "Endpoint público que aceita POST e dispara a automation. URL exposta após salvar.", enabled: true, integration: "crm" },
   ]},
-  { group: "Carrinho & Navegação", items: [
-    { value: "cart_abandoned", label: "Carrinho abandonado", description: "Carrinho registrado pela Yampi sem conversão", enabled: true },
-    { value: "cart_abandonment_pixel", label: "Checkout abandonado (Pixel)", description: "Cliente identificado iniciou checkout no site e não comprou", enabled: true },
-    { value: "browse_abandonment", label: "Navegação abandonada (Pixel)", description: "Cliente identificado viu produtos mas não comprou", enabled: true },
+
+  // ─── ATENDIMENTO WhatsApp ───
+  { group: "Atendimento · WhatsApp", items: [
+    { value: "conversation_created", label: "Nova conversa WhatsApp", description: "Primeira mensagem inbound de um número (cliente novo via Meta WhatsApp)", enabled: true, integration: "whatsapp" },
+    { value: "conversation_archived", label: "Conversa arquivada", description: "Atendimento marcado como resolvido (ticket_status = resolved)", enabled: true, integration: "whatsapp" },
   ]},
+
+  // ─── E-COMMERCE: pedidos da loja (origem Yampi) ───
+  { group: "Pedidos · Yampi (Loja)", items: [
+    { value: "order_created", label: "Pedido criado", description: "Novo pedido (qualquer método de pagamento)", enabled: true, integration: "yampi" },
+    { value: "order_created_pix", label: "Pedido criado (Pix)", description: "Pedido aguardando pagamento Pix", enabled: true, integration: "yampi" },
+    { value: "order_created_boleto", label: "Pedido criado (Boleto)", description: "Pedido aguardando pagamento de boleto", enabled: true, integration: "yampi" },
+    { value: "order_paid", label: "Pedido pago", description: "Pagamento confirmado pela Yampi/gateway", enabled: true, integration: "yampi" },
+    { value: "order_rejected_card", label: "Pedido recusado (Cartão)", description: "Pagamento de cartão recusado/cancelado", enabled: true, integration: "yampi" },
+    { value: "first_purchase", label: "Primeira compra", description: "Cliente concluiu sua primeira compra (total_orders = 1)", enabled: true, integration: "yampi" },
+    { value: "cart_abandoned", label: "Carrinho abandonado", description: "Carrinho registrado pela Yampi sem conversão em pedido", enabled: true, integration: "yampi" },
+  ]},
+
+  // ─── FISCAL & LOGÍSTICA: status pós-pagamento (Bling cobre fiscal + tracking; Yampi corrobora) ───
+  { group: "Fiscal & Logística · Bling/Yampi", items: [
+    { value: "order_approved", label: "Pedido aprovado", description: "Pedido aprovado/faturado pelo lojista (Bling + Yampi)", enabled: true, integration: "bling" },
+    { value: "invoice_issued", label: "Nota fiscal emitida", description: "NF-e emitida pelo Bling (ou status invoiced na Yampi)", enabled: true, integration: "bling" },
+    { value: "tracking_created", label: "Rastreio gerado", description: "Bling/Yampi gerou o primeiro código de rastreio do pedido", enabled: true, integration: "bling" },
+    { value: "tracking_updated", label: "Rastreio atualizado", description: "Status do rastreio mudou (postado, em trânsito, saiu para entrega)", enabled: true, integration: "bling" },
+    { value: "order_delivered", label: "Pedido entregue", description: "Status do pedido alterado para entregue (Bling/Yampi)", enabled: true, integration: "bling" },
+    { value: "return_approved", label: "Devolução aprovada", description: "Devolução, troca ou estorno aprovado", enabled: true, integration: "bling" },
+  ]},
+
+  // ─── COMPORTAMENTO NO SITE (Pixel próprio) ───
+  { group: "Comportamento · Pixel", items: [
+    { value: "cart_abandonment_pixel", label: "Checkout abandonado (Pixel)", description: "Cliente identificado iniciou checkout no site e não converteu", enabled: true, integration: "pixel" },
+    { value: "browse_abandonment", label: "Navegação abandonada (Pixel)", description: "Cliente identificado viu produtos mas não comprou", enabled: true, integration: "pixel" },
+  ]},
+
+  // ─── PÓS-VENDA & RETENÇÃO ───
   { group: "Pós-venda & Retenção", items: [
-    { value: "birthday", label: "Aniversário do cliente", description: "Disparado todo dia no aniversário do cliente", enabled: true },
-    { value: "first_purchase_anniversary", label: "Aniversário da 1ª compra", description: "Disparado anualmente na data da primeira compra", enabled: true },
-    { value: "inactivity", label: "Inatividade", description: "Cliente sem comprar há X dias (defina X no nome: ex. \"60 dias\")", enabled: true },
-    { value: "pos_delivery_7d", label: "7 dias após entrega", description: "Pós-venda 7 dias após o pedido ser entregue", enabled: true },
-  ]},
-  { group: "Em breve", items: [
-    { value: "tracking_created", label: "Rastreio gerado", description: "Em desenvolvimento", enabled: false },
-    { value: "tracking_updated", label: "Rastreio atualizado", description: "Em desenvolvimento", enabled: false },
-    { value: "lead_created", label: "Lead inserido na lista", description: "Em desenvolvimento", enabled: false },
-    { value: "conversation_created", label: "Nova conversa WhatsApp", description: "Em desenvolvimento", enabled: false },
-    { value: "conversation_archived", label: "Conversa arquivada", description: "Em desenvolvimento", enabled: false },
-    { value: "webhook", label: "Webhook customizado", description: "Em desenvolvimento", enabled: false },
+    { value: "first_purchase_anniversary", label: "Aniversário da 1ª compra", description: "Disparado anualmente na data da primeira compra do cliente", enabled: true, integration: "yampi" },
+    { value: "pos_delivery_7d", label: "7 dias após entrega", description: "Pós-venda 7 dias após o pedido ser entregue", enabled: true, integration: "yampi" },
   ]},
 ];
+
+// Cores/labels das tags de integração — usadas em badges visuais opcionais
+export const INTEGRATION_META: Record<IntegrationTag, { label: string; color: string }> = {
+  yampi:    { label: "Yampi",    color: "bg-pink-100 text-pink-700 border-pink-200" },
+  bling:    { label: "Bling",    color: "bg-amber-100 text-amber-700 border-amber-200" },
+  pixel:    { label: "Pixel",    color: "bg-violet-100 text-violet-700 border-violet-200" },
+  whatsapp: { label: "WhatsApp", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  crm:      { label: "CRM",      color: "bg-slate-100 text-slate-700 border-slate-200" },
+};
 
 export function getTriggerLabel(value: string): string {
   for (const group of AUTOMATION_TRIGGERS) {
@@ -144,6 +175,35 @@ export function FlowSidebar({
     enabled: !!currentTenant,
   });
 
+  // Quais integrações estão ativas no tenant — usado pra mostrar warning quando
+  // o usuário seleciona um trigger cuja integração está inativa.
+  const { data: activeIntegrations = new Set<string>() } = useQuery({
+    queryKey: ["active-integrations", currentTenant?.id],
+    queryFn: async () => {
+      if (!currentTenant) return new Set<string>();
+      const { data, error } = await supabase
+        .from("integrations")
+        .select("provider")
+        .eq("tenant_id", currentTenant.id)
+        .eq("is_active", true);
+      if (error) throw error;
+      const providers = new Set<string>((data || []).map((r: { provider: string }) => r.provider));
+      // CRM e WhatsApp são "infra base" — sempre considerados ativos.
+      providers.add("crm");
+      if (whatsappAccounts.length > 0) providers.add("whatsapp");
+      // Pixel: considerado ativo se houver pelo menos 1 pixel_event nos últimos 30d
+      // (verificação lazy — pra evitar query extra, assumimos ativo se houver integração ou pixel registrado).
+      return providers;
+    },
+    enabled: !!currentTenant,
+  });
+
+  const selectedTriggerMeta = AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger);
+  const selectedTriggerIntegration = selectedTriggerMeta?.integration;
+  const integrationInactive = selectedTriggerIntegration
+    && selectedTriggerIntegration !== "crm"
+    && !activeIntegrations.has(selectedTriggerIntegration);
+
   const onDragStart = (event: React.DragEvent, nodeData: { type: string; label: string; icon: string; color: string }) => {
     event.dataTransfer.setData("application/reactflow", JSON.stringify(nodeData));
     event.dataTransfer.effectAllowed = "move";
@@ -176,22 +236,47 @@ export function FlowSidebar({
                     <div className="px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/30">
                       {group.group}
                     </div>
-                    {group.items.map((item) => (
-                      <SelectItem key={item.value} value={item.value} disabled={item.enabled === false} className="text-xs">
-                        <div className="flex items-center gap-2 py-0.5">
-                          <span>{item.label}</span>
-                          {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground/50" />}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {group.items.map((item) => {
+                      const meta = item.integration ? INTEGRATION_META[item.integration] : null;
+                      return (
+                        <SelectItem key={item.value} value={item.value} disabled={item.enabled === false} className="text-xs">
+                          <div className="flex items-center justify-between gap-2 py-0.5 w-full">
+                            <span className="truncate">{item.label}</span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              {meta && (
+                                <span className={cn("text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border", meta.color)}>
+                                  {meta.label}
+                                </span>
+                              )}
+                              {item.enabled === false && <Lock className="h-3 w-3 text-muted-foreground/50" />}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </div>
                 ))}
               </SelectContent>
             </Select>
             {selectedTrigger && (
               <p className="text-[10px] text-muted-foreground/80 leading-snug px-1 pt-1 italic">
-                {AUTOMATION_TRIGGERS.flatMap(g => g.items).find(i => i.value === selectedTrigger)?.description}
+                {selectedTriggerMeta?.description}
               </p>
+            )}
+            {integrationInactive && selectedTriggerIntegration && (
+              <div className="mt-2 mx-1 p-2 rounded-md border border-destructive/30 bg-destructive/5 text-[11px] leading-snug text-destructive flex items-start gap-2">
+                <svg className="h-3.5 w-3.5 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <div>
+                  <strong className="font-semibold">
+                    {INTEGRATION_META[selectedTriggerIntegration].label} não está conectada.
+                  </strong>{" "}
+                  Este gatilho não vai disparar até a integração ser ativada em <a href="/settings/integrations" className="underline font-medium">Configurações &rsaquo; Integrações</a>.
+                </div>
+              </div>
             )}
           </div>
         ) : (
@@ -234,21 +319,13 @@ export function FlowSidebar({
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-0.5">Hora</Label>
-              <Select value={scheduledTime || ""} onValueChange={(v) => onScheduledTimeChange?.(v)}>
-                <SelectTrigger className="h-7 text-[11px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-2 focus:bg-background">
-                  <SelectValue placeholder="--:--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[260px]">
-                  {Array.from({ length: 48 }, (_, i) => {
-                    const h = String(Math.floor(i / 2)).padStart(2, "0");
-                    const m = i % 2 === 0 ? "00" : "30";
-                    const v = `${h}:${m}`;
-                    return (
-                      <SelectItem key={v} value={v} className="text-xs">{v}</SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+              <Input
+                type="time"
+                step={60}
+                value={scheduledTime || ""}
+                onChange={(e) => onScheduledTimeChange?.(e.target.value)}
+                className="h-7 text-[11px] border-transparent hover:border-border focus:border-primary/50 bg-transparent transition-all px-2 focus:bg-background"
+              />
             </div>
           </div>
         )}

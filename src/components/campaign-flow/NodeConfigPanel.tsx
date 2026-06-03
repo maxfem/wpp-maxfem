@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { X, AlertTriangle, Settings2, MessageSquare, Mail, Variable, Eye, Sparkles, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +29,127 @@ interface NodeConfigPanelProps {
 interface FieldDef {
   key: string;
   label: string;
-  type: "text" | "textarea" | "select" | "toggle";
+  type: "text" | "textarea" | "select" | "toggle" | "multiAutocomplete";
   placeholder?: string;
   options?: { value: string; label: string }[];
   hint?: string;
   showWhen?: (data: Record<string, unknown>) => boolean;
+  source?: "products" | "states" | "weekdays";
 }
+
+const BR_STATES: { value: string; label: string }[] = [
+  { value: "AC", label: "AC — Acre" }, { value: "AL", label: "AL — Alagoas" },
+  { value: "AM", label: "AM — Amazonas" }, { value: "AP", label: "AP — Amapá" },
+  { value: "BA", label: "BA — Bahia" }, { value: "CE", label: "CE — Ceará" },
+  { value: "DF", label: "DF — Distrito Federal" }, { value: "ES", label: "ES — Espírito Santo" },
+  { value: "GO", label: "GO — Goiás" }, { value: "MA", label: "MA — Maranhão" },
+  { value: "MG", label: "MG — Minas Gerais" }, { value: "MS", label: "MS — Mato Grosso do Sul" },
+  { value: "MT", label: "MT — Mato Grosso" }, { value: "PA", label: "PA — Pará" },
+  { value: "PB", label: "PB — Paraíba" }, { value: "PE", label: "PE — Pernambuco" },
+  { value: "PI", label: "PI — Piauí" }, { value: "PR", label: "PR — Paraná" },
+  { value: "RJ", label: "RJ — Rio de Janeiro" }, { value: "RN", label: "RN — Rio Grande do Norte" },
+  { value: "RO", label: "RO — Rondônia" }, { value: "RR", label: "RR — Roraima" },
+  { value: "RS", label: "RS — Rio Grande do Sul" }, { value: "SC", label: "SC — Santa Catarina" },
+  { value: "SE", label: "SE — Sergipe" }, { value: "SP", label: "SP — São Paulo" },
+  { value: "TO", label: "TO — Tocantins" },
+];
+
+const WEEKDAYS: { value: string; label: string }[] = [
+  { value: "Seg", label: "Seg — Segunda-feira" }, { value: "Ter", label: "Ter — Terça-feira" },
+  { value: "Qua", label: "Qua — Quarta-feira" }, { value: "Qui", label: "Qui — Quinta-feira" },
+  { value: "Sex", label: "Sex — Sexta-feira" }, { value: "Sáb", label: "Sáb — Sábado" },
+  { value: "Dom", label: "Dom — Domingo" },
+];
+
+// Produtos Maxfem (SKU + nome) — extraído de bling_pedidos.itens últimos 90d
+// 49 SKUs reais com volume + variantes de busca por nome
+const MAXFEM_PRODUCTS: { value: string; label: string }[] = [
+  // Imunofem cápsulas (kits)
+  { value: "KIT1IMUNO", label: "KIT1IMUNO — Imunofem Kit 1 mês" },
+  { value: "KIT2IMUNO", label: "KIT2IMUNO — Imunofem Kit 2 meses" },
+  { value: "KIT3IMUNO", label: "KIT3IMUNO — Imunofem Kit 3 meses" },
+  { value: "KIT5IMUNO", label: "KIT5IMUNO — Imunofem Kit 5 meses" },
+  { value: "IMUNOFEM1", label: "IMUNOFEM1 — Imunofem 1 frasco" },
+  { value: "IMUNOFEM2", label: "IMUNOFEM2 — 2 Imunofem (envio imediato)" },
+  { value: "IMUNO60", label: "IMUNO60 — Imunofem Candidíase 60 cáps" },
+  { value: "IMUNO180", label: "IMUNO180 — Imunofem Candidíase 180 cáps" },
+  { value: "IMUNO300", label: "IMUNO300 — Imunofem Candidíase 300 cáps" },
+  { value: "Imunofem", label: "Imunofem (nome genérico)" },
+
+  // Imunofem Gummy
+  { value: "GUMMYKIT1", label: "GUMMYKIT1 — Imunofem Gummy Kit 1 mês" },
+  { value: "GUMMYKIT3", label: "GUMMYKIT3 — Imunofem Gummy Kit 3 meses" },
+  { value: "GUMMYKIT5", label: "GUMMYKIT5 — Imunofem Gummy Kit 5 meses" },
+  { value: "GUMMY1", label: "GUMMY1 — Imunofem Gummy avulso" },
+  { value: "2GUMMYIMUNO1", label: "2GUMMYIMUNO1 — 2 Gummy + Imunofem" },
+  { value: "GUMMYIMUNO", label: "GUMMYIMUNO — Imunofem Gummy + Imunofem" },
+  { value: "Imunofem Gummy", label: "Imunofem Gummy (nome)" },
+
+  // Sérum Clareador
+  { value: "SCLAREADOR", label: "SCLAREADOR — Sérum Clareador Maxfem" },
+  { value: "SCLAREADOR-1", label: "SCLAREADOR-1 — Sérum Clareador 1 unidade" },
+  { value: "SCLAREADOR2", label: "SCLAREADOR2 — Sérum Clareador 2 unidades" },
+  { value: "SCLAREADOR-2", label: "SCLAREADOR-2 — Sérum Clareador 3 unidades" },
+  { value: "SCLAREADOR-3", label: "SCLAREADOR-3 — Sérum Clareador (3 unid)" },
+  { value: "SCLAREADOR-5", label: "SCLAREADOR-5 — Sérum Clareador 5 unidades" },
+  { value: "Sérum Clareador", label: "Sérum Clareador (nome)" },
+
+  // Sérum Firmador
+  { value: "SFIRMADOR", label: "SFIRMADOR — Sérum Firmador Maxfem" },
+  { value: "SFIRMADOR-5", label: "SFIRMADOR-5 — Sérum Firmador 5 unidades" },
+  { value: "Sérum Firmador", label: "Sérum Firmador (nome)" },
+
+  // Kit Sérum
+  { value: "KITSERUM", label: "KITSERUM — Kit Sérum Maxfem (Firmador + Clareador)" },
+  { value: "KITSERUM2", label: "KITSERUM2 — Kit PPK Perfeita (2 Clareador + 2 Firmador)" },
+
+  // Menovital
+  { value: "KIT1MENO", label: "KIT1MENO — Menovital Kit 1 mês" },
+  { value: "KIT3MENO", label: "KIT3MENO — Menovital Kit 3 meses" },
+  { value: "KIT5MENO", label: "KIT5MENO — Menovital Kit 5 meses" },
+  { value: "MENOVITAL1", label: "MENOVITAL1 — Menovital 1 frasco" },
+  { value: "Menovital", label: "Menovital (nome)" },
+  { value: "KITIMUNOVITAL", label: "KITIMUNOVITAL — Kit 2 Imunofem + 1 Menovital" },
+
+  // Noite
+  { value: "KIT1NOITE", label: "KIT1NOITE — Maxfem Noite Kit 1 mês" },
+  { value: "KIT3NOITE", label: "KIT3NOITE — Maxfem Noite Kit 3 meses" },
+  { value: "NOITE1", label: "NOITE1 — Maxfem Noite 1 frasco" },
+  { value: "KUOVT190UD", label: "KUOVT190UD — Maxfem Noite Oferta Exclusiva" },
+  { value: "Maxfem Noite", label: "Maxfem Noite (nome)" },
+
+  // Cheirozinha
+  { value: "CHEIROZINHA1", label: "CHEIROZINHA1 — Cheirozinha Body Splash" },
+  { value: "CHEIROZINHAC", label: "CHEIROZINHAC — Kit Cheirozinha + Clareador" },
+  { value: "CHEIROZINHAF", label: "CHEIROZINHAF — Kit Cheirozinha + Firmador" },
+  { value: "Cheirozinha", label: "Cheirozinha (nome)" },
+
+  // NAC Ultra
+  { value: "NACULTRA1", label: "NACULTRA1 — Maxfem NAC 600mg" },
+  { value: "NAC1", label: "NAC1 — Maxfem NAC Ultra Kit 1 mês" },
+  { value: "NAC Ultra", label: "NAC Ultra (nome)" },
+
+  // PPK / Kits combo
+  { value: "PPKSPODEROSA", label: "PPKSPODEROSA — PPK Super Poderosa" },
+  { value: "DETOX1PPK", label: "DETOX1PPK — 2 Imunofem + 1 Noite" },
+  { value: "IMUNOCLARE", label: "IMUNOCLARE — Kit Prikito (Imunofem + Clareador)" },
+  { value: "IMUNOMAIS2", label: "IMUNOMAIS2 — Kit 3 Imunofem + 2 brindes" },
+  { value: "GUMMYCLARE", label: "GUMMYCLARE — Imunofem Gummy + Clareador" },
+  { value: "KIT4S", label: "KIT4S — Gummy + Imunofem + Noite + Menovital" },
+  { value: "KITCUIDADODIARIO", label: "KITCUIDADODIARIO — Kit Cuidado Diário" },
+  { value: "KITCOSMETICO", label: "KITCOSMETICO — Kit Cosmético" },
+
+  // Brindes
+  { value: "BONE", label: "BONE — Boné brinde" },
+  { value: "BRINDEB", label: "BRINDEB — Bag brinde" },
+  { value: "BOLSINHAB", label: "BOLSINHAB — Bolsinha brinde" },
+];
+
+const OPTION_SOURCES: Record<string, { value: string; label: string }[]> = {
+  products: MAXFEM_PRODUCTS,
+  states: BR_STATES,
+  weekdays: WEEKDAYS,
+};
 
 type TemplateOpt = { value: string; label: string };
 type WhatsAppTpl = {
@@ -246,9 +361,9 @@ const getNodeConfigs = (
   startNode: {
     title: "Gatilho",
     fields: [
-      { key: "filterProducts", label: "Filtrar por produtos (SKU/nome)", type: "text", placeholder: "Ex: SKU1, SKU2" },
-      { key: "filterStates", label: "Filtrar por estados", type: "text", placeholder: "Ex: SP, RJ, MG" },
-      { key: "filterDays", label: "Dias da semana permitidos", type: "text", placeholder: "Ex: Seg, Ter, Qua" },
+      { key: "filterProducts", label: "Filtrar por produtos (SKU/nome)", type: "multiAutocomplete", source: "products", placeholder: "Digite 3 caracteres pra buscar (ex: gumm)" },
+      { key: "filterStates", label: "Filtrar por estados", type: "multiAutocomplete", source: "states", placeholder: "Digite 2 letras (ex: SP, RJ)" },
+      { key: "filterDays", label: "Dias da semana permitidos", type: "multiAutocomplete", source: "weekdays", placeholder: "Digite (ex: seg, ter)" },
     ],
   },
 });
@@ -264,8 +379,106 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
   );
 }
 
+function MultiAutocompleteField({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void }) {
+  const options = field.source ? OPTION_SOURCES[field.source] || [] : [];
+  // value é string CSV: "GUMMY1, SCLAREADOR"
+  const parts = String(value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const [input, setInput] = React.useState("");
+  const [focused, setFocused] = React.useState(false);
+  const MIN = field.source === "states" ? 1 : field.source === "weekdays" ? 1 : 3;
+
+  const matches = React.useMemo(() => {
+    if (input.length < MIN) return [];
+    const q = input.toLowerCase();
+    return options
+      .filter((o) => !parts.includes(o.value))
+      .filter((o) => o.value.toLowerCase().includes(q) || o.label.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [input, parts, options, MIN]);
+
+  function addChip(v: string) {
+    if (!v) return;
+    if (parts.includes(v)) return;
+    onChange([...parts, v].join(", "));
+    setInput("");
+  }
+  function removeChip(v: string) {
+    onChange(parts.filter((p) => p !== v).join(", "));
+  }
+
+  return (
+    <div>
+      <FieldLabel hint={field.hint}>{field.label}</FieldLabel>
+      <div className="border border-input rounded-md bg-background px-2 py-1.5 min-h-[36px] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
+        <div className="flex flex-wrap gap-1 items-center">
+          {parts.map((p) => (
+            <span key={p} className="inline-flex items-center gap-1 bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-[11px]">
+              {p}
+              <button
+                type="button"
+                onClick={() => removeChip(p)}
+                className="text-muted-foreground hover:text-destructive ml-0.5"
+                aria-label={`remover ${p}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && matches[0]) {
+                e.preventDefault();
+                addChip(matches[0].value);
+              } else if (e.key === "Backspace" && !input && parts.length) {
+                removeChip(parts[parts.length - 1]);
+              } else if (e.key === "," || (e.key === "Enter" && input.trim())) {
+                e.preventDefault();
+                const v = input.trim().replace(/,$/, "");
+                if (v) addChip(v);
+              }
+            }}
+            placeholder={parts.length ? "" : field.placeholder}
+            className="flex-1 min-w-[80px] bg-transparent outline-none text-sm py-0.5"
+          />
+        </div>
+      </div>
+      {focused && matches.length > 0 && (
+        <div className="relative">
+          <div className="absolute z-50 left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-md max-h-[240px] overflow-y-auto">
+            {matches.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => addChip(opt.value)}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground border-b border-border last:border-b-0"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {input.length > 0 && input.length < MIN && (
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Digite mais {MIN - input.length} {MIN - input.length === 1 ? "caractere" : "caracteres"} pra ver opções
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ConfigField({ field, value, onChange }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void }) {
   switch (field.type) {
+    case "multiAutocomplete":
+      return <MultiAutocompleteField field={field} value={value} onChange={onChange} />;
     case "text":
       return (
         <div>

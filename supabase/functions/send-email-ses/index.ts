@@ -325,7 +325,7 @@ serve(async (req) => {
               channel: "email",
               status: "sent",
               sent_at: new Date().toISOString(),
-            }, { onConflict: "campaign_id, customer_id" });
+            }, { onConflict: "campaign_id,customer_id,channel" });
           }
         } catch (logErr) {
           console.error("[SES] log error:", logErr);

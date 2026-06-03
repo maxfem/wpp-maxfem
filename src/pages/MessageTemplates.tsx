@@ -215,6 +215,7 @@ interface TemplateForm {
   language: string;
   header_type: string;
   header_content: string;
+  header_media_url?: string | null;
   body: string;
   footer: string;
   buttons: TemplateButton[];
@@ -237,6 +238,7 @@ const emptyForm: TemplateForm = {
   language: "pt_BR",
   header_type: "none",
   header_content: "",
+  header_media_url: null,
   body: "",
   footer: "",
   buttons: [],
@@ -509,6 +511,7 @@ export default function MessageTemplates() {
         language: values.language,
         header_type: values.header_type,
         header_content: values.header_content || null,
+        header_media_url: values.header_media_url || null,
         body: values.body,
         footer: values.footer || null,
         buttons: values.buttons as unknown as Json,
@@ -733,6 +736,7 @@ export default function MessageTemplates() {
         language: template.language,
         header_type: template.header_type || "none",
         header_content: template.header_content || "",
+        header_media_url: (template as any).header_media_url || null,
         body: template.body,
         footer: template.footer || "",
         buttons: tplButtons,
@@ -802,6 +806,7 @@ export default function MessageTemplates() {
       const errors = validateTemplate({
         name: tpl.name, category: tpl.category, language: tpl.language,
         header_type: tpl.header_type || "none", header_content: tpl.header_content || "",
+        header_media_url: (tpl as any).header_media_url || null,
         body: tpl.body, footer: tpl.footer || "", buttons: tplButtons,
         sample_values: (tpl.sample_values as string[]) || [],
       });
@@ -862,6 +867,7 @@ export default function MessageTemplates() {
     const errors = validateTemplate({
       name: t.name, category: t.category, language: t.language,
       header_type: t.header_type || "none", header_content: t.header_content || "",
+      header_media_url: (t as any).header_media_url || null,
       body: t.body, footer: t.footer || "", buttons: tplButtons,
       sample_values: (t.sample_values as string[]) || [],
     });
@@ -906,6 +912,7 @@ export default function MessageTemplates() {
       language: template.language,
       header_type: template.header_type || "none",
       header_content: template.header_content || "",
+      header_media_url: (template as any).header_media_url || null,
       body: template.body,
       footer: template.footer || "",
       buttons: (template.buttons as unknown as TemplateButton[]) || [],
@@ -922,6 +929,7 @@ export default function MessageTemplates() {
       language: template.language,
       header_type: template.header_type || "none",
       header_content: template.header_content || "",
+      header_media_url: (template as any).header_media_url || null,
       body: template.body,
       footer: template.footer || "",
       buttons: (template.buttons as unknown as TemplateButton[]) || [],
@@ -937,6 +945,7 @@ export default function MessageTemplates() {
       language: template.language,
       header_type: template.header_type || "none",
       header_content: template.header_content || "",
+      header_media_url: (template as any).header_media_url || null,
       body: template.body,
       footer: template.footer || "",
       buttons: (template.buttons as unknown as TemplateButton[]) || [],
@@ -1158,6 +1167,7 @@ export default function MessageTemplates() {
                                     file_base64: base64,
                                     file_type: file.type,
                                     file_name: file.name,
+                                    tenant_id: tenantId,
                                   }),
                                 });
                                 const data = await res.json();
@@ -1166,8 +1176,12 @@ export default function MessageTemplates() {
                                   toast.error(data?.user_message || data?.error || "Falha no upload", { duration: 8000 });
                                   return;
                                 }
-                                setForm((f) => ({ ...f, header_content: data.handle }));
-                                toast.success(`Upload OK · handle ${data.handle.slice(0, 12)}...`, { duration: 5000 });
+                                setForm((f) => ({
+                                  ...f,
+                                  header_content: data.handle,
+                                  header_media_url: data.public_url || null,
+                                }));
+                                toast.success(`Upload OK · handle ${data.handle.slice(0, 12)}...${data.public_url ? " · URL pública salva" : ""}`, { duration: 5000 });
                               } catch (err: any) {
                                 toast.dismiss();
                                 toast.error(err.message);
@@ -1203,6 +1217,7 @@ export default function MessageTemplates() {
                                   source_url: form.header_content,
                                   file_type: form.header_type === "image" ? "image/png" : form.header_type === "video" ? "video/mp4" : "application/pdf",
                                   file_name: "upload",
+                                  tenant_id: tenantId,
                                 }),
                               });
                               const data = await res.json();
@@ -1211,7 +1226,13 @@ export default function MessageTemplates() {
                                 toast.error(data?.user_message || data?.error || "Falha no upload", { duration: 8000 });
                                 return;
                               }
-                              setForm((f) => ({ ...f, header_content: data.handle }));
+                              // Preserva a URL original como header_media_url (já é pública) — caso a edge não tenha re-uploadado pra Storage.
+                              const originalUrl = form.header_content;
+                              setForm((f) => ({
+                                ...f,
+                                header_content: data.handle,
+                                header_media_url: data.public_url || originalUrl || null,
+                              }));
                               toast.success(`Handle gerado: ${data.handle.slice(0, 12)}...`, { duration: 5000 });
                             } catch (err: any) {
                               toast.dismiss();

@@ -129,50 +129,28 @@ const EmailMarketing = () => {
 
 // ============== OVERVIEW TAB ==============
 const OverviewTab = ({ stats, loading, senderEmail, tenantId }: any) => {
-  // Aggregates from email_events and campaign_activities (last 30d)
+  // Aggregates via RPC (substitui fetch de 300k+ events; agrega no Postgres)
   const { data: events } = useQuery({
-    queryKey: ["email-events-overview", tenantId],
+    queryKey: ["email-events-overview-rpc", tenantId],
     queryFn: async () => {
-      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, conversions: 0, revenue: 0 };
-      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      
-      // Get events
-      const { data: evData } = await supabase
-        .from("email_events")
-        .select("event_type")
-        .eq("tenant_id", tenantId)
-        .gte("timestamp", since);
-      
-      // Get conversions from campaign_activities
-      const { data: activityData } = await supabase
-        .from("campaign_activities")
-        .select("converted_at, conversion_value")
-        .eq("tenant_id", tenantId)
-        .eq("channel", "email")
-        .gte("sent_at", since);
-
-      const counts = { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0, conversions: 0, revenue: 0 };
-      
-      for (const e of evData || []) {
-        if (e.event_type === "Send") counts.sent++;
-        else if (e.event_type === "Delivery") counts.delivered++;
-        else if (e.event_type === "Open") counts.opens++;
-        else if (e.event_type === "Click") counts.clicks++;
-        else if (e.event_type === "Bounce") counts.bounces++;
-        else if (e.event_type === "Complaint") counts.complaints++;
-        else if (e.event_type === "Reject") counts.rejects++;
-      }
-
-      for (const a of activityData || []) {
-        if (a.converted_at) {
-          counts.conversions++;
-          counts.revenue += Number(a.conversion_value) || 0;
-        }
-      }
-      
-      return counts;
+      if (!tenantId) return { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, complaints: 0, rejects: 0, conversions: 0, revenue: 0 };
+      const { data, error } = await supabase.rpc("rpc_email_overview_kpis", { p_tenant: tenantId, p_days: 30 });
+      if (error) throw error;
+      const d = (data || {}) as any;
+      return {
+        sent: Number(d.sent || 0),
+        delivered: Number(d.delivered || 0),
+        opens: Number(d.opens || 0),
+        clicks: Number(d.clicks || 0),
+        bounces: Number(d.bounces || 0),
+        complaints: Number(d.complaints || 0),
+        rejects: Number(d.rejects || 0),
+        conversions: Number(d.conversions || 0),
+        revenue: Number(d.revenue || 0),
+      };
     },
     enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
   });
 
 

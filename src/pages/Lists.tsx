@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DynamicListRuleBuilder } from "@/components/lists/DynamicListRuleBuilder";
 import {
   Plus, Search, Upload, Users, MoreHorizontal, Trash2, Edit, UserPlus, ListFilter, FileSpreadsheet, Download, Sparkles, Webhook, Copy, Check, Loader2, AlertCircle
 } from "lucide-react";
@@ -60,6 +61,7 @@ export default function Lists() {
   const [csvListName, setCsvListName] = useState("");
   const [selectedList, setSelectedList] = useState<ContactList | null>(null);
   const [newList, setNewList] = useState({ name: "", description: "", type: "manual" });
+  const [newListRules, setNewListRules] = useState<{ match: "all" | "any"; rules: any[] }>({ match: "all", rules: [] });
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [renamingList, setRenamingList] = useState<ContactList | null>(null);
@@ -161,19 +163,41 @@ export default function Lists() {
   const createList = useMutation({
     mutationFn: async () => {
       if (!currentTenant) throw new Error("No tenant");
-      const { error } = await supabase.from("contact_lists").insert({
+      const isDynamic = newList.type === "dynamic";
+      const { data: inserted, error } = await supabase.from("contact_lists").insert({
         tenant_id: currentTenant.id,
         name: newList.name,
         description: newList.description || null,
         type: newList.type,
-      });
+        filter_rules: isDynamic ? newListRules : null,
+      }).select("id").single();
       if (error) throw error;
+
+      if (isDynamic && inserted) {
+        const { error: matErr } = await supabase.rpc("materialize_dynamic_list" as any, { p_list_id: inserted.id });
+        if (matErr) throw new Error(`Lista criada, mas falhou ao materializar: ${matErr.message}`);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
       setCreateOpen(false);
       setNewList({ name: "", description: "", type: "manual" });
+      setNewListRules({ match: "all", rules: [] });
       toast.success("Lista criada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const refreshDynamicList = useMutation({
+    mutationFn: async (listId: string) => {
+      const { data, error } = await supabase.rpc("materialize_dynamic_list" as any, { p_list_id: listId });
+      if (error) throw error;
+      return data as number;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["contact_lists"] });
+      queryClient.invalidateQueries({ queryKey: ["list_members"] });
+      toast.success(`Lista atualizada: ${count} contato${count !== 1 ? "s" : ""}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -270,8 +294,15 @@ export default function Lists() {
       const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       return rows.map((r) => r.map((c) => String(c).trim()));
     }
-    const text = await file.text();
-    return text.split("\n").filter(Boolean).map((line) => line.split(",").map((c) => c.trim()));
+    const raw = await file.text();
+    // Strip UTF-8 BOM if present and normalize CRLF/CR to LF
+    const text = raw.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+    // Detect separator from the first non-empty line — semicolon (Excel BR) vs comma vs tab
+    const firstLine = text.split("\n").find(Boolean) || "";
+    const separator = firstLine.includes(";") && (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length
+      ? ";"
+      : firstLine.includes("\t") ? "\t" : ",";
+    return text.split("\n").filter(Boolean).map((line) => line.split(separator).map((c) => c.trim().replace(/^"|"$/g, "")));
   };
 
   const handleFileUpload = async (file: File) => {
@@ -547,7 +578,7 @@ export default function Lists() {
                   Nova Lista
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Criar Lista</DialogTitle>
                 </DialogHeader>
@@ -555,41 +586,59 @@ export default function Lists() {
                   onSubmit={(e) => { e.preventDefault(); createList.mutate(); }}
                   className="space-y-4"
                 >
-                  <div className="space-y-2">
-                    <Label>Tipo</Label>
-                    <Select
-                      value={newList.type}
-                      onValueChange={(val) => setNewList({ ...newList, type: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="manual">Manual</SelectItem>
-                        <SelectItem value="webhook">Webhook (População Automática)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Nome *</Label>
-                    <Input
-                      value={newList.name}
-                      onChange={(e) => setNewList({ ...newList, name: e.target.value })}
-                      placeholder="Ex: Clientes VIP"
-                      required
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Tipo</Label>
+                      <Select
+                        value={newList.type}
+                        onValueChange={(val) => setNewList({ ...newList, type: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manual">Manual (escolher cada cliente)</SelectItem>
+                          <SelectItem value="dynamic">Dinâmica (regras automáticas)</SelectItem>
+                          <SelectItem value="webhook">Webhook (população externa)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Nome *</Label>
+                      <Input
+                        value={newList.name}
+                        onChange={(e) => setNewList({ ...newList, name: e.target.value })}
+                        placeholder="Ex: SP que comprou últimos 30d"
+                        required
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Descrição</Label>
                     <Textarea
                       value={newList.description}
                       onChange={(e) => setNewList({ ...newList, description: e.target.value })}
-                      placeholder="Descrição da lista..."
+                      placeholder="Pra que serve essa lista..."
                       rows={2}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={createList.isPending}>
-                    {createList.isPending ? "Criando..." : "Criar"}
+
+                  {newList.type === "dynamic" && (
+                    <div className="border-t border-border pt-4 space-y-2">
+                      <Label className="text-sm font-semibold">Regras de segmentação</Label>
+                      <DynamicListRuleBuilder
+                        value={newListRules}
+                        onChange={setNewListRules}
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={createList.isPending || (newList.type === "dynamic" && newListRules.rules.length === 0)}
+                  >
+                    {createList.isPending ? "Criando..." : newList.type === "dynamic" ? "Criar e materializar" : "Criar"}
                   </Button>
                 </form>
               </DialogContent>
@@ -716,6 +765,15 @@ export default function Lists() {
                           <Edit className="h-3.5 w-3.5 mr-2" />
                           Ver contatos
                         </DropdownMenuItem>
+                        {list.type === "dynamic" && (
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); refreshDynamicList.mutate(list.id); }}
+                            disabled={refreshDynamicList.isPending}
+                          >
+                            <Sparkles className="h-3.5 w-3.5 mr-2" />
+                            Atualizar agora
+                          </DropdownMenuItem>
+                        )}
                         {!isRfmList(list) && (
                           <>
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setRenamingList(list); setRenameValue(list.name); }}>

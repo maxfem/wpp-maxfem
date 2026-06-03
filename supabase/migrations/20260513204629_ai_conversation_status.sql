@@ -22,8 +22,13 @@ create index if not exists ai_conv_status_customer_idx on ai_conversation_status
 -- RLS
 alter table ai_conversation_status enable row level security;
 
-create policy "ai_conv_status_tenant_access" on ai_conversation_status
-  for all using (tenant_id = (select auth.jwt() ->> 'tenant_id')::uuid);
-
-create policy "ai_conv_status_service_role" on ai_conversation_status
-  for all using (auth.role() = 'service_role');
+do $$ begin
+  if not exists (select 1 from pg_policies where policyname = 'ai_conv_status_tenant_access' and tablename = 'ai_conversation_status') then
+    create policy "ai_conv_status_tenant_access" on ai_conversation_status
+      for all using (tenant_id = (select auth.jwt() ->> 'tenant_id')::uuid);
+  end if;
+  if not exists (select 1 from pg_policies where policyname = 'ai_conv_status_service_role' and tablename = 'ai_conversation_status') then
+    create policy "ai_conv_status_service_role" on ai_conversation_status
+      for all using (auth.role() = 'service_role');
+  end if;
+end $$;

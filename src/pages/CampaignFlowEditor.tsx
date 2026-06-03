@@ -94,7 +94,8 @@ function FlowEditorInner() {
       }
       {
         setCampaignName(data.name);
-        setIsActive(data.status === "running");
+        // "Ativa" = campanha habilitada (running, scheduled, active, sent — não draft/paused/failed)
+        setIsActive(["running", "scheduled", "active", "sent"].includes(data.status));
         setStoEnabled(!!data.sto_enabled);
         setIsAbTest(!!data.is_ab_test);
         if (data.trigger_type) {
@@ -121,6 +122,80 @@ function FlowEditorInner() {
       }
     })();
   }, [id, loaded, setNodes, setEdges, isAutomation]);
+
+  // Assina os templates referenciados pelos nodes pra detectar troca via NodeConfigPanel
+  const waTplSignature = nodes
+    .filter((n: any) => n.data?.nodeType === "sendWhatsApp")
+    .map((n: any) => `${n.id}:${n.data?.template || n.data?.templateName || ""}`)
+    .sort()
+    .join("|");
+  const emailTplSignature = nodes
+    .filter((n: any) => n.data?.nodeType === "sendEmail")
+    .map((n: any) => `${n.id}:${n.data?.emailTemplate || ""}`)
+    .sort()
+    .join("|");
+
+  // Enriquecer cada nó com:
+  // - metrics (envios/cliques/abertos via rpc_node_metrics) — sempre, com fallback 0
+  // - templateContent / emailTemplateContent — re-fetcha quando o template muda no NodeConfigPanel
+  useEffect(() => {
+    if (!loaded || !id || id === "new") return;
+    (async () => {
+      try {
+        const waTplNames = Array.from(new Set(
+          nodes
+            .filter((n: any) => n.data?.nodeType === "sendWhatsApp")
+            .map((n: any) => String(n.data?.template || n.data?.templateName || ""))
+            .filter(Boolean)
+        ));
+        const emailTplNames = Array.from(new Set(
+          nodes
+            .filter((n: any) => n.data?.nodeType === "sendEmail")
+            .map((n: any) => String(n.data?.emailTemplate || ""))
+            .filter(Boolean)
+        ));
+
+        const [{ data: metricsByNode }, { data: waRows }, { data: emailRows }] = await Promise.all([
+          supabase.rpc("rpc_node_metrics", { p_campaign_id: id }),
+          waTplNames.length
+            ? supabase.from("message_templates").select("name, body, header_type, header_content, buttons").in("name", waTplNames).eq("channel", "whatsapp")
+            : Promise.resolve({ data: [] as any[] }),
+          emailTplNames.length
+            ? supabase.from("message_templates").select("name, subject, body_html, body_text").in("name", emailTplNames).eq("channel", "email")
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+        const waMap = new Map<string, any>();
+        (waRows || []).forEach((t: any) => waMap.set(t.name, t));
+        const emailMap = new Map<string, any>();
+        (emailRows || []).forEach((t: any) => emailMap.set(t.name, t));
+        const metricsObj = (metricsByNode || {}) as Record<string, any>;
+        const DEFAULT_METRICS = { envios: 0, cliques: 0, entregues: 0, abertos: 0, falhas: 0 };
+
+        setNodes((nds) =>
+          nds.map((n: any) => {
+            const newData: any = { ...n.data };
+            const t = n.data?.nodeType;
+            if (t === "sendWhatsApp" || t === "sendEmail" || t === "sendSms") {
+              newData.metrics = metricsObj[n.id] || DEFAULT_METRICS;
+            }
+            if (t === "sendWhatsApp") {
+              const tplName = String(n.data?.template || n.data?.templateName || "");
+              const tpl = tplName ? waMap.get(tplName) : null;
+              newData.templateContent = tpl || null; // limpa preview antigo se trocou pra nome inexistente
+            } else if (t === "sendEmail") {
+              const tplName = String(n.data?.emailTemplate || "");
+              const tpl = tplName ? emailMap.get(tplName) : null;
+              newData.emailTemplateContent = tpl || null;
+            }
+            return { ...n, data: newData };
+          })
+        );
+      } catch (err) {
+        console.warn("[flow-editor] failed to enrich nodes:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, id, waTplSignature, emailTplSignature]);
 
   const nodeTypes = useMemo(
     () => ({
@@ -225,6 +300,7 @@ function FlowEditorInner() {
       const { error } = await supabase.from("campaigns").insert({
         tenant_id: currentTenant.id,
         type: "custom",
+        kind: isAutomation ? "automation" : "campaign",
         ...payload,
       });
       if (error) {

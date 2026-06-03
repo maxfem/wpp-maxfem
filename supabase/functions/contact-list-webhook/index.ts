@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { emitLeadCreated } from "../_shared/automation-emitters.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -164,6 +165,15 @@ serve(async (req) => {
     }
 
     console.log('Successfully added member to list.')
+
+    // Emitir evento de automação para lead_created
+    try {
+      await emitLeadCreated(supabase, list.tenant_id, customerId, listId, list.name, 'webhook')
+      console.log(`[automation] Emitted lead_created event for customer ${customerId} in list "${list.name}"`)
+    } catch (emitError) {
+      console.error('[automation] Error emitting lead_created event:', emitError)
+      // Não bloqueia o webhook se o evento falhar
+    }
 
     return new Response(JSON.stringify({ 
       success: true, 

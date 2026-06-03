@@ -647,6 +647,15 @@ REGRAS CRÍTICAS:
         const role = m.direction === "inbound" ? "user" : "assistant";
         let c = (m.content || "").trim();
         const analysis = m.metadata?.media_analysis;
+        // Mensagens de automação/template não são conversa real — viram nota
+        // neutra pra IA não tentar "continuar" nem ecoar código Pix/labels.
+        if (role === "assistant") {
+          if (/^\[(Automação|Template):/i.test(c)) {
+            c = "[mensagem automática enviada ao cliente]";
+          } else if (/^0002\d{2}/.test(c) && c.length > 40) {
+            c = "[código Pix enviado ao cliente]";
+          }
+        }
         if (analysis) {
           const what = ptMediaName[m.message_type] || "um arquivo";
           c = c ? `${c}\n[O cliente enviou ${what}. Conteúdo: ${analysis}]` : `[O cliente enviou ${what}. Conteúdo: ${analysis}]`;

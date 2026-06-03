@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,8 @@ function periodToDateRange(period: Period): { from: string; to: string } {
 }
 
 export default function SaudeAna() {
-  const { tenantId } = useAuth();
+  const { currentTenant } = useAuth();
+  const tenantId = currentTenant?.id;
   const [period, setPeriod] = useState<Period>("7d");
   const range = useMemo(() => periodToDateRange(period), [period]);
 

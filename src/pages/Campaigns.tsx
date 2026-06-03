@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchAll } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +53,6 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: "ativo", label: "Switch ativo", default: true },
 ];
 
-type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; conversion_value: number | null; created_at: string };
 type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 const initialView = loadViewSettings("campaigns:view", "grid", COLUMN_DEFS);
@@ -87,34 +85,31 @@ export default function Campaigns() {
     enabled: !!currentTenant,
   });
 
-  const { data: rawActivities = [] } = useQuery<CampaignActivity[]>({
-    queryKey: ["campaign-activities-raw", currentTenant?.id],
+  // Métricas SEMPRE no acumulado total — agregadas no backend via RPC
+  const { data: rawMetrics = [] } = useQuery<{ campaign_id: string; envios: number; cliques: number; conversoes: number; valor_conversao: number }[]>({
+    queryKey: ["campaign-metrics-rpc", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
-      return fetchAll<CampaignActivity>(
-        supabase
-          .from("campaign_activities")
-          .select("campaign_id, status, clicked_at, conversion_value, created_at")
-          .eq("tenant_id", currentTenant.id)
-      );
+      const { data, error } = await supabase.rpc("rpc_campaign_metrics_summary", { p_tenant: currentTenant.id });
+      if (error) throw error;
+      return data as any;
     },
     enabled: !!currentTenant,
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Métricas SEMPRE no acumulado total (a listagem mostra geral).
-  // Filtro por período fica DENTRO de "Ver detalhes" — pra cada campanha individual.
   const metricsMap = useMemo(() => {
     const map: Record<string, CampaignMetrics> = {};
-    rawActivities.forEach((a) => {
-      if (!map[a.campaign_id]) map[a.campaign_id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
-      map[a.campaign_id].envios++;
-      if (a.clicked_at) map[a.campaign_id].cliques++;
-      const cv = Number(a.conversion_value || 0);
-      map[a.campaign_id].conversao += cv;
-      if (cv > 0) map[a.campaign_id].conversoes++;
+    rawMetrics.forEach((m) => {
+      map[m.campaign_id] = {
+        envios: Number(m.envios || 0),
+        cliques: Number(m.cliques || 0),
+        conversoes: Number(m.conversoes || 0),
+        conversao: Number(m.valor_conversao || 0),
+      };
     });
     return map;
-  }, [rawActivities]);
+  }, [rawMetrics]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {

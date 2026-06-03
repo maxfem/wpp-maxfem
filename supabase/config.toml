@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.send-email-ses]
 verify_jwt = false
+
+[functions.partner-signup]
+verify_jwt = false
+
+[functions.popup-manager]
+verify_jwt = false

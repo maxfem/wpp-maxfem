@@ -51,7 +51,6 @@ const automationTypes = [
   { value: "custom", label: "Personalizada" },
 ];
 
-type CampaignActivity = { campaign_id: string; status: string; clicked_at: string | null; converted_at: string | null; conversion_value: number | null; created_at: string };
 type CampaignMetrics = { envios: number; cliques: number; conversao: number; conversoes: number };
 
 export default function Automations() {
@@ -83,32 +82,16 @@ export default function Automations() {
     enabled: !!currentTenant,
   });
 
-  const { data: rawActivities = [] } = useQuery<CampaignActivity[]>({
-    queryKey: ["automation-activities-raw", currentTenant?.id],
+  const { data: rawMetrics = [] } = useQuery<{ campaign_id: string; envios: number; cliques: number; conversoes: number; valor_conversao: number }[]>({
+    queryKey: ["automation-metrics-rpc", currentTenant?.id],
     queryFn: async () => {
       if (!currentTenant) return [];
-      const allData: CampaignActivity[] = [];
-      let fromPage = 0;
-      const batchSize = 1000;
-      while (true) {
-        const { data, error } = await supabase
-          .from("campaign_activities")
-          .select("campaign_id, status, clicked_at, converted_at, conversion_value, created_at")
-          .eq("tenant_id", currentTenant.id)
-          .range(fromPage, fromPage + batchSize - 1);
-        
-        if (error) {
-          console.error("Error fetching activities:", error);
-          break;
-        }
-        if (!data || data.length === 0) break;
-        allData.push(...(data as CampaignActivity[]));
-        if (data.length < batchSize) break;
-        fromPage += batchSize;
-      }
-      return allData;
+      const { data, error } = await supabase.rpc("rpc_campaign_metrics_summary", { p_tenant: currentTenant.id });
+      if (error) throw error;
+      return (data || []) as any;
     },
     enabled: !!currentTenant,
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: pendingQueueCounts = {} } = useQuery<Record<string, number>>({
@@ -135,21 +118,16 @@ export default function Automations() {
   // Filtro por período fica DENTRO de "Ver detalhes" de cada automação.
   const metricsMap = useMemo(() => {
     const map: Record<string, CampaignMetrics> = {};
-    const ensure = (id: string) => {
-      if (!map[id]) map[id] = { envios: 0, cliques: 0, conversao: 0, conversoes: 0 };
-      return map[id];
-    };
-    rawActivities.forEach((a) => {
-      const m = ensure(a.campaign_id);
-      m.envios++;
-      if (a.clicked_at) m.cliques++;
-      if (a.converted_at) {
-        m.conversao += Number(a.conversion_value || 0);
-        m.conversoes++;
-      }
+    rawMetrics.forEach((m) => {
+      map[m.campaign_id] = {
+        envios: Number(m.envios || 0),
+        cliques: Number(m.cliques || 0),
+        conversoes: Number(m.conversoes || 0),
+        conversao: Number(m.valor_conversao || 0),
+      };
     });
     return map;
-  }, [rawActivities]);
+  }, [rawMetrics]);
 
   const createCampaign = useMutation({
     mutationFn: async () => {

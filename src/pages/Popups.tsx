@@ -43,8 +43,10 @@ export default function Popups() {
   const [editListSelectedId, setEditListSelectedId] = useState<string>("");
   const [editListNewName, setEditListNewName] = useState("");
 
+  const popupScriptBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/popup-manager/script`;
+
   const copySnippet = (id: string) => {
-    const script = `<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${id}"></script>`;
+    const script = `<script src="${popupScriptBase}?id=${id}"></script>`;
     navigator.clipboard.writeText(script);
     toast.success("Script copiado para a área de transferência!");
   };
@@ -486,7 +488,7 @@ export default function Popups() {
                     <Label>Script do Pop-up</Label>
                     <div className="relative">
                       <pre className="bg-slate-950 text-slate-50 p-4 rounded-md overflow-x-auto text-xs font-mono pr-12">
-                        {`<script src="https://poukhwsbskcvwroeqoct.supabase.co/functions/v1/popup-manager/script?id=${selectedPopupForSnippet?.id}"></script>`}
+                        {`<script src="${popupScriptBase}?id=${selectedPopupForSnippet?.id}"></script>`}
                       </pre>
                       <Button 
                         size="icon" 

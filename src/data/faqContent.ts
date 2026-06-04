@@ -111,24 +111,6 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
         ],
       },
       {
-        id: "saude-ana",
-        question: "Pra que serve a 'Saúde da Ana'?",
-        answer:
-          "Monitora a IA Ana (atendente automática WhatsApp/Instagram) em tempo real: nº de conversas, taxa de resolução sem humano, taxa de escalação, palavras-chave que estão pegando ela de surpresa, custo OpenAI/dia.",
-        steps: [
-          "Acessa /saude-ana",
-          "Confere card 'Resolvido sem humano' — meta acima de 60%",
-          "Olha 'Top palavras escaladas' — vê o que a Ana não está entendendo",
-          "Adiciona conhecimento novo em /listas (Arquiteto CRM)",
-        ],
-        troubleshoot: [
-          {
-            problem: "Taxa de escalação muito alta",
-            solution: "Ana está esbarrando em perguntas sem resposta. Adiciona ai_knowledge entries via Arquiteto CRM. Cron de aprendizado diário roda 03h.",
-          },
-        ],
-      },
-      {
         id: "como-exportar-dados",
         question: "Como exporto dados pra Excel/CSV?",
         answer:

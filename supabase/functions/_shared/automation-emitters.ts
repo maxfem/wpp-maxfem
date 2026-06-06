@@ -50,9 +50,12 @@ export async function emitAutomationEvent(options: EmitEventOptions): Promise<vo
         metadata,
       };
 
+      // Index automation_queue_no_dup_active impede duplicata enquanto a
+      // entrada anterior estiver em 'pending'/'running' (mig 20260606220000).
+      // Mesmo assim mantemos esse try/catch + log distinto pra observabilidade.
       const { error } = await supabase
         .from("automation_queue")
-        .insert(queueEntry);
+        .upsert(queueEntry, { onConflict: "campaign_id,customer_id,trigger_type", ignoreDuplicates: true });
 
       if (error && !error.message?.includes("duplicate")) {
         console.error(`[automation-emitter] Error queueing automation ${automation.id}:`, error.message);

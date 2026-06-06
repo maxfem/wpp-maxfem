@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { emitLeadCreated } from "../_shared/automation-emitters.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -166,16 +165,14 @@ serve(async (req) => {
 
     console.log('Successfully added member to list.')
 
-    // Emitir evento de automação para lead_created
-    try {
-      await emitLeadCreated(supabase, list.tenant_id, customerId, listId, list.name, 'webhook')
-      console.log(`[automation] Emitted lead_created event for customer ${customerId} in list "${list.name}"`)
-    } catch (emitError) {
-      console.error('[automation] Error emitting lead_created event:', emitError)
-      // Não bloqueia o webhook se o evento falhar
-    }
+    // NÃO emitir lead_created daqui — o DB trigger `trg_lead_created_dispatch`
+    // já dispara automaticamente em INSERT real em contact_list_members.
+    // Como o upsert acima resolve conflitos em (list_id, customer_id), pra
+    // contato já membro o trigger NÃO dispara, evitando re-enqueue infinito.
+    // Bug histórico: emitLeadCreated aqui rodava em TODA chamada do webhook,
+    // disparando emails repetidos pra base inteira a cada re-importação.
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true, 
       customer_id: customerId,
       message: 'Contact added to list successfully'

@@ -201,7 +201,7 @@ serve(async (req) => {
     }
 
     // ========== TEST & SEND MODE ==========
-    const { to, subject, html, text, fromName, tenantId, campaignId, customerId } = payload;
+    const { to, subject, html, text, fromName, tenantId, campaignId, customerId, nodeId } = payload;
     let configurationSet: string | null = (payload.configurationSet || "").trim() || null;
     if (!to || !subject || !html) {
       throw new Error("Campos obrigatórios: to, subject, html.");
@@ -317,15 +317,22 @@ serve(async (req) => {
           });
 
           // Log in campaign_activities if it's a campaign
+          // IMPORTANTE: passar nodeId é o que faz as métricas por nó aparecerem
+          // no editor de automation flow (rpc_node_metrics agrupa por node_id).
+          // Sem isso, contadores de envios/abrir/clique ficam zerados nos nós.
           if (campaignId && customerId) {
-            await sbAdmin.from("campaign_activities").upsert({
+            const activityRow: Record<string, unknown> = {
               campaign_id: campaignId,
               customer_id: customerId,
               tenant_id: resolvedTenant,
               channel: "email",
               status: "sent",
               sent_at: new Date().toISOString(),
-            }, { onConflict: "campaign_id,customer_id,channel" });
+            };
+            if (nodeId) activityRow.node_id = nodeId;
+            await sbAdmin.from("campaign_activities").upsert(activityRow, {
+              onConflict: "campaign_id,customer_id,channel",
+            });
           }
         } catch (logErr) {
           console.error("[SES] log error:", logErr);

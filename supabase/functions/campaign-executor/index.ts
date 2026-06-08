@@ -478,12 +478,14 @@ async function buildTemplateComponents(
 
 function calculateWaitMs(waitTime: number | string, waitUnit: string): number {
   const t = Number(waitTime) || 0;
-  switch (waitUnit) {
-    case "minutes": return t * 60 * 1000;
-    case "hours": return t * 60 * 60 * 1000;
-    case "days": return t * 24 * 60 * 60 * 1000;
-    default: return t * 60 * 1000;
-  }
+  const u = String(waitUnit || "").trim().toLowerCase();
+  // Aceita PT-BR ("dia(s)", "hora(s)", "minuto(s)") e EN ("days", "hours", "minutes")
+  if (u.startsWith("dia") || u.startsWith("day")) return t * 24 * 60 * 60 * 1000;
+  if (u.startsWith("hor") || u.startsWith("hou")) return t * 60 * 60 * 1000;
+  if (u.startsWith("min")) return t * 60 * 1000;
+  if (u.startsWith("seg") || u.startsWith("sec")) return t * 1000;
+  if (u.startsWith("sem") || u.startsWith("wee")) return t * 7 * 24 * 60 * 60 * 1000;
+  return t * 60 * 1000; // default: minutos
 }
 
 // Converte o valor do campo "Janela de espera por resposta" (ex: "30 minutos",
@@ -883,7 +885,10 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
 
           // WAIT
           if (nodeType === "wait" || nodeType === "waitDate" || nodeType === "waitCondition") {
-            const waitMs = calculateWaitMs(node.data?.waitTime || 0, node.data?.waitUnit || "minutes");
+            // Aceita ambos esquemas: { waitTime, waitUnit } e { duration, unit } (PT-BR)
+            const wt = node.data?.waitTime ?? node.data?.duration ?? 0;
+            const wu = node.data?.waitUnit ?? node.data?.unit ?? "minutes";
+            const waitMs = calculateWaitMs(wt, wu);
             const scheduledFor = new Date(Date.now() + waitMs).toISOString();
             const nextId = getNextNodeId(edges, currentNodeId);
             if (nextId) {
@@ -1060,6 +1065,7 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                 tenantId: campaign.tenant_id,
                 campaignId: campaign.id,
                 customerId: customer.id,
+                nodeId: currentNodeId,
                 abVariantId: abVariantId
               }),
             });
@@ -1550,7 +1556,8 @@ async function processAutomationQueue(supabase: any, filters: { campaignId?: str
                     headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
                     body: JSON.stringify({
                       to: customer.email, subject: resolvedSubject, html: finalBody,
-                      fromName: campaign.name, tenantId: campaign.tenant_id, campaignId: campaign.id, customerId: customer.id
+                      fromName: campaign.name, tenantId: campaign.tenant_id, campaignId: campaign.id, customerId: customer.id,
+                      nodeId: currentNodeId
                     }),
                   });
 

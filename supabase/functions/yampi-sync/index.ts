@@ -164,16 +164,32 @@ const CHANNEL_UTM_SOURCES = new Set(["email", "whatsapp"]);
 //  1. Se o pedido veio com utm_source=email|whatsapp + utm_campaign → casa com a activity daquele canal cujo nome de campanha bate (janela 14d).
 //  2. Se o pedido veio com utm_source de OUTRO canal (meta, google, etc.) → não atribui a campanha do CRM (outro sistema cuida).
 //  3. Se o pedido não tem utm_source útil (direto/orgânico) → atribui à activity mais recente do cliente que ele CLICOU, na janela de 72h.
+// Set canônico de status PAGO — espelha rpc_report_sales e a regra Maxfem
+// "métricas só pago" (memória feedback_metricas_so_pago). NÃO incluir
+// waiting_payment/pix_pending/cancelled/refused/refunded/returned/abandoned.
+const PAID_STATUSES = new Set([
+  "paid", "invoiced", "approved", "shipped", "on_carriage", "in_transit", "delivered",
+]);
+
 async function attributeConversions(
   supabase: any,
   tenant_id: string,
-  orders: { id: string; customer_id: string; total: number; created_at?: string | null; utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_content?: string | null }[],
+  orders: { id: string; customer_id: string; total: number; created_at?: string | null; mapped_status?: string | null; utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null; utm_content?: string | null }[],
 ) {
   const cutoff72 = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
   const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
   for (const order of orders) {
+    // FILTRO DE PAGO: só atribui pedido que efetivamente entrou como receita.
+    // Pix/Boleto pendente vira PAGO num evento futuro — o trigger
+    // trg_orders_reverse_attribution + o próprio reprocesso do yampi-sync
+    // cuidam de atribuir/estornar quando o status mudar.
+    const status = (order.mapped_status || "").toLowerCase();
+    if (!PAID_STATUSES.has(status)) {
+      continue;
+    }
+
     const src = (order.utm_source || "").trim().toLowerCase();
     let activityId: string | null = null;
     let method = "";
@@ -583,14 +599,14 @@ async function syncOrders(supabase: any, tenant_id: string, config: any, startPa
       const { data: inserted, error } = await supabase
         .from("orders")
         .upsert(batch, { onConflict: "tenant_id,external_id" })
-        .select("id, customer_id, total, created_at, utm_source, utm_medium, utm_campaign, utm_content");
+        .select("id, customer_id, total, created_at, mapped_status, utm_source, utm_medium, utm_campaign, utm_content");
       if (error) {
         console.error("Order batch upsert error:", error.message, " — falling back to per-row insert");
         // Fallback row-a-row pra não perder o batch
         for (const row of batch) {
           const { data: one, error: oneErr } = await supabase
             .from("orders").upsert(row, { onConflict: "tenant_id,external_id" })
-            .select("id, customer_id, total, created_at, utm_source, utm_medium, utm_campaign, utm_content");
+            .select("id, customer_id, total, created_at, mapped_status, utm_source, utm_medium, utm_campaign, utm_content");
           if (oneErr) console.error(`[sync] row upsert fail (external_id=${row.external_id}):`, oneErr.message);
           else if (one) await attributeConversions(supabase, tenant_id, one);
         }

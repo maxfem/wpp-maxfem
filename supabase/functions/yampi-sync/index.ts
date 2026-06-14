@@ -246,7 +246,22 @@ async function attributeConversions(
     }
 
     if (activityId) {
-      await supabase
+      // Guard contra race entre yampi-webhook e cron yampi-sync: se o pedido JÁ
+      // foi atribuído (mesmo que a outra invocação tenha rodado neste segundo),
+      // não tenta atribuir de novo. Defesa em camadas com o índice único parcial
+      // uq_campaign_activities_attribution_order (migration 20260614180000).
+      const { data: already } = await supabase
+        .from("campaign_activities")
+        .select("id")
+        .eq("attribution_order_id", order.id)
+        .limit(1)
+        .maybeSingle();
+      if (already) {
+        console.log(`Attribution skip: order ${order.id} já atribuído à activity ${already.id}`);
+        continue;
+      }
+
+      const { error: upErr } = await supabase
         .from("campaign_activities")
         .update({
           converted_at: now,
@@ -255,6 +270,16 @@ async function attributeConversions(
           attribution_method: method,
         })
         .eq("id", activityId);
+      if (upErr) {
+        // 23505 = unique_violation no índice uq_campaign_activities_attribution_order.
+        // Significa que a outra invocação ganhou a corrida — comportamento esperado.
+        if (String(upErr.code) === "23505" || /duplicate key/.test(String(upErr.message || ""))) {
+          console.log(`Attribution race: order ${order.id} foi atribuído por outra invocação (idempotente)`);
+        } else {
+          console.error(`Attribution update error: ${upErr.message}`);
+        }
+        continue;
+      }
       console.log(`Attribution[${method}]: order ${order.id} -> activity ${activityId} (R$${order.total})`);
     }
   }

@@ -1,5 +1,8 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft, Instagram, MessageSquare } from "lucide-react";
+import { Phone, User, Search, MoreVertical, Star, Archive, VolumeX, PanelRightOpen, PanelRightClose, CheckCircle2, ChevronDown, RotateCcw, Clock, Ban, Volume2, ArrowLeft, Instagram, MessageSquare, Ticket } from "lucide-react";
+import { useState } from "react";
+import { CreateTicketDialog } from "./CreateTicketDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,8 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 };
 
 export function ChatHeader({ conversation, showContactPanel, onToggleContactPanel, onSearchInChat, onToggleFavorite, onToggleMute, onArchive, onSetStatus, onBack }: ChatHeaderProps) {
+  const { currentTenant } = useAuth();
+  const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const navigate = useNavigate();
 
   if (!conversation) return null;
@@ -132,6 +137,12 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
                 Ver perfil do cliente
               </DropdownMenuItem>
             )}
+            {conversation.customerId && currentTenant?.id && (
+              <DropdownMenuItem className="text-xs gap-2" onClick={() => setTicketDialogOpen(true)}>
+                <Ticket className="h-3.5 w-3.5 text-primary" />
+                Criar ticket SAC
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-xs gap-2" onClick={onArchive}>
               <Archive className="h-3.5 w-3.5" />
@@ -139,6 +150,20 @@ export function ChatHeader({ conversation, showContactPanel, onToggleContactPane
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {conversation.customerId && currentTenant?.id && (
+          <CreateTicketDialog
+            open={ticketDialogOpen}
+            onOpenChange={setTicketDialogOpen}
+            tenantId={currentTenant.id}
+            customerId={conversation.customerId}
+            customerName={conversation.customerName || conversation.phone || ""}
+            phone={conversation.phone}
+            igAccountId={conversation.igAccountId || undefined}
+            igUserId={conversation.igUserId || undefined}
+            channel={(conversation.channel as any) || "whatsapp"}
+          />
+        )}
 
         {/* Status button */}
         <DropdownMenu>
